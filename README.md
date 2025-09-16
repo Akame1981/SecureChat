@@ -63,8 +63,9 @@ uvicorn main:app --reload
 
 Launch the GUI client
 
-python client.py
-client.py is the Tkinter chat client. It will ask for a PIN to unlock or generate your private key.
+# python client.py
+
+test_client.py is the Tkinter chat client. It will ask for a PIN to unlock or generate your private key.
 
 ---
 
