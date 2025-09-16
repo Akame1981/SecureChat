@@ -50,41 +50,51 @@ Launch the GUI client
 python client.py
 client.py is the Tkinter chat client. It will ask for a PIN to unlock or generate your private key.
 
-Usage
-Send Messages: Select a recipient and type a message to send encrypted messages.
+---
 
-Manage Recipients: Add, delete, or choose recipients from the Settings menu.
+## 🎯 Usage
+- **Send Messages** → Select a recipient and type your message to send encrypted messages.  
+- **Manage Recipients** → Add, delete, or choose recipients from the **Settings** menu.  
+- **Key Management** → Generate new keypairs or change your PIN for encryption.  
+- **Copy Public Key** → Share your public key so others can send you messages.  
 
-Key Management: Generate new keypairs or change your PIN for encryption.
+---
 
-Copy Public Key: Share your public key to receive messages.
+## 🔐 Security
+- Messages are encrypted end-to-end using **SealedBox**.  
+- Private keys are encrypted locally with a **PIN-based SecretBox**.  
+- The server stores **only encrypted messages**, never plaintext.  
 
-Security
-All messages are encrypted end-to-end using SealedBox.
+---
 
-Private keys are encrypted locally with a PIN-based secret using SecretBox.
+## 📜 License
+This project is licensed under the **Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)** license.  
+✔️ You may use and modify the project.  
+❌ You may not sell it.  
+⭐ You must give credit to the author.  
 
-Server only stores encrypted messages, never plaintext.
+---
 
-License
-This project is licensed under the Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0) license.
-You may use and modify the project, but cannot sell it, and must give credit to the author.
+## 🛠 Tech Stack
+- **Backend** → FastAPI  
+- **Client** → Tkinter (Python)  
+- **Encryption** → PyNaCl (`PrivateKey`, `SealedBox`, `SecretBox`)  
+- **Persistence** → JSON files for recipients and local encrypted keys  
 
-Tech Stack
-Backend: FastAPI
+---
 
-Client: Tkinter (Python)
+## 📸 Screenshots
+SOON
 
-Encryption: PyNaCl (PrivateKey, SealedBox, SecretBox)
+---
 
-Persistence: JSON files for recipients and local encrypted keys
+## 🤝 Contributing
+Contributions are welcome!  
+- Submit issues for bugs or feature requests.  
+- Open pull requests with improvements or fixes.  
 
-Screenshots
+---
 
-Contributing
-Contributions are welcome!
-Feel free to submit issues or pull requests with improvements or bug fixes.
-
-Contact
-Developed by Akame1981.
-Share your feedback, questions, or suggestions via GitHub issues.
+## 📬 Contact
+Developed by **Akame1981**  
+💡 Share feedback, questions, or suggestions via **GitHub Issues**.  
