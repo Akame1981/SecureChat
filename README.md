@@ -21,9 +21,12 @@ It allows users to send encrypted messages securely between public keys, store r
 
 ---
 
-## Installation
+## 🚀 Installation
 
-1. Clone the repository:
+1. **Clone the repository**
+
+
+
 
 - **git clone** https://github.com/Akame1981/SecureChat.git
 
@@ -32,18 +35,26 @@ It allows users to send encrypted messages securely between public keys, store r
 2. Create and activate a Python virtual environment:
 
 
-python -m venv venv
+    python -m venv venv
 
 
 # Windows
 venv\Scripts\activate
+
+
 # macOS/Linux
 source venv/bin/activate
-Install dependencies:
+
+
+
+
+# Install dependencies:
 
 
 pip install -r requirements.txt
-Running the App
+
+
+# Running the App
 Start the FastAPI server
 
 uvicorn main:app --reload
