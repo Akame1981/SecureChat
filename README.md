@@ -58,7 +58,8 @@ pip install -r requirements.txt
 Start the FastAPI server
 
 uvicorn main:app --reload
-The server will run at http://127.0.0.1:8000.
+
+- **The server will run at http://127.0.0.1:8000.**
 
 Launch the GUI client
 
