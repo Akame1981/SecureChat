@@ -113,9 +113,11 @@ class SettingsWindow(Toplevel):
             entry = listbox.get(sel[0])
             name = entry.split(":")[0].strip()
             if messagebox.askyesno("Delete", f"Delete {name}?"):
-                recipients.pop(name)
+                from recipients import delete_recipient as del_rec  # import your function
+                del_rec(name)  # this removes from dict and saves to JSON
                 refresh_list()
                 self.app.update_recipient_list()
+
 
         btn_frame = ctk.CTkFrame(rec_window, fg_color="transparent")
         btn_frame.pack(pady=5)
