@@ -48,10 +48,10 @@ venv\Scripts\activate
 ```
 
 macOS/Linux : 
-
+```bash
 source venv/bin/activate
 
-
+```
 
 
 3. Install dependencies:
@@ -63,17 +63,22 @@ pip install -r requirements.txt
 
 # Running the App
 Start the FastAPI server
-
+```bash
 uvicorn server:app --reload
-
+```
 - **The server will run at http://127.0.0.1:8000.**
 
 Launch the GUI client
 
 # python client.py
 
-test_client.py is the Tkinter chat client. It will ask for a PIN to unlock or generate your private key.
+gui is the Tkinter chat client. It will ask for a PIN to unlock or generate your private key.
 
+
+You can use :
+```bash
+python gui.py
+```
 ---
 
 ## 🎯 Usage
@@ -85,9 +90,10 @@ test_client.py is the Tkinter chat client. It will ask for a PIN to unlock or ge
 ---
 
 ## 🔐 Security
-- Messages are encrypted end-to-end using **SealedBox**.  
-- Private keys are encrypted locally with a **PIN-based SecretBox**.  
-- The server stores **only encrypted messages**, never plaintext.  
+- Messages are **end-to-end encrypted** with `SealedBox`.  
+- **Message signing** ensures authenticity using `Ed25519`.  
+- **Private keys** are encrypted locally with a PIN using `SecretBox`.  
+- The **server only stores the last 5 encrypted messages of an user** and optionally uses ephemeral message storage with Redis or in-memory fallback.
 
 ---
 
@@ -100,10 +106,11 @@ This project is licensed under the **Creative Commons Attribution-NonCommercial 
 ---
 
 ## 🛠 Tech Stack
-- **Backend** → FastAPI  
+
+- **Backend** → FastAPI, optional Redis for ephemeral storage  
 - **Client** → Tkinter (Python)  
-- **Encryption** → PyNaCl (`PrivateKey`, `SealedBox`, `SecretBox`)  
-- **Persistence** → JSON files for recipients and local encrypted keys  
+- **Encryption** → PyNaCl (`PrivateKey`, `SealedBox`, `SecretBox`, `SigningKey`)  
+- **Persistence** → `keypair.bin` for keys, `recipients.json` for contacts
 
 ---
 
