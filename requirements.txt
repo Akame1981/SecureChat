@@ -3,3 +3,5 @@ uvicorn
 pydantic
 pynacl
 requests
+redis  
+customtkinter
