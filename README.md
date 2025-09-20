@@ -32,6 +32,7 @@ It allows users to send encrypted messages securely between public keys, store r
 
 ```bash
 git clone https://github.com/Akame1981/SecureChat.git
+```
 cd SecureChat
 
 2. Create and activate a Python virtual environment:
@@ -40,19 +41,22 @@ cd SecureChat
     python -m venv venv
 
 
-### Windows
+Windows :
+```bash
 venv\Scripts\activate
 
+```
 
-### macOS/Linux
+macOS/Linux : 
+
 source venv/bin/activate
 
 
 
 
-# Install dependencies:
+3. Install dependencies:
 
-
+```bash
 pip install -r requirements.txt
 
 ```
