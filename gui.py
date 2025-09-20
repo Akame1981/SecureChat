@@ -1,40 +1,17 @@
 import os
-import tkinter as tk
-from tkinter import simpledialog, messagebox, scrolledtext, Toplevel
 import threading
 import time
-
-from crypto import load_key, save_key, PrivateKey, SigningKey, KEY_FILE
-
-from network import send_message, fetch_messages
-from recipients import recipients, add_recipient, get_recipient_key
 import customtkinter as ctk
-from settings import SettingsWindow
+from crypto import load_key, save_key, PrivateKey, SigningKey, KEY_FILE
+from network import send_message, fetch_messages
+from gui.widgets.sidebar import Sidebar
+from gui.settings import SettingsWindow
+from gui.tooltip import ToolTip
+from gui.pin_dialog import PinDialog
+from recipients import recipients, add_recipient, get_recipient_key
+from tkinter import simpledialog, messagebox, Toplevel
+import tkinter as tk
 
-class ToolTip:
-    def __init__(self, widget, text):
-        self.widget = widget
-        self.text = text
-        self.tipwindow = None
-        widget.bind("<Enter>", self.show_tip)
-        widget.bind("<Leave>", self.hide_tip)
-
-    def show_tip(self, event=None):
-        if self.tipwindow or not self.text:
-            return
-        x = self.widget.winfo_rootx() + 20
-        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 10
-        self.tipwindow = tw = tk.Toplevel(self.widget)
-        tw.wm_overrideredirect(True)  # remove window decorations
-        tw.wm_geometry(f"+{x}+{y}")
-        label = tk.Label(tw, text=self.text, justify="left", background="#2e2e3f",
-                         foreground="white", relief="solid", borderwidth=1, font=("Segoe UI", 10))
-        label.pack(ipadx=5, ipady=2)
-
-    def hide_tip(self, event=None):
-        if self.tipwindow:
-            self.tipwindow.destroy()
-            self.tipwindow = None
 
 class SecureChatApp(ctk.CTk):
 
@@ -95,7 +72,9 @@ class SecureChatApp(ctk.CTk):
         self.signing_pub_hex = self.signing_key.verify_key.encode().hex()
 
 
-
+    def select_recipient(self, name):
+        self.recipient_pub_hex = get_recipient_key(name)
+        self.sidebar.update_list(selected_pub=self.recipient_pub_hex)
 
     # ---------------- GUI ----------------
     def create_widgets(self):
@@ -104,19 +83,8 @@ class SecureChatApp(ctk.CTk):
         main_frame.pack(fill="both", expand=True)
 
         # Sidebar (left)
-        self.sidebar = ctk.CTkFrame(main_frame, width=200, corner_radius=0)
-        self.sidebar.pack(side="left", fill="y")
-
-        # Add sidebar content: list of recipients
-        ctk.CTkLabel(self.sidebar, text="Recipients", font=("Segoe UI", 14, "bold")).pack(pady=10)
-        self.recipient_listbox = ctk.CTkScrollableFrame(self.sidebar, width=180)
-        self.recipient_listbox.pack(fill="y", expand=True, padx=10, pady=(0,10))
-
-        self.update_recipient_list()
-
-        # Button to add new recipient
-        ctk.CTkButton(self.sidebar, text="+ Add Recipient", command=self.add_new_recipient, fg_color="#4a90e2").pack(pady=10, padx=10)
-
+        self.sidebar = Sidebar(main_frame, select_callback=self.select_recipient, add_callback=self.add_new_recipient)
+    
         # ---------------- Chat Area (right) ----------------
         chat_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
         chat_frame.pack(side="right", fill="both", expand=True)
@@ -198,27 +166,7 @@ class SecureChatApp(ctk.CTk):
         self.messages_box.configure(state='disabled')
 
 
-    def update_recipient_list(self):
-        # Clear existing buttons
-        for widget in self.recipient_listbox.winfo_children():
-            widget.destroy()
 
-        for name, key in recipients.items():
-            # Highlight the selected recipient
-            is_selected = (self.recipient_pub_hex == key)
-            btn = ctk.CTkButton(
-                self.recipient_listbox,
-                text=name,
-                fg_color="#4a90e2" if is_selected else "#3e3e50",  # highlight selected
-                hover_color="#4a4a6a",
-                command=lambda n=name: self.select_recipient(n)
-            )
-            btn.pack(fill="x", pady=2, padx=5)
-
-
-    def select_recipient(self, name):
-        self.recipient_pub_hex = get_recipient_key(name)
-        self.update_recipient_list()  # refresh buttons to show highlight
         
 
 
@@ -306,60 +254,7 @@ class SecureChatApp(ctk.CTk):
         self.stop_event.set()
         self.destroy()
 
-    # ---------------- PIN Dialog ----------------
-class PinDialog(ctk.CTkToplevel):
-    def __init__(self, parent, title="Enter PIN", new_pin=False):
-        super().__init__(parent)
-        self.parent = parent
-        self.new_pin = new_pin
-        self.pin = None
 
-        self.title(title)
-        self.geometry("350x180")
-        self.resizable(False, False)
-        self.grab_set() 
-
-        # Configure frame padding
-        self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(0, weight=1)
-
-        # Title label
-        self.label = ctk.CTkLabel(self, text=title, font=("Segoe UI", 14, "bold"))
-        self.label.pack(pady=(15, 10))
-
-        # Entry field
-        self.entry = ctk.CTkEntry(self, show="*", placeholder_text="Enter PIN")
-        self.entry.pack(pady=5, padx=20, fill="x")
-        self.entry.focus()
-
-        # Buttons frame
-        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        btn_frame.pack(pady=15)
-
-        self.ok_btn = ctk.CTkButton(btn_frame, text="OK", width=80, command=self.on_ok, fg_color="#4a90e2")
-        self.ok_btn.pack(side="left", padx=10)
-
-        self.cancel_btn = ctk.CTkButton(btn_frame, text="Cancel", width=80, command=self.on_cancel, fg_color="#d9534f")
-        self.cancel_btn.pack(side="right", padx=10)
-
-        # Bind Enter and Escape keys
-        self.bind("<Return>", lambda e: self.on_ok())
-        self.bind("<Escape>", lambda e: self.on_cancel())
-
-    def on_ok(self):
-        pin = self.entry.get().strip()
-        if not pin:
-            messagebox.showwarning("Warning", "PIN cannot be empty!")
-            return
-        if len(pin) < 6:  # enforce minimum length
-            messagebox.showwarning("Warning", "PIN too short. Must be at least 6 characters.")
-            return
-        self.pin = pin
-        self.destroy()
-
-    def on_cancel(self):
-        self.pin = None
-        self.destroy()
 
 if __name__ == "__main__":
     app = SecureChatApp()
