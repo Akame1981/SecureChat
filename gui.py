@@ -8,7 +8,7 @@ from gui.widgets.sidebar import Sidebar
 from gui.settings import SettingsWindow
 from gui.tooltip import ToolTip
 from gui.pin_dialog import PinDialog
-from utils.recipients import recipients, add_recipient, get_recipient_key
+from utils.recipients import recipients, add_recipient, get_recipient_key, get_recipient_name
 from tkinter import simpledialog, messagebox, Toplevel
 import tkinter as tk
 
@@ -158,12 +158,16 @@ class SecureChatApp(ctk.CTk):
         messagebox.showinfo("Copied", "Public key copied!")
 
     # ---------------- Messages ----------------
-    def display_message(self, sender, text):
+    def display_message(self, sender_pub, text):
         self.messages_box.configure(state='normal')
-        tag = "you" if sender == "You" else "other"
-        self.messages_box.insert(tk.END, f"{sender}: {text}\n", tag)
+        display_sender = "You" if sender_pub == self.my_pub_hex else get_recipient_name(sender_pub) or sender_pub
+        tag = "you" if display_sender == "You" else "other"
+        self.messages_box.insert(tk.END, f"{display_sender}: {text}\n", tag)
         self.messages_box.see(tk.END)
         self.messages_box.configure(state='disabled')
+
+
+
 
 
 
@@ -186,7 +190,9 @@ class SecureChatApp(ctk.CTk):
             messagebox.showwarning("No recipient", "Select a recipient first (/choose)")
             return
         if send_message(self.recipient_pub_hex, self.signing_pub_hex, text, self.signing_key):
-            self.display_message("You", text)
+            # pass recipient_pub_hex for consistency? Or pass my_pub_hex for "You"
+            self.display_message(self.my_pub_hex, text)
+
 
 
 
@@ -198,9 +204,13 @@ class SecureChatApp(ctk.CTk):
         while not self.stop_event.is_set():
             msgs = fetch_messages(self.my_pub_hex, self.private_key)
             for msg in msgs:
-                self.after(0, lambda m=msg: self.display_message(m["from"], m["message"]))
-
+                sender_pub = msg["from"]
+                message = msg["message"]
+                # Use default argument to capture values properly
+                self.after(0, lambda sp=sender_pub, m=message: self.display_message(sp, m))
             time.sleep(1)
+
+
 
     # ---------------- Settings ----------------
 

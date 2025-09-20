@@ -23,8 +23,13 @@ def save_recipients():
 
 # Add a recipient
 def add_recipient(name: str, pub_key: str):
-    recipients[name] = pub_key
+    recipients[name] = pub_key.strip().lower()  # remove spaces & lowercase
     save_recipients()
+
+
+
+
+
 
 # Delete a recipient
 def delete_recipient(name: str):
@@ -34,4 +39,12 @@ def delete_recipient(name: str):
 
 # Get a recipient's public key
 def get_recipient_key(name: str):
-    return recipients.get(name)
+    key = recipients.get(name)
+    return key.lower() if key else None
+
+def get_recipient_name(pub_key: str):
+    pub_key = pub_key.strip().lower()
+    for name, key in recipients.items():
+        if key.strip().lower() == pub_key:
+            return name
+    return None
