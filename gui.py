@@ -4,7 +4,8 @@ from tkinter import simpledialog, messagebox, scrolledtext, Toplevel
 import threading
 import time
 
-from crypto import load_key, save_key, PrivateKey, SigningKey
+from crypto import load_key, save_key, PrivateKey, SigningKey, KEY_FILE
+
 from network import send_message, fetch_messages
 from recipients import recipients, add_recipient, get_recipient_key
 import customtkinter as ctk
@@ -63,8 +64,7 @@ class SecureChatApp(ctk.CTk):
 
 # ---------------- Keypair ----------------
     def init_keypair(self):
-
-        if os.path.exists("keypair.bin"):
+        if os.path.exists(KEY_FILE):
             dlg = PinDialog(self, "Enter PIN to unlock keypair")
             self.wait_window(dlg)
             pin = dlg.pin
@@ -72,7 +72,6 @@ class SecureChatApp(ctk.CTk):
                 self.destroy()
                 return
             try:
-                # load_key now returns both keys
                 self.private_key, self.signing_key = load_key(pin)
             except ValueError:
                 messagebox.showerror("Error", "Incorrect PIN or corrupted key!")
@@ -87,7 +86,7 @@ class SecureChatApp(ctk.CTk):
                 return
 
             self.private_key = PrivateKey.generate()
-            self.signing_key = SigningKey.generate()  # new signing key
+            self.signing_key = SigningKey.generate()
             save_key(self.private_key, self.signing_key, pin)
             messagebox.showinfo("Key Created", "New keypair generated!")
 
