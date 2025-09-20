@@ -32,6 +32,8 @@ class SecureChatApp(tk.Tk):
 
 # ---------------- Keypair ----------------
     def init_keypair(self):
+        from crypto import SigningKey  # import here to avoid circular imports if needed
+
         if os.path.exists("keypair.bin"):
             dlg = PinDialog(self, "Enter PIN to unlock keypair")
             self.wait_window(dlg)
@@ -40,7 +42,8 @@ class SecureChatApp(tk.Tk):
                 self.destroy()
                 return
             try:
-                self.private_key = load_key(pin)
+                # load_key now returns both keys
+                self.private_key, self.signing_key = load_key(pin)
             except ValueError:
                 messagebox.showerror("Error", "Incorrect PIN or corrupted key!")
                 self.destroy()
@@ -52,12 +55,17 @@ class SecureChatApp(tk.Tk):
             if not pin:
                 self.destroy()
                 return
+
             self.private_key = PrivateKey.generate()
-            save_key(self.private_key, pin)
+            self.signing_key = SigningKey.generate()  # new signing key
+            save_key(self.private_key, self.signing_key, pin)
             messagebox.showinfo("Key Created", "New keypair generated!")
 
         self.public_key = self.private_key.public_key
         self.my_pub_hex = self.public_key.encode().hex()
+        self.signing_pub_hex = self.signing_key.verify_key.encode().hex()
+
+
 
 
     # ---------------- GUI ----------------
@@ -113,8 +121,13 @@ class SecureChatApp(tk.Tk):
         if not self.recipient_pub_hex:
             messagebox.showwarning("No recipient", "Select a recipient first (/choose)")
             return
-        if send_message(self.recipient_pub_hex, self.my_pub_hex, text):
+        if send_message(self.recipient_pub_hex, self.signing_pub_hex, text, self.signing_key):
             self.display_message("You", text)
+
+
+
+
+
         self.input_box.delete(0, tk.END)
 
     def fetch_loop(self):
@@ -138,11 +151,13 @@ class SecureChatApp(tk.Tk):
                 if not pin:
                     return
                 self.private_key = PrivateKey.generate()
-                save_key(self.private_key, pin)
+                self.signing_key = SigningKey.generate()  # <-- add this
+                save_key(self.private_key, self.signing_key, pin)
                 self.public_key = self.private_key.public_key
                 self.my_pub_hex = self.public_key.encode().hex()
                 self.pub_label.config(text=f"My Public Key: {self.my_pub_hex}")
                 messagebox.showinfo("New Key", "New keypair generated!")
+
 
         tk.Button(settings, text="Generate New Keypair", command=new_key, bg="#4a90e2", fg="white").pack(pady=10)
 
