@@ -295,31 +295,84 @@ class SecureChatApp(ctk.CTk):
             messagebox.showinfo("Success", "PIN updated!")
 
         tk.Button(settings, text="Change Pincode", command=change_pin, bg="#4a90e2", fg="white").pack(pady=10)
-
         # Manage recipients
         def show_recipients():
             rec_window = Toplevel(settings)
             rec_window.title("Recipients")
-            rec_window.geometry("350x300")
+            rec_window.geometry("400x400")
             rec_window.configure(bg="#1e1e2f")
 
-            listbox = tk.Listbox(rec_window, bg="#2e2e3f", fg="white")
-            listbox.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-            for name, key in recipients.items():
-                listbox.insert(tk.END, f"{name}: {key}")
+            frame = ctk.CTkFrame(rec_window, fg_color="transparent")
+            frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-            def delete_selected():
+            listbox = tk.Listbox(frame, bg="#2e2e3f", fg="white")
+            listbox.pack(side="left", fill="both", expand=True, pady=5)
+
+            scrollbar = tk.Scrollbar(frame, command=listbox.yview)
+            scrollbar.pack(side="right", fill="y")
+            listbox.config(yscrollcommand=scrollbar.set)
+
+            def refresh_list():
+                listbox.delete(0, tk.END)
+                for name, key in recipients.items():
+                    listbox.insert(tk.END, f"{name}: {key}")
+
+            refresh_list()
+
+            def add_recipient_gui():
+                name = simpledialog.askstring("Add Recipient", "Name:")
+                if not name:
+                    return
+                pub_key = simpledialog.askstring("Add Recipient", "Public Key (64 hex chars):")
+                if not pub_key or len(pub_key) != 64:
+                    messagebox.showerror("Error", "Invalid public key")
+                    return
+                add_recipient(name, pub_key)
+                refresh_list()
+                app.update_recipient_list()
+
+            def edit_recipient():
                 sel = listbox.curselection()
-                if sel:
-                    entry = listbox.get(sel[0])
-                    name = entry.split(":")[0]
-                    if messagebox.askyesno("Delete", f"Delete {name}?"):
-                        recipients.pop(name)
-                        listbox.delete(sel[0])
+                if not sel:
+                    messagebox.showwarning("Select", "Select a recipient to edit")
+                    return
+                entry = listbox.get(sel[0])
+                name, old_key = entry.split(":")
+                name = name.strip()
+                old_key = old_key.strip()
+                new_name = simpledialog.askstring("Edit Recipient", "New Name:", initialvalue=name)
+                if not new_name:
+                    return
+                new_key = simpledialog.askstring("Edit Recipient", "New Public Key:", initialvalue=old_key)
+                if not new_key or len(new_key) != 64:
+                    messagebox.showerror("Error", "Invalid public key")
+                    return
+                # Update recipient dict
+                recipients.pop(name)
+                add_recipient(new_name, new_key)
+                refresh_list()
+                app.update_recipient_list()
 
-            tk.Button(rec_window, text="Delete Selected", command=delete_selected, bg="#d9534f", fg="white").pack(pady=5)
+            def delete_recipient():
+                sel = listbox.curselection()
+                if not sel:
+                    messagebox.showwarning("Select", "Select a recipient to delete")
+                    return
+                entry = listbox.get(sel[0])
+                name = entry.split(":")[0].strip()
+                if messagebox.askyesno("Delete", f"Delete {name}?"):
+                    recipients.pop(name)
+                    refresh_list()
+                    app.update_recipient_list()
 
-        tk.Button(settings, text="Manage Recipients", command=show_recipients, bg="#4a90e2", fg="white").pack(pady=10)
+            btn_frame = ctk.CTkFrame(rec_window, fg_color="transparent")
+            btn_frame.pack(pady=5)
+            ctk.CTkButton(btn_frame, text="Add", command=add_recipient_gui, fg_color="#4a90e2").pack(side="left", padx=5)
+            ctk.CTkButton(btn_frame, text="Edit", command=edit_recipient, fg_color="#f0ad4e").pack(side="left", padx=5)
+            ctk.CTkButton(btn_frame, text="Delete", command=delete_recipient, fg_color="#d9534f").pack(side="left", padx=5)
+
+
+        ctk.CTkButton(settings, text="Manage Recipients", command=show_recipients, fg_color="#4a90e2").pack(pady=10)
 
     # ---------------- Recipients ----------------
     def add_new_recipient(self):
