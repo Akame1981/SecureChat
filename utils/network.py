@@ -1,5 +1,5 @@
 import requests
-from crypto import encrypt_message, decrypt_message, sign_message
+from utils.crypto import encrypt_message, decrypt_message, sign_message
 
 SERVER_URL = "http://127.0.0.1:8000"
 

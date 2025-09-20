@@ -1,5 +1,6 @@
 import customtkinter as ctk
-from recipients import recipients, get_recipient_key
+from utils.recipients import recipients, get_recipient_key
+
 
 class Sidebar(ctk.CTkFrame):
     def __init__(self, parent, select_callback, add_callback):
