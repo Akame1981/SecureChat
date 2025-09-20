@@ -114,7 +114,7 @@ class SettingsWindow(Toplevel):
             name = entry.split(":")[0].strip()
             if messagebox.askyesno("Delete", f"Delete {name}?"):
                 from recipients import delete_recipient as del_rec  # import your function
-                del_rec(name)  # this removes from dict and saves to JSON
+                del_rec(name)  
                 refresh_list()
                 self.app.update_recipient_list()
 
