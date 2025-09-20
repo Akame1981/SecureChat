@@ -8,8 +8,34 @@ from crypto import load_key, save_key, PrivateKey
 from network import send_message, fetch_messages
 from recipients import recipients, add_recipient, get_recipient_key
 import customtkinter as ctk
+class ToolTip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tipwindow = None
+        widget.bind("<Enter>", self.show_tip)
+        widget.bind("<Leave>", self.hide_tip)
+
+    def show_tip(self, event=None):
+        if self.tipwindow or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 10
+        self.tipwindow = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)  # remove window decorations
+        tw.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(tw, text=self.text, justify="left", background="#2e2e3f",
+                         foreground="white", relief="solid", borderwidth=1, font=("Segoe UI", 10))
+        label.pack(ipadx=5, ipady=2)
+
+    def hide_tip(self, event=None):
+        if self.tipwindow:
+            self.tipwindow.destroy()
+            self.tipwindow = None
 
 class SecureChatApp(ctk.CTk):
+
+    
     def __init__(self):
         super().__init__()
         self.title("🔒 Secure Chat")
@@ -95,21 +121,52 @@ class SecureChatApp(ctk.CTk):
         chat_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
         chat_frame.pack(side="right", fill="both", expand=True)
 
-        # Public Key Frame
+
+        # ---------------- Public Key Frame ----------------
         pub_frame = ctk.CTkFrame(chat_frame, fg_color="#2e2e3f", corner_radius=10)
         pub_frame.pack(fill="x", padx=10, pady=10)
+        pub_frame.grid_columnconfigure(0, weight=1)
+        pub_frame.grid_columnconfigure(1, weight=0)
+        pub_frame.grid_columnconfigure(2, weight=0)
 
-        self.pub_label = ctk.CTkLabel(
-            pub_frame,
-            text=f"My Public Key: {self.my_pub_hex}",
-            wraplength=550,
-            justify="left",
-            anchor="w"
-        )
-        self.pub_label.pack(side="left", padx=10, pady=10, fill="x", expand=True)
+        # Copy and Settings buttons first
+        self.copy_btn = ctk.CTkButton(pub_frame, text="Copy", command=self.copy_pub_key, fg_color="#4a4a6a")
+        self.copy_btn.grid(row=0, column=1, padx=5, pady=10)
 
-        ctk.CTkButton(pub_frame, text="Copy", command=self.copy_pub_key, fg_color="#4a4a6a").pack(side="right", padx=5)
-        ctk.CTkButton(pub_frame, text="Settings", command=self.open_settings, fg_color="#4a90e2").pack(side="right", padx=5)
+        self.settings_btn = ctk.CTkButton(pub_frame, text="Settings", command=self.open_settings, fg_color="#4a90e2")
+        self.settings_btn.grid(row=0, column=2, padx=5, pady=10)
+
+        # Then the label
+        self.pub_label = ctk.CTkLabel(pub_frame, text="", justify="left", anchor="w")
+        self.pub_label.grid(row=0, column=0, padx=10, pady=10, sticky="we")
+
+        def update_pub_label(event=None):
+            pub_frame.update_idletasks()
+            frame_width = pub_frame.winfo_width() - self.copy_btn.winfo_width() - self.settings_btn.winfo_width() - 30
+            approx_char_width = 7
+            max_chars = max(10, frame_width // approx_char_width)
+
+            truncated = self.my_pub_hex
+            if len(truncated) > max_chars:
+                truncated = truncated[:max_chars-3] + "..."
+            
+            self.pub_label.configure(text=f"My Public Key: {truncated}")
+
+            # Add tooltip for full key
+            ToolTip(self.pub_label, self.my_pub_hex)
+
+
+        pub_frame.bind("<Configure>", update_pub_label)
+        self.after(200, update_pub_label)  # initial update
+
+
+
+        self.copy_btn = ctk.CTkButton(pub_frame, text="Copy", command=self.copy_pub_key, fg_color="#4a4a6a")
+        self.copy_btn.grid(row=0, column=1, padx=5, pady=10)
+
+        self.settings_btn = ctk.CTkButton(pub_frame, text="Settings", command=self.open_settings, fg_color="#4a90e2")
+        self.settings_btn.grid(row=0, column=2, padx=5, pady=10)
+
 
         # Messages Box
         self.messages_box = ctk.CTkTextbox(chat_frame, corner_radius=10, fg_color="#2e2e3f", text_color="white")
