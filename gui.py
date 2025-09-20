@@ -302,9 +302,6 @@ class SecureChatApp(ctk.CTk):
         self.destroy()
 
     # ---------------- PIN Dialog ----------------
-import customtkinter as ctk
-from tkinter import messagebox
-
 class PinDialog(ctk.CTkToplevel):
     def __init__(self, parent, title="Enter PIN", new_pin=False):
         super().__init__(parent)
