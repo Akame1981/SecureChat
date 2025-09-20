@@ -30,10 +30,12 @@ class SecureChatApp(tk.Tk):
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
-    # ---------------- Keypair ----------------
+# ---------------- Keypair ----------------
     def init_keypair(self):
         if os.path.exists("keypair.bin"):
-            pin = simpledialog.askstring("Unlock Keypair", "Enter your pincode:", show="*")
+            dlg = PinDialog(self, "Enter PIN to unlock keypair")
+            self.wait_window(dlg)
+            pin = dlg.pin
             if not pin:
                 self.destroy()
                 return
@@ -44,7 +46,9 @@ class SecureChatApp(tk.Tk):
                 self.destroy()
                 return
         else:
-            pin = simpledialog.askstring("Set PIN", "Set a new pincode:", show="*")
+            dlg = PinDialog(self, "Set a new PIN", new_pin=True)
+            self.wait_window(dlg)
+            pin = dlg.pin
             if not pin:
                 self.destroy()
                 return
@@ -54,6 +58,7 @@ class SecureChatApp(tk.Tk):
 
         self.public_key = self.private_key.public_key
         self.my_pub_hex = self.public_key.encode().hex()
+
 
     # ---------------- GUI ----------------
     def create_widgets(self):
@@ -222,10 +227,56 @@ class SecureChatApp(tk.Tk):
         tk.Button(choose_win, text="Select", command=select, bg="#4a90e2", fg="white").pack(pady=5)
 
     # ---------------- Close ----------------
+
+    
     def on_close(self):
         self.stop_event.set()
         self.destroy()
 
+    # ---------------- PIN Dialog ----------------
+class PinDialog(tk.Toplevel):
+    def __init__(self, parent, title="Enter PIN", new_pin=False):
+        super().__init__(parent)
+        self.parent = parent
+        self.new_pin = new_pin
+        self.pin = None
+
+        self.title(title)
+        self.geometry("350x150")
+        self.configure(bg="#1e1e2f")
+        self.resizable(False, False)
+        self.grab_set()  # Make modal
+
+        tk.Label(self, text=title, bg="#1e1e2f", fg="white", font=("Arial", 12, "bold")).pack(pady=(10,5))
+
+        self.entry = tk.Entry(self, show="*", bg="#3e3e50", fg="white", relief="flat", font=("Arial", 12))
+        self.entry.pack(pady=5, padx=20, fill=tk.X)
+        self.entry.focus()
+
+        btn_frame = tk.Frame(self, bg="#1e1e2f")
+        btn_frame.pack(pady=10)
+
+        tk.Button(btn_frame, text="OK", bg="#4a90e2", fg="white", relief="flat", width=10, command=self.on_ok).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="Cancel", bg="#d9534f", fg="white", relief="flat", width=10, command=self.on_cancel).pack(side=tk.RIGHT, padx=5)
+
+        self.bind("<Return>", lambda e: self.on_ok())
+        self.bind("<Escape>", lambda e: self.on_cancel())
+
+    def on_ok(self):
+        pin = self.entry.get().strip()
+        if not pin:
+            messagebox.showwarning("Warning", "PIN cannot be empty!")
+            return
+        if len(pin) < 6:  # enforce minimum length
+            messagebox.showwarning("Warning", "PIN too short. Must be at least 6 characters.")
+            return
+        self.pin = pin
+        self.destroy()
+
+
+    def on_cancel(self):
+        self.pin = None
+        self.destroy()
 
 if __name__ == "__main__":
     app = SecureChatApp()
