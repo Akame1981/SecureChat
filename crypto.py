@@ -17,16 +17,13 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-KEY_FILE = os.path.join(DATA_DIR, "keypair.bin")  # moved to data folder
+KEY_FILE = os.path.join(DATA_DIR, "keypair.bin")
 MIN_PIN_LENGTH = 6
-HMAC_KEY_SIZE = 32
-
 
 # -------------------------
 # --- Memory hygiene -------
 # -------------------------
 def zero_bytes(data):
-    """Overwrite sensitive data in memory (best-effort)."""
     if isinstance(data, str):
         data = bytearray(data.encode())
     elif isinstance(data, bytes):
@@ -37,8 +34,7 @@ def zero_bytes(data):
 # -------------------------
 # --- Key derivation -------
 # -------------------------
-def derive_master_key(pin: str, salt: bytes, size: int = SecretBox.KEY_SIZE * 2) -> bytes:
-    """Derive a master key of given size (default 64 bytes) from PIN using scrypt."""
+def derive_master_key(pin: str, salt: bytes, size: int = SecretBox.KEY_SIZE*2) -> bytes:
     if len(pin) < MIN_PIN_LENGTH:
         raise ValueError(f"PIN too short. Must be at least {MIN_PIN_LENGTH} characters.")
     pin_bytes = pin.encode()
@@ -52,86 +48,91 @@ def derive_master_key(pin: str, salt: bytes, size: int = SecretBox.KEY_SIZE * 2)
     zero_bytes(pin_bytes)
     return key
 
+# -------------------------
+# --- Key saving / loading ---
+# -------------------------
 def save_key(private_key: PrivateKey, signing_key: SigningKey, pin: str):
-    """Encrypt and save private + signing key with PIN-derived key and HMAC."""
-    salt = random(scrypt.SALTBYTES)
-    master_key = derive_master_key(pin, salt)  # 64 bytes
+    """Save keys encrypted with PIN and HMAC"""
+    if os.path.exists(KEY_FILE):
+        # Load existing salt if file exists
+        with open(KEY_FILE, "rb") as f:
+            version = f.read(1)
+            if version != b'\x01':
+                raise ValueError("Unsupported key file version")
+            salt = f.read(scrypt.SALTBYTES)
+    else:
+        salt = random(scrypt.SALTBYTES)
 
+    master_key = derive_master_key(pin, salt)
     enc_key = master_key[:32]
     hmac_key = master_key[32:]
 
     box = SecretBox(enc_key)
-
-    # Combine keys
     data = private_key.encode() + signing_key.encode()
     encrypted = box.encrypt(data)
-
-    # HMAC for integrity
     tag = hmac.new(hmac_key, encrypted, hashlib.sha256).digest()
 
-    version = b'\x01'
     with open(KEY_FILE, "wb") as f:
-        f.write(version + salt + tag + encrypted)
-
+        f.write(b'\x01' + salt + tag + encrypted)
     os.chmod(KEY_FILE, stat.S_IRUSR | stat.S_IWUSR)
+
     zero_bytes(master_key)
     zero_bytes(enc_key)
     zero_bytes(hmac_key)
 
 def load_key(pin: str):
-    """Load private + signing key and verify HMAC using PIN-derived key."""
+    """Load keys using PIN"""
     if not os.path.exists(KEY_FILE):
         raise FileNotFoundError("Key file not found.")
+
     with open(KEY_FILE, "rb") as f:
         data = f.read()
 
-    version = data[0]
-    if version != 1:
+    if data[0] != 1:
         raise ValueError("Unsupported key file version")
 
     salt = data[1:1+scrypt.SALTBYTES]
     tag = data[1+scrypt.SALTBYTES:1+scrypt.SALTBYTES+32]
     encrypted = data[1+scrypt.SALTBYTES+32:]
 
-    master_key = derive_master_key(pin, salt)  # same derivation (64 bytes!)
+    master_key = derive_master_key(pin, salt)
     enc_key = master_key[:32]
     hmac_key = master_key[32:]
 
-    # Verify HMAC
     expected_tag = hmac.new(hmac_key, encrypted, hashlib.sha256).digest()
     if not hmac.compare_digest(expected_tag, tag):
         zero_bytes(master_key)
         zero_bytes(enc_key)
         zero_bytes(hmac_key)
-        raise ValueError("Key file integrity check failed!")
+        raise ValueError("Incorrect PIN or corrupted key file!")
 
     box = SecretBox(enc_key)
-
     try:
         decrypted = box.decrypt(encrypted)
         priv_bytes = decrypted[:32]
         sign_bytes = decrypted[32:]
         return PrivateKey(priv_bytes), SigningKey(sign_bytes)
-    except CryptoError:
-        raise ValueError("Incorrect PIN or corrupted key file!")
     finally:
         zero_bytes(master_key)
         zero_bytes(enc_key)
         zero_bytes(hmac_key)
 
-
+# -------------------------
+# --- Change PIN ----------
+# -------------------------
+def change_pin(old_pin: str, new_pin: str):
+    priv, sign = load_key(old_pin)
+    save_key(priv, sign, new_pin)
 
 # -------------------------
 # --- Authenticated Encryption ---
 # -------------------------
 def encrypt_message(text: str, recipient_hex: str) -> str:
-    """Encrypt with recipient's public key and add AE with SecretBox."""
     recipient = PublicKey(bytes.fromhex(recipient_hex))
     sealed = SealedBox(recipient).encrypt(text.encode())
     return base64.b64encode(sealed).decode()
 
 def decrypt_message(enc_b64: str, private_key: PrivateKey) -> str:
-    """Decrypt message using recipient's private key."""
     enc = base64.b64decode(enc_b64)
     box = SealedBox(private_key)
     try:
@@ -161,5 +162,5 @@ def is_strong_pin(pin: str) -> bool:
     if len(pin) < MIN_PIN_LENGTH:
         return False
     if pin.isdigit():
-        return len(pin) >= 10  # numeric-only stronger
+        return len(pin) >= 10
     return True
