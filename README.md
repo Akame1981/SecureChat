@@ -27,14 +27,12 @@ It allows users to send encrypted messages securely between public keys, store r
 
 ## 🚀 Installation
 
+
 1. **Clone the repository**
 
-
-
-
-- **git clone** https://github.com/Akame1981/SecureChat.git
-
-- **cd SecureChat**
+```bash
+git clone https://github.com/Akame1981/SecureChat.git
+cd SecureChat
 
 2. Create and activate a Python virtual environment:
 
@@ -42,11 +40,11 @@ It allows users to send encrypted messages securely between public keys, store r
     python -m venv venv
 
 
-# Windows
+### Windows
 venv\Scripts\activate
 
 
-# macOS/Linux
+### macOS/Linux
 source venv/bin/activate
 
 
@@ -56,6 +54,7 @@ source venv/bin/activate
 
 
 pip install -r requirements.txt
+
 
 
 # Running the App
