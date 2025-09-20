@@ -55,7 +55,7 @@ source venv/bin/activate
 
 pip install -r requirements.txt
 
-```md
+```
 
 # Running the App
 Start the FastAPI server
