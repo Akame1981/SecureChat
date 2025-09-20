@@ -8,6 +8,8 @@ from crypto import load_key, save_key, PrivateKey
 from network import send_message, fetch_messages
 from recipients import recipients, add_recipient, get_recipient_key
 import customtkinter as ctk
+from crypto import SigningKey
+
 class ToolTip:
     def __init__(self, widget, text):
         self.widget = widget
@@ -203,18 +205,23 @@ class SecureChatApp(ctk.CTk):
             widget.destroy()
 
         for name, key in recipients.items():
+            # Highlight the selected recipient
+            is_selected = (self.recipient_pub_hex == key)
             btn = ctk.CTkButton(
                 self.recipient_listbox,
                 text=name,
-                fg_color="#3e3e50",
+                fg_color="#4a90e2" if is_selected else "#3e3e50",  # highlight selected
                 hover_color="#4a4a6a",
                 command=lambda n=name: self.select_recipient(n)
             )
             btn.pack(fill="x", pady=2, padx=5)
 
+
     def select_recipient(self, name):
         self.recipient_pub_hex = get_recipient_key(name)
-        messagebox.showinfo("Selected", f"{name} selected")
+        self.update_recipient_list()  # refresh buttons to show highlight
+        
+
 
     def on_send(self):
         text = self.input_box.get().strip()
@@ -261,11 +268,11 @@ class SecureChatApp(ctk.CTk):
                 if not pin:
                     return
                 self.private_key = PrivateKey.generate()
-                self.signing_key = SigningKey.generate()  # <-- add this
+                self.signing_key = SigningKey.generate()  # now works
                 save_key(self.private_key, self.signing_key, pin)
                 self.public_key = self.private_key.public_key
                 self.my_pub_hex = self.public_key.encode().hex()
-                self.pub_label.config(text=f"My Public Key: {self.my_pub_hex}")
+                self.pub_label.configure(text=f"My Public Key: {self.my_pub_hex}")
                 messagebox.showinfo("New Key", "New keypair generated!")
 
 
@@ -346,7 +353,7 @@ class SecureChatApp(ctk.CTk):
             if sel:
                 name = listbox.get(sel[0])
                 self.recipient_pub_hex = get_recipient_key(name)
-                messagebox.showinfo("Selected", f"{name} selected")
+                
                 choose_win.destroy()
 
         tk.Button(choose_win, text="Select", command=select, bg="#4a90e2", fg="white").pack(pady=5)
