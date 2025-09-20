@@ -7,14 +7,17 @@ import time
 from crypto import load_key, save_key, PrivateKey
 from network import send_message, fetch_messages
 from recipients import recipients, add_recipient, get_recipient_key
+import customtkinter as ctk
 
-
-class SecureChatApp(tk.Tk):
+class SecureChatApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("🔒 Secure Chat")
         self.geometry("600x600")
-        self.configure(bg="#1e1e2f")
+
+        # Remove self.configure(bg=...) — CTk handles dark mode
+        ctk.set_appearance_mode("dark")       # optional: ensure dark theme
+        ctk.set_default_color_theme("blue")   # optional: theme color
 
         self.private_key = None
         self.public_key = None
@@ -70,27 +73,57 @@ class SecureChatApp(tk.Tk):
 
     # ---------------- GUI ----------------
     def create_widgets(self):
-        # Public key frame
-        pub_frame = tk.Frame(self, bg="#2e2e3f", pady=5)
-        pub_frame.pack(fill=tk.X)
-        self.pub_label = tk.Label(pub_frame, text=f"My Public Key: {self.my_pub_hex}", fg="white", bg="#2e2e3f", wraplength=550, justify="left")
-        self.pub_label.pack(side=tk.LEFT, padx=10)
-        tk.Button(pub_frame, text="Copy", command=self.copy_pub_key, bg="#4a4a6a", fg="white", relief="flat", padx=10).pack(side=tk.RIGHT, padx=10)
-        tk.Button(pub_frame, text="Settings", command=self.open_settings, bg="#4a90e2", fg="white", relief="flat", padx=10).pack(side=tk.RIGHT, padx=10)
+        # ---------------- Main Layout ----------------
+        main_frame = ctk.CTkFrame(self, fg_color="transparent")
+        main_frame.pack(fill="both", expand=True)
 
-        # Messages box
-        self.messages_box = scrolledtext.ScrolledText(self, width=70, height=25, state='disabled', bg="#2e2e3f", fg="white", wrap=tk.WORD, relief="flat")
-        self.messages_box.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
-        self.messages_box.tag_config("you", foreground="#4a90e2")
-        self.messages_box.tag_config("other", foreground="#0F8100")
+        # Sidebar (left)
+        self.sidebar = ctk.CTkFrame(main_frame, width=200, corner_radius=0)
+        self.sidebar.pack(side="left", fill="y")
 
-        # Input frame
-        input_frame = tk.Frame(self, bg="#1e1e2f")
-        input_frame.pack(fill=tk.X, padx=10, pady=(0,10))
-        self.input_box = tk.Entry(input_frame, width=50, bg="#3e3e50", fg="white", relief="flat", insertbackground="white")
-        self.input_box.pack(side=tk.LEFT, padx=(0,5), pady=5, ipady=5)
+        # Add sidebar content: list of recipients
+        ctk.CTkLabel(self.sidebar, text="Recipients", font=("Segoe UI", 14, "bold")).pack(pady=10)
+        self.recipient_listbox = ctk.CTkScrollableFrame(self.sidebar, width=180)
+        self.recipient_listbox.pack(fill="y", expand=True, padx=10, pady=(0,10))
+
+        self.update_recipient_list()
+
+        # Button to add new recipient
+        ctk.CTkButton(self.sidebar, text="+ Add Recipient", command=self.add_new_recipient, fg_color="#4a90e2").pack(pady=10, padx=10)
+
+        # ---------------- Chat Area (right) ----------------
+        chat_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        chat_frame.pack(side="right", fill="both", expand=True)
+
+        # Public Key Frame
+        pub_frame = ctk.CTkFrame(chat_frame, fg_color="#2e2e3f", corner_radius=10)
+        pub_frame.pack(fill="x", padx=10, pady=10)
+
+        self.pub_label = ctk.CTkLabel(
+            pub_frame,
+            text=f"My Public Key: {self.my_pub_hex}",
+            wraplength=550,
+            justify="left",
+            anchor="w"
+        )
+        self.pub_label.pack(side="left", padx=10, pady=10, fill="x", expand=True)
+
+        ctk.CTkButton(pub_frame, text="Copy", command=self.copy_pub_key, fg_color="#4a4a6a").pack(side="right", padx=5)
+        ctk.CTkButton(pub_frame, text="Settings", command=self.open_settings, fg_color="#4a90e2").pack(side="right", padx=5)
+
+        # Messages Box
+        self.messages_box = ctk.CTkTextbox(chat_frame, corner_radius=10, fg_color="#2e2e3f", text_color="white")
+        self.messages_box.pack(padx=10, pady=10, fill="both", expand=True)
+
+        # Input Frame
+        input_frame = ctk.CTkFrame(chat_frame, fg_color="transparent")
+        input_frame.pack(fill="x", padx=10, pady=(0,10))
+
+        self.input_box = ctk.CTkEntry(input_frame, placeholder_text="Type a message...")
+        self.input_box.pack(side="left", expand=True, fill="x", padx=(0,5), pady=5)
         self.input_box.bind("<Return>", lambda event: self.on_send())
-        tk.Button(input_frame, text="Send", command=self.on_send, bg="#4a90e2", fg="white", relief="flat", padx=15, pady=5).pack(side=tk.LEFT, padx=(0,5))
+
+        ctk.CTkButton(input_frame, text="Send", command=self.on_send, fg_color="#4a90e2").pack(side="right", padx=(0,5), pady=5)
 
     # ---------------- Public key ----------------
     def copy_pub_key(self):
@@ -105,6 +138,26 @@ class SecureChatApp(tk.Tk):
         self.messages_box.insert(tk.END, f"{sender}: {text}\n", tag)
         self.messages_box.see(tk.END)
         self.messages_box.configure(state='disabled')
+
+
+    def update_recipient_list(self):
+        # Clear existing buttons
+        for widget in self.recipient_listbox.winfo_children():
+            widget.destroy()
+
+        for name, key in recipients.items():
+            btn = ctk.CTkButton(
+                self.recipient_listbox,
+                text=name,
+                fg_color="#3e3e50",
+                hover_color="#4a4a6a",
+                command=lambda n=name: self.select_recipient(n)
+            )
+            btn.pack(fill="x", pady=2, padx=5)
+
+    def select_recipient(self, name):
+        self.recipient_pub_hex = get_recipient_key(name)
+        messagebox.showinfo("Selected", f"{name} selected")
 
     def on_send(self):
         text = self.input_box.get().strip()
@@ -249,7 +302,10 @@ class SecureChatApp(tk.Tk):
         self.destroy()
 
     # ---------------- PIN Dialog ----------------
-class PinDialog(tk.Toplevel):
+import customtkinter as ctk
+from tkinter import messagebox
+
+class PinDialog(ctk.CTkToplevel):
     def __init__(self, parent, title="Enter PIN", new_pin=False):
         super().__init__(parent)
         self.parent = parent
@@ -257,23 +313,34 @@ class PinDialog(tk.Toplevel):
         self.pin = None
 
         self.title(title)
-        self.geometry("350x150")
-        self.configure(bg="#1e1e2f")
+        self.geometry("350x180")
         self.resizable(False, False)
         self.grab_set()  # Make modal
 
-        tk.Label(self, text=title, bg="#1e1e2f", fg="white", font=("Arial", 12, "bold")).pack(pady=(10,5))
+        # Configure frame padding
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
 
-        self.entry = tk.Entry(self, show="*", bg="#3e3e50", fg="white", relief="flat", font=("Arial", 12))
-        self.entry.pack(pady=5, padx=20, fill=tk.X)
+        # Title label
+        self.label = ctk.CTkLabel(self, text=title, font=("Segoe UI", 14, "bold"))
+        self.label.pack(pady=(15, 10))
+
+        # Entry field
+        self.entry = ctk.CTkEntry(self, show="*", placeholder_text="Enter PIN")
+        self.entry.pack(pady=5, padx=20, fill="x")
         self.entry.focus()
 
-        btn_frame = tk.Frame(self, bg="#1e1e2f")
-        btn_frame.pack(pady=10)
+        # Buttons frame
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(pady=15)
 
-        tk.Button(btn_frame, text="OK", bg="#4a90e2", fg="white", relief="flat", width=10, command=self.on_ok).pack(side=tk.LEFT, padx=5)
-        tk.Button(btn_frame, text="Cancel", bg="#d9534f", fg="white", relief="flat", width=10, command=self.on_cancel).pack(side=tk.RIGHT, padx=5)
+        self.ok_btn = ctk.CTkButton(btn_frame, text="OK", width=80, command=self.on_ok, fg_color="#4a90e2")
+        self.ok_btn.pack(side="left", padx=10)
 
+        self.cancel_btn = ctk.CTkButton(btn_frame, text="Cancel", width=80, command=self.on_cancel, fg_color="#d9534f")
+        self.cancel_btn.pack(side="right", padx=10)
+
+        # Bind Enter and Escape keys
         self.bind("<Return>", lambda e: self.on_ok())
         self.bind("<Escape>", lambda e: self.on_cancel())
 
@@ -287,7 +354,6 @@ class PinDialog(tk.Toplevel):
             return
         self.pin = pin
         self.destroy()
-
 
     def on_cancel(self):
         self.pin = None
