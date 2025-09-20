@@ -132,8 +132,7 @@ class SecureChatApp(ctk.CTk):
 
 
 
-        self.settings_btn = ctk.CTkButton(pub_frame, text="Settings", command=self.open_settings, fg_color="#4a90e2")
-        self.settings_btn.grid(row=0, column=2, padx=5, pady=10)
+
 
         # Then the label
         self.pub_label = ctk.CTkLabel(pub_frame, text="", justify="left", anchor="w")
@@ -152,7 +151,11 @@ class SecureChatApp(ctk.CTk):
             self.pub_label.configure(text=f"My Public Key: {truncated}")
 
             # Add tooltip for full key
-            ToolTip(self.pub_label, self.my_pub_hex)
+            if not hasattr(self, 'pub_tooltip'):
+                self.pub_tooltip = ToolTip(self.pub_label, self.my_pub_hex)
+            else:
+                self.pub_tooltip.text = self.my_pub_hex
+
 
 
         pub_frame.bind("<Configure>", update_pub_label)
@@ -248,7 +251,8 @@ class SecureChatApp(ctk.CTk):
         while not self.stop_event.is_set():
             msgs = fetch_messages(self.my_pub_hex, self.private_key)
             for msg in msgs:
-                self.display_message(msg["from"], msg["message"])
+                self.after(0, lambda m=msg: self.display_message(m["from"], m["message"]))
+
             time.sleep(1)
 
     # ---------------- Settings ----------------
