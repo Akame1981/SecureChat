@@ -5,19 +5,23 @@ It allows users to send encrypted messages securely between public keys, store r
 
 ---
 
-## Features
 
-- **End-to-End Encryption**: Messages are encrypted using public/private key cryptography with `PyNaCl`.
-- **FastAPI Backend**: Handles message storage and retrieval.
-- **Local Key Management**: Users set a PIN to encrypt their private key on disk.
-- **Persistent Recipients**: Add, choose, and manage contacts with saved public keys.
-- **GUI Interface**: Intuitive Tkinter-based chat client.
-- **Message History**: Stores the last 5 messages per recipient on the server.
+
+# Features
+
+- **End-to-End Encryption**: Messages are encrypted using `SealedBox` and signed with `Ed25519`.
+- **FastAPI Backend**: Handles message storage, retrieval, and ephemeral messages.
+- **Local Key Management**: Private keys are encrypted with a PIN using `SecretBox`.
+- **Persistent Recipients**: Add, select, and manage contacts with saved public keys in `recipients.json`.
+- **Tkinter GUI Client**: Cross-platform chat interface with message history.
+- **Message History**: Server stores the last 5 messages per recipient, ephemeral messages by default. (I can make database or other type of persistent storage but LIKE THAT IS MORE PRIVATE)
+- **Rate Limiting**: Prevents spam with max 10 messages/sec per sender. (Maybe still way too much for normal user but still)
 - **Customizable Settings**:
   - Generate a new keypair
   - Change your PIN
-  - Copy your public key to share
-- **Cross-platform**: Works on Windows, macOS, and Linux with Python.
+  - Copy your public key
+  - Manage recipients
+- **Cross-platform**: Runs on Windows, macOS, and Linux.
 
 ---
 
