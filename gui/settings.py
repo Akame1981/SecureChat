@@ -1,8 +1,8 @@
 import tkinter as tk
 from tkinter import simpledialog, messagebox, Toplevel
 import customtkinter as ctk
-from crypto import load_key, save_key, PrivateKey, SigningKey
-from recipients import recipients, add_recipient, get_recipient_key
+from utils.crypto import load_key, save_key, PrivateKey, SigningKey
+from utils.recipients import recipients, add_recipient, get_recipient_key
 
 class SettingsWindow(Toplevel):
     def __init__(self, parent, app):
@@ -113,7 +113,7 @@ class SettingsWindow(Toplevel):
             entry = listbox.get(sel[0])
             name = entry.split(":")[0].strip()
             if messagebox.askyesno("Delete", f"Delete {name}?"):
-                from recipients import delete_recipient as del_rec  # import your function
+                from utils.recipients import delete_recipient as del_rec  # import your function
                 del_rec(name)  
                 refresh_list()
                 self.app.update_recipient_list()

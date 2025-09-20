@@ -2,13 +2,13 @@ import os
 import threading
 import time
 import customtkinter as ctk
-from crypto import load_key, save_key, PrivateKey, SigningKey, KEY_FILE
-from network import send_message, fetch_messages
+from utils.crypto import load_key, save_key, PrivateKey, SigningKey, KEY_FILE
+from utils.network import send_message, fetch_messages
 from gui.widgets.sidebar import Sidebar
 from gui.settings import SettingsWindow
 from gui.tooltip import ToolTip
 from gui.pin_dialog import PinDialog
-from recipients import recipients, add_recipient, get_recipient_key
+from utils.recipients import recipients, add_recipient, get_recipient_key
 from tkinter import simpledialog, messagebox, Toplevel
 import tkinter as tk
 
