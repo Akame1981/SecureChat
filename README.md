@@ -5,17 +5,24 @@ It allows users to send encrypted messages securely between public keys, store r
 
 ---
 
+## ⚠️ Important Notice
+
+For detailed instructions on **setting up the server**, including HTTPS, self-signed certificates, and systemd setup, please refer to the [SecureChat Documentation](docs/README.md).  
+
+> This ensures secure deployment and avoids accidental exposure of keys or misconfiguration.
+
+---
 
 
 # Features
 
 - **End-to-End Encryption**: Messages are encrypted using `SealedBox` and signed with `Ed25519`.
-- **FastAPI Backend**: Handles message storage, retrieval, and ephemeral messages.
+- **FastAPI Backend with SSL**: Handles message storage, retrieval, and ephemeral messages over HTTPS for secure transport.
 - **Local Key Management**: Private keys are encrypted with a PIN using `SecretBox`.
 - **Persistent Recipients**: Add, select, and manage contacts with saved public keys in `recipients.json`.
 - **Tkinter GUI Client**: Cross-platform chat interface with message history.
-- **Message History**: Server stores the last 5 messages per recipient, ephemeral messages by default. (I can make database or other type of persistent storage but LIKE THAT IS MORE PRIVATE)
-- **Rate Limiting**: Prevents spam with max 10 messages/sec per sender. (Maybe still way too much for normal user but still)
+- **Message History**: Server stores the last 5 messages per recipient, ephemeral messages by default. (Database or other persistent storage can be added, but ephemeral storage is more private.)
+- **Rate Limiting**: Prevents spam with max 10 messages/sec per sender. (May be more than needed for normal users.)
 - **Customizable Settings**:
   - Generate a new keypair
   - Change your PIN
@@ -62,23 +69,17 @@ pip install -r requirements.txt
 ```
 
 # Running the App
-Start the FastAPI server
+
+## Launch the GUI client
+
 ```bash
-uvicorn server:app --reload
+ python gui.py
 ```
-- **The server will run at http://127.0.0.1:8000.**
-
-Launch the GUI client
-
-# python client.py
-
 gui is the Tkinter chat client. It will ask for a PIN to unlock or generate your private key.
 
 
-You can use :
-```bash
-python gui.py
-```
+By default it connects to the official public server. If you wanna make your own server, refer to the [SecureChat Documentation](docs/README.md)
+
 ---
 
 ## 🎯 Usage
