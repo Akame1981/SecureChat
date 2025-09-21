@@ -5,7 +5,7 @@ USE_PUBLIC_SERVER = True  # Set False for localhost / You wanna host your own se
 
 if USE_PUBLIC_SERVER:
     SERVER_URL = "https://34.61.34.132:8000"  # Official Public Server 
-    SERVER_CERT = "utils/server-cert.pem"     
+    SERVER_CERT = "utils/cert.pem"     
 else:
     SERVER_URL = "http://127.0.0.1:8000"
     SERVER_CERT = None  # No cert for HTTP
