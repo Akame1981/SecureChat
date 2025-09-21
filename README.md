@@ -7,7 +7,7 @@ It allows users to send encrypted messages securely between public keys, store r
 
 ## ⚠️ Important Notice
 
-For detailed instructions on **setting up the server**, including HTTPS, self-signed certificates, and systemd setup, please refer to the [SecureChat Documentation](docs/README.md).  
+For detailed instructions on **setting up the server**, including HTTPS, self-signed certificates, and systemd setup, please refer to the [SecureChat Documentation](docs/setup-server.md).  
 
 > This ensures secure deployment and avoids accidental exposure of keys or misconfiguration.
 
@@ -78,7 +78,7 @@ pip install -r requirements.txt
 gui is the Tkinter chat client. It will ask for a PIN to unlock or generate your private key.
 
 
-By default it connects to the official public server. If you wanna make your own server, refer to the [SecureChat Documentation](docs/README.md)
+By default it connects to the official public server. If you wanna make your own server, refer to the [SecureChat Documentation](docs/setup-server.md)
 
 ---
 
