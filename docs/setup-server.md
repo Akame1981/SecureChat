@@ -50,6 +50,7 @@ openssl req -x509 -nodes -days 365 -newkey rsa:4096 \
 ```
 
 change :
+
     -%country% - with 2 letter representation of your Contry Code : (eg. for bulgaria - BG)
 
     -%State% - State name
@@ -57,7 +58,7 @@ change :
     -%whatever this is% - IDK what is it i just put random shit
 
     -%name% - Name of the app/certificate (put whatever you want)
-    
+
     -%IP% - put external ip address (have to port forward it ofc)
 
 
