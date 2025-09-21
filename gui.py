@@ -2,7 +2,7 @@ import os
 import threading
 import time
 import customtkinter as ctk
-from utils.crypto import load_key, save_key, PrivateKey, SigningKey, KEY_FILE
+from utils.crypto import load_key, save_key, PrivateKey, SigningKey, KEY_FILE, verify_signature, sign_message, encrypt_message, decrypt_message
 from utils.network import send_message, fetch_messages
 from gui.widgets.sidebar import Sidebar
 from gui.settings import SettingsWindow
@@ -200,15 +200,30 @@ class SecureChatApp(ctk.CTk):
 
         self.input_box.delete(0, tk.END)
 
+
+
     def fetch_loop(self):
         while not self.stop_event.is_set():
             msgs = fetch_messages(self.my_pub_hex, self.private_key)
             for msg in msgs:
-                sender_pub = msg["from"]
-                message = msg["message"]
-                # Use default argument to capture values properly
-                self.after(0, lambda sp=sender_pub, m=message: self.display_message(sp, m))
+                sender_pub = msg["from"] 
+                encrypted_message = msg["message"]
+                signature = msg.get("signature")
+
+                if signature and verify_signature(sender_pub, encrypted_message, signature):
+                    decrypted = decrypt_message(encrypted_message, self.private_key)
+                    self.after(0, self.display_message, sender_pub, decrypted)
+
             time.sleep(1)
+
+
+
+
+
+
+
+
+
 
 
 
