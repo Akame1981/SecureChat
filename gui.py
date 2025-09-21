@@ -11,6 +11,7 @@ from gui.pin_dialog import PinDialog
 from utils.recipients import recipients, add_recipient, get_recipient_key, get_recipient_name
 from tkinter import simpledialog, messagebox, Toplevel
 import tkinter as tk
+from utils.chat_storage import save_message, load_messages
 
 
 class SecureChatApp(ctk.CTk):
@@ -80,6 +81,15 @@ class SecureChatApp(ctk.CTk):
     def select_recipient(self, name):
         self.recipient_pub_hex = get_recipient_key(name)
         self.sidebar.update_list(selected_pub=self.recipient_pub_hex)
+        
+        # Load previous messages for this recipient
+        self.messages_box.configure(state='normal')
+        self.messages_box.delete("1.0", tk.END)
+        messages = load_messages(self.recipient_pub_hex)
+        for msg in messages:
+            self.display_message(msg["sender"], msg["text"])
+        self.messages_box.configure(state='disabled')
+
 
     # ---------------- GUI ----------------
     def create_widgets(self):
@@ -207,8 +217,12 @@ class SecureChatApp(ctk.CTk):
             signing_key=self.signing_key,
             enc_pub=self.my_pub_hex          
         ):
-            # Display the message locally using your encryption key
+            # Display the message locally
             self.display_message(self.my_pub_hex, text)
+
+            # Save message to local chat storage
+            save_message(self.recipient_pub_hex, "You", text)
+
 
         # Clear input box after sending
         self.input_box.delete(0, tk.END)
@@ -237,7 +251,12 @@ class SecureChatApp(ctk.CTk):
                 # Verify signature using signing key
                 if signature and verify_signature(msg["from_sign"], encrypted_message, signature):
                     decrypted = decrypt_message(encrypted_message, self.private_key)
+                    
+                    # Display in GUI
                     self.after(0, self.display_message, sender_pub, decrypted)
+                    
+                    # Save to local chat storage
+                    save_message(sender_pub, get_recipient_name(sender_pub) or sender_pub, decrypted)
 
             time.sleep(1)
 
