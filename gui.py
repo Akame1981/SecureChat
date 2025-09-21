@@ -56,6 +56,7 @@ class SecureChatApp(ctk.CTk):
                 return
             try:
                 self.private_key, self.signing_key = load_key(pin)
+                self.pin = pin  # <-- save PIN for chat encryption
             except ValueError:
                 messagebox.showerror("Error", "Incorrect PIN or corrupted key!")
                 self.destroy()
@@ -71,7 +72,9 @@ class SecureChatApp(ctk.CTk):
             self.private_key = PrivateKey.generate()
             self.signing_key = SigningKey.generate()
             save_key(self.private_key, self.signing_key, pin)
+            self.pin = pin  # <-- save PIN for chat encryption
             messagebox.showinfo("Key Created", "New keypair generated!")
+
 
         self.public_key = self.private_key.public_key
         self.my_pub_hex = self.public_key.encode().hex()
@@ -83,12 +86,14 @@ class SecureChatApp(ctk.CTk):
         self.sidebar.update_list(selected_pub=self.recipient_pub_hex)
         
         # Load previous messages for this recipient
-        self.messages_box.configure(state='normal')
-        self.messages_box.delete("1.0", tk.END)
-        messages = load_messages(self.recipient_pub_hex)
-        for msg in messages:
-            self.display_message(msg["sender"], msg["text"])
-        self.messages_box.configure(state='disabled')
+        if self.recipient_pub_hex:
+            self.messages_box.configure(state='normal')
+            self.messages_box.delete("1.0", tk.END)
+            messages = load_messages(self.recipient_pub_hex, self.pin)  # <-- pass self.pin
+            for msg in messages:
+                self.display_message(msg["sender"], msg["text"])
+            self.messages_box.configure(state='disabled')
+
 
 
     # ---------------- GUI ----------------
@@ -221,7 +226,7 @@ class SecureChatApp(ctk.CTk):
             self.display_message(self.my_pub_hex, text)
 
             # Save message to local chat storage
-            save_message(self.recipient_pub_hex, "You", text)
+            save_message(self.recipient_pub_hex, "You", text, self.pin)
 
 
         # Clear input box after sending
@@ -256,7 +261,8 @@ class SecureChatApp(ctk.CTk):
                     self.after(0, self.display_message, sender_pub, decrypted)
                     
                     # Save to local chat storage
-                    save_message(sender_pub, get_recipient_name(sender_pub) or sender_pub, decrypted)
+                    save_message(sender_pub, get_recipient_name(sender_pub) or sender_pub, decrypted, self.pin)  # pass PIN
+
 
             time.sleep(1)
 
