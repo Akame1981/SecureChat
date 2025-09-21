@@ -1,5 +1,9 @@
-import json
 import os
+import json
+from utils.crypto import derive_master_key, MIN_PIN_LENGTH, zero_bytes
+from nacl.secret import SecretBox
+from nacl.utils import random
+import stat
 
 # -------------------------
 # --- Data folder setup ---
@@ -9,36 +13,58 @@ DATA_DIR = os.path.join(BASE_DIR, "../data")
 CHATS_DIR = os.path.join(DATA_DIR, "chats")
 os.makedirs(CHATS_DIR, exist_ok=True)
 
-# -------------------------
-# --- Chat storage ---
-# -------------------------
-def get_chat_file(pub_hex: str):
-    """Get path to the chat file for a recipient by their public key."""
-    filename = f"{pub_hex}.json"
-    return os.path.join(CHATS_DIR, filename)
+SALT_SIZE = 32  # for chat encryption
 
-def save_message(pub_hex: str, sender: str, text: str):
-    """Save a single message to the recipient's chat file."""
+# -------------------------
+# --- Encrypt/Decrypt helpers ---
+# -------------------------
+def get_chat_file(pub_hex: str) -> str:
+    return os.path.join(CHATS_DIR, f"{pub_hex}.bin")
+
+def encrypt_chat(data: dict, pin: str) -> bytes:
+    salt = random(SALT_SIZE)
+    master_key = derive_master_key(pin, salt)
+    box = SecretBox(master_key[:32])
+    json_bytes = json.dumps(data).encode()
+    encrypted = box.encrypt(json_bytes)
+    zero_bytes(master_key)
+    return salt + encrypted  # prepend salt
+
+def decrypt_chat(enc_bytes: bytes, pin: str) -> dict:
+    salt = enc_bytes[:SALT_SIZE]
+    ciphertext = enc_bytes[SALT_SIZE:]
+    master_key = derive_master_key(pin, salt)
+    box = SecretBox(master_key[:32])
+    try:
+        decrypted = box.decrypt(ciphertext)
+        return json.loads(decrypted.decode())
+    finally:
+        zero_bytes(master_key)
+
+# -------------------------
+# --- Public functions ---
+# -------------------------
+def save_message(pub_hex: str, sender: str, text: str, pin: str):
     chat_file = get_chat_file(pub_hex)
     if os.path.exists(chat_file):
-        with open(chat_file, "r", encoding="utf-8") as f:
-            messages = json.load(f)
+        with open(chat_file, "rb") as f:
+            try:
+                chat_data = decrypt_chat(f.read(), pin)
+            except Exception:
+                chat_data = []
     else:
-        messages = []
+        chat_data = []
 
-    messages.append({"sender": sender, "text": text})
-    
-    # keep last N messages only
-    MAX_MESSAGES = 100
-    messages = messages[-MAX_MESSAGES:]
+    chat_data.append({"sender": sender, "text": text})
+    with open(chat_file, "wb") as f:
+        f.write(encrypt_chat(chat_data, pin))
+    os.chmod(chat_file, stat.S_IRUSR | stat.S_IWUSR)
 
-    with open(chat_file, "w", encoding="utf-8") as f:
-        json.dump(messages, f, indent=4)
-
-def load_messages(pub_hex: str):
-    """Load chat history for a recipient."""
+def load_messages(pub_hex: str, pin: str) -> list:
     chat_file = get_chat_file(pub_hex)
-    if os.path.exists(chat_file):
-        with open(chat_file, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
+    if not os.path.exists(chat_file):
+        return []
+    try:
+        return decrypt_chat(open(chat_file, "rb").read(), pin)
+    except Exception:
+        return []  # maybe wrong pin or corrupted file
