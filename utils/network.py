@@ -1,7 +1,13 @@
 import requests
 from utils.crypto import encrypt_message, decrypt_message, sign_message
 
-SERVER_URL = "http://127.0.0.1:8000"
+USE_PUBLIC_SERVER = True  # Set False for localhost
+
+if USE_PUBLIC_SERVER:
+    SERVER_URL = "http://34.61.34.132:8000" # That is the official public server. Use it or your own.
+else:
+    SERVER_URL = "http://127.0.0.1:8000"
+
 
 def send_message(to_pub: str, from_sign_pub: str, text: str, signing_key):
     """
