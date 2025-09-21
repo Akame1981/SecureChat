@@ -272,7 +272,12 @@ class SecureChatApp(ctk.CTk):
             return
         add_recipient(name, pub_hex)
         self.recipient_pub_hex = pub_hex
+
+        # Refresh the sidebar
+        self.update_recipient_list()
+
         messagebox.showinfo("Saved", f"{name} saved and selected.")
+
 
     def choose_recipient(self):
         if not recipients:
