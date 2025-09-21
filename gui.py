@@ -15,6 +15,11 @@ import tkinter as tk
 
 class SecureChatApp(ctk.CTk):
 
+    def update_recipient_list(self):
+        """Refresh the sidebar recipient buttons."""
+        if hasattr(self, "sidebar") and self.sidebar:
+            self.sidebar.update_list(selected_pub=self.recipient_pub_hex)
+
     
     def __init__(self):
         super().__init__()
