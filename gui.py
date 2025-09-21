@@ -183,6 +183,8 @@ class SecureChatApp(ctk.CTk):
         text = self.input_box.get().strip()
         if not text:
             return
+
+        # Handle special commands
         if text.startswith("/new"):
             self.add_new_recipient()
             self.input_box.delete(0, tk.END)
@@ -191,12 +193,29 @@ class SecureChatApp(ctk.CTk):
             self.choose_recipient()
             self.input_box.delete(0, tk.END)
             return
+
+        # No recipient selected
         if not self.recipient_pub_hex:
             messagebox.showwarning("No recipient", "Select a recipient first (/choose)")
             return
-        if send_message(self.recipient_pub_hex, self.signing_pub_hex, text, self.signing_key):
-            # pass recipient_pub_hex for consistency? Or pass my_pub_hex for "You"
+
+        # Send the message, passing both signing and encryption keys
+        if send_message(
+            to_pub=self.recipient_pub_hex,   
+            signing_pub=self.signing_pub_hex, 
+            text=text,
+            signing_key=self.signing_key,
+            enc_pub=self.my_pub_hex          
+        ):
+            # Display the message locally using your encryption key
             self.display_message(self.my_pub_hex, text)
+
+        # Clear input box after sending
+        self.input_box.delete(0, tk.END)
+
+
+
+
 
 
 
@@ -211,15 +230,17 @@ class SecureChatApp(ctk.CTk):
         while not self.stop_event.is_set():
             msgs = fetch_messages(self.my_pub_hex, self.private_key)
             for msg in msgs:
-                sender_pub = msg["from"] 
+                sender_pub = msg["from_enc"]  
                 encrypted_message = msg["message"]
                 signature = msg.get("signature")
 
-                if signature and verify_signature(sender_pub, encrypted_message, signature):
+                # Verify signature using signing key
+                if signature and verify_signature(msg["from_sign"], encrypted_message, signature):
                     decrypted = decrypt_message(encrypted_message, self.private_key)
                     self.after(0, self.display_message, sender_pub, decrypted)
 
             time.sleep(1)
+
 
 
 

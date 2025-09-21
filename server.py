@@ -6,6 +6,7 @@ from nacl.public import PrivateKey
 from nacl.signing import VerifyKey
 import threading
 
+
 # -------------------------
 # Try Redis connection
 # -------------------------
@@ -41,10 +42,12 @@ server_private = PrivateKey.generate()
 server_public = server_private.public_key
 
 class Message(BaseModel):
-    to: str          # recipient public key (hex)
-    from_: str       # sender public key (hex)
+    to: str          # recipient encryption public key (hex)
+    from_: str       # sender signing key (hex) for verification
+    enc_pub: str     # sender encryption public key (hex) for display
     message: str     # encrypted message (base64)
     signature: str   # signature of encrypted message (base64)
+
 
 # -------------------------
 # Helper: verify signature
@@ -62,11 +65,20 @@ def verify_signature(sender_hex, message_b64, signature_b64):
 # -------------------------
 @app.post("/send")
 def send_message(msg: Message):
+    # Verify signature with signing key
     if not verify_signature(msg.from_, msg.message, msg.signature):
         raise HTTPException(status_code=400, detail="Invalid signature")
     
     now = time.time()
-    
+
+    # Prepare message object for storage
+    stored_msg = {
+        "from": msg.from_,      
+        "enc_pub": msg.enc_pub, 
+        "message": msg.message,
+        "signature": msg.signature
+    }
+
     if REDIS_AVAILABLE:
         # Rate limiting per sender
         key = f"rate:{msg.from_}"
@@ -78,7 +90,9 @@ def send_message(msg: Message):
 
         # Store message in recipient inbox
         inbox_key = f"inbox:{msg.to}"
-        encoded = base64.b64encode(f"{msg.from_}:{msg.message}:{msg.signature}".encode()).decode()
+        encoded = base64.b64encode(
+            f"{msg.from_}:{msg.enc_pub}:{msg.message}:{msg.signature}".encode()
+        ).decode()
         r.rpush(inbox_key, encoded)
         r.ltrim(inbox_key, -MAX_MESSAGES_PER_RECIPIENT, -1)
         r.expire(inbox_key, MESSAGE_TTL)
@@ -97,15 +111,12 @@ def send_message(msg: Message):
             # Store message
             if msg.to not in messages_store:
                 messages_store[msg.to] = []
-            messages_store[msg.to].append({
-                "from": msg.from_,
-                "message": msg.message,
-                "signature": msg.signature
-            })
+            messages_store[msg.to].append(stored_msg)
             # Keep last N messages
             messages_store[msg.to] = messages_store[msg.to][-MAX_MESSAGES_PER_RECIPIENT:]
 
     return {"status": "ok"}
+
 
 # -------------------------
 # Fetch inbox
@@ -120,8 +131,13 @@ def get_inbox(recipient_key: str):
         msgs = []
         for em in encoded_msgs:
             decoded = base64.b64decode(em).decode()
-            sender, message, signature = decoded.split(":", 2)
-            msgs.append({"from": sender, "message": message, "signature": signature})
+            sender, enc_pub, message, signature = decoded.split(":", 3)
+            msgs.append({
+                "from": sender,      # signing key
+                "enc_pub": enc_pub,  # encryption key for GUI
+                "message": message,
+                "signature": signature
+            })
     else:
         with store_lock:
             msgs = messages_store.get(recipient_key, [])
