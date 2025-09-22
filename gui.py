@@ -3,6 +3,7 @@ import threading
 import time
 import json
 import requests
+import sys
 import tkinter as tk
 from tkinter import simpledialog, Toplevel
 
@@ -32,6 +33,14 @@ from utils.recipients import add_recipient, get_recipient_key, get_recipient_nam
 
 
 CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "config/settings.json"))
+def get_resource_path(relative_path):
+    """Return absolute path to resource, works for dev and PyInstaller."""
+    if getattr(sys, "_MEIPASS", False):
+        # PyInstaller onefile mode
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
 
 class SecureChatApp(ctk.CTk):
 
@@ -39,16 +48,18 @@ class SecureChatApp(ctk.CTk):
         """Refresh the sidebar recipient buttons."""
         if hasattr(self, "sidebar") and self.sidebar:
             self.sidebar.update_list(selected_pub=self.recipient_pub_hex)
-
     
+    
+
+
     def __init__(self):
         super().__init__()
         self.title("🔒 Secure Chat")
         self.geometry("600x600")
 
-        # Remove self.configure(bg=...) — CTk handles dark mode
-        ctk.set_appearance_mode("dark")       # optional: ensure dark theme
-        ctk.set_default_color_theme("blue")   # optional: theme color
+        
+        ctk.set_appearance_mode("dark")     
+        ctk.set_default_color_theme("blue")   
 
         self.private_key = None
         self.public_key = None
@@ -56,9 +67,12 @@ class SecureChatApp(ctk.CTk):
         self.recipient_pub_hex = None
 
 
+        self.notifier = NotificationManager(self)
+
         # Default server values (backup if config load fails)
         self.SERVER_URL = "https://34.61.34.132:8000"
-        self.SERVER_CERT = "utils/cert.pem"
+        self.SERVER_CERT = get_resource_path("utils/cert.pem")
+
 
         # --- Load saved settings ---
         self.load_app_settings()
@@ -74,7 +88,6 @@ class SecureChatApp(ctk.CTk):
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
-        self.notifier = NotificationManager(self)
 
 
 # ---------------- Keypair ----------------
@@ -309,10 +322,11 @@ class SecureChatApp(ctk.CTk):
 
                 if server_type == "public":
                     self.SERVER_URL = "https://34.61.34.132:8000"
-                    self.SERVER_CERT = "utils/cert.pem"
+                    self.SERVER_CERT = get_resource_path("utils/cert.pem")  
                 else:
                     self.SERVER_URL = custom_url
-                    self.SERVER_CERT = cert_path if use_cert else None
+                    self.SERVER_CERT = get_resource_path(cert_path) if use_cert else None
+
 
             except Exception as e:
                 print("Failed to load app settings:", e)

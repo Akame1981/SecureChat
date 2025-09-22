@@ -4,6 +4,7 @@ import hmac
 import json
 import os
 import stat
+import sys
 
 from nacl.exceptions import CryptoError
 from nacl.pwhash import SCRYPT_MEMLIMIT_INTERACTIVE, SCRYPT_OPSLIMIT_INTERACTIVE, scrypt
@@ -13,23 +14,52 @@ from nacl.signing import SigningKey, VerifyKey
 from nacl.utils import random
 
 
+import os
+import sys
+
+
+
+def get_resource_path(relative_path):
+    """Return absolute path to resource, works for dev and PyInstaller."""
+    if getattr(sys, "_MEIPASS", False):
+        # PyInstaller onefile mode
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
+# -------------------------
+# --- Base directory setup ---
+# -------------------------
+if getattr(sys, "frozen", False):
+    # Running as PyInstaller one-file bundle
+    BASE_DIR = os.path.dirname(sys.executable)  # folder where the EXE is located
+else:
+    # Running as a normal Python script
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # -------------------------
 # --- Data folder setup ---
 # -------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "../data")
+DATA_DIR = os.path.abspath(os.path.join(BASE_DIR, "../data"))
 os.makedirs(DATA_DIR, exist_ok=True)
 
 KEY_FILE = os.path.join(DATA_DIR, "keypair.bin")
 MIN_PIN_LENGTH = 6
 
+# -------------------------
+# --- Config folder setup ---
+# -------------------------
+# Dev / user config folder
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_DIR = os.path.abspath(os.path.join(BASE_DIR, "../config"))
+os.makedirs(CONFIG_DIR, exist_ok=True)
 
+# Path for the weak PINs
+dev_file = os.path.join(CONFIG_DIR, "weak_pins.json")
+internal_file = get_resource_path("_internal/config/weak-pins.json")
 
-
-# Path to weak pins file 
-CONFIG_DIR = os.path.join(BASE_DIR, "../config")
-WEAK_PIN_FILE = os.path.join(CONFIG_DIR, "weak_pins.json")
-
+# Use dev file if exists, otherwise fallback to internal bundled file
+WEAK_PIN_FILE = dev_file if os.path.exists(dev_file) else internal_file
 # -----------------
 # --------
 # --- Memory hygiene -------

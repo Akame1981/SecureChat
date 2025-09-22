@@ -1,9 +1,13 @@
 import json
 import os
+import sys
 
 # Ensure data folder exists
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "../data")
+if getattr(sys, "frozen", False):
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.abspath(os.path.join(BASE_DIR, "../data"))
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # Path to recipients.json in data folder
