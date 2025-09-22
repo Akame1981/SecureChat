@@ -23,14 +23,22 @@ def save_recipients():
 
 # Add a recipient
 def add_recipient(name: str, pub_key: str):
+    name = name.strip()
     pub_key = pub_key.strip().lower()
-    
-    # Check if the public key already exists
+
+    # Check if name already exists
+    if name in recipients:
+        raise ValueError(f"A recipient with the name '{name}' already exists.")
+
+    # Check if public key already exists
     if pub_key in recipients.values():
-        raise ValueError("This public key is already assigned to another recipient.")
+        # Find which name already uses this key
+        existing_name = [n for n, k in recipients.items() if k == pub_key][0]
+        raise ValueError(f"This public key is already assigned to '{existing_name}'.")
 
     recipients[name] = pub_key
     save_recipients()
+
 
 
 
