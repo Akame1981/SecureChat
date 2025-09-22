@@ -180,13 +180,15 @@ def load_weak_pins_set() -> set:
     except Exception:
         return set()
 
+
+weak_set = load_weak_pins_set()
 def is_strong_pin(pin: str) -> (bool, str):
     """Validate pin strength using blacklist + rules. Returns (ok, reason)."""
     pin = pin.strip()
     if len(pin) < MIN_PIN_LENGTH:
         return False, f"PIN too short (min {MIN_PIN_LENGTH})."
 
-    weak_set = load_weak_pins_set()
+    
     if pin.lower() in weak_set:
         return False, "PIN is on the blacklist."
 

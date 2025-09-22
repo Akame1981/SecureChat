@@ -295,13 +295,18 @@ class SecureChatApp(ctk.CTk):
         if not pub_hex or len(pub_hex) != 64:
             messagebox.showerror("Error", "Invalid public key")
             return
-        add_recipient(name, pub_hex)
+        
+        try:
+            add_recipient(name, pub_hex)
+        except ValueError as e:
+            messagebox.showerror("Error", str(e))
+            return
+
         self.recipient_pub_hex = pub_hex
-
-        # Refresh the sidebar
+        # Update Sidebar
         self.update_recipient_list()
-
         messagebox.showinfo("Saved", f"{name} saved and selected.")
+
 
 
     def choose_recipient(self):

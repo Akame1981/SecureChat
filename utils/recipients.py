@@ -23,8 +23,15 @@ def save_recipients():
 
 # Add a recipient
 def add_recipient(name: str, pub_key: str):
-    recipients[name] = pub_key.strip().lower()  # remove spaces & lowercase
+    pub_key = pub_key.strip().lower()
+    
+    # Check if the public key already exists
+    if pub_key in recipients.values():
+        raise ValueError("This public key is already assigned to another recipient.")
+
+    recipients[name] = pub_key
     save_recipients()
+
 
 
 
