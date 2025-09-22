@@ -1,18 +1,10 @@
 import requests
 from utils.crypto import encrypt_message, decrypt_message, sign_message
 
-USE_PUBLIC_SERVER = True  # Set False for localhost / You wanna host your own server
-
-if USE_PUBLIC_SERVER:
-    SERVER_URL = "https://34.61.34.132:8000"  # Official Public Server 
-    SERVER_CERT = "utils/cert.pem"     
-else:
-    SERVER_URL = "http://127.0.0.1:8000"
-    SERVER_CERT = None  # No cert for HTTP
 
 
 
-def send_message(to_pub: str, signing_pub: str, text: str, signing_key, enc_pub: str):
+def send_message(app, to_pub: str, signing_pub: str, text: str, signing_key, enc_pub: str):
     """
     Send a message to the server.
     - to_pub: recipient's encryption public key (hex)
@@ -32,7 +24,7 @@ def send_message(to_pub: str, signing_pub: str, text: str, signing_key, enc_pub:
             "signature": signature_b64
         }
 
-        r = requests.post(f"{SERVER_URL}/send", json=payload, verify=SERVER_CERT)
+        r = requests.post(f"{app.SERVER_URL}/send", json=payload, verify=app.SERVER_CERT)
         if not r.ok:
             print("Send Error:", r.status_code, r.text)
         return r.ok
@@ -42,12 +34,12 @@ def send_message(to_pub: str, signing_pub: str, text: str, signing_key, enc_pub:
 
 
 
-def fetch_messages(my_pub_hex: str, private_key):
+def fetch_messages(app, my_pub_hex: str, private_key):
     """
     Fetch messages addressed to your encryption public key (my_pub_hex)
     """
     try:
-        r = requests.get(f"{SERVER_URL}/inbox/{my_pub_hex}", verify=SERVER_CERT)
+        r = requests.get(f"{app.SERVER_URL}/inbox/{my_pub_hex}", verify=app.SERVER_CERT)
         if r.ok:
             inbox = r.json().get("messages", [])
             msgs = []
