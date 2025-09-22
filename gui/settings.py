@@ -1,3 +1,7 @@
+import json
+import os
+
+
 import tkinter as tk
 from tkinter import Toplevel, simpledialog
 import tkinter.filedialog as fd
@@ -6,6 +10,7 @@ import customtkinter as ctk
 from utils.crypto import PrivateKey, SigningKey, load_key, save_key
 from utils.recipients import add_recipient, get_recipient_key, recipients
 
+CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config/settings.json"))
 
 class SettingsWindow(Toplevel):
     def __init__(self, parent, app):
@@ -139,7 +144,9 @@ class SettingsWindow(Toplevel):
         # Track changes
         self.server_var.trace_add("write", update_cert_visibility)
         self.use_cert_var.trace_add("write", update_cert_visibility)
-        update_cert_visibility()  # initial call
+        self.load_settings()
+        update_cert_visibility() # initial call
+
 
 
 
@@ -161,15 +168,12 @@ class SettingsWindow(Toplevel):
 
         if selection == "public":
             self.app.SERVER_URL = "https://34.61.34.132:8000"
-            self.app.SERVER_CERT = "utils/cert.pem"  # always use default public cert
+            self.app.SERVER_CERT = "utils/cert.pem"
         else:
-            # Local server
             if not url.startswith("http"):
                 ctk.CTkLabel(self.server_tab, text="Invalid URL!", text_color="red").grid(row=8, column=0, padx=20)
                 return
             self.app.SERVER_URL = url
-
-            # Handle certificate for local server
             if self.use_cert_var.get():
                 cert_path = self.cert_entry.get().strip()
                 if not cert_path or not os.path.exists(cert_path):
@@ -177,9 +181,12 @@ class SettingsWindow(Toplevel):
                     return
                 self.app.SERVER_CERT = cert_path
             else:
-                self.app.SERVER_CERT = None  # no verification
+                self.app.SERVER_CERT = None
 
         ctk.CTkLabel(self.server_tab, text=f"Server set to: {self.app.SERVER_URL}", text_color="green").grid(row=8, column=0, padx=20)
+
+        # Save to JSON
+        self.save_settings_file()
 
 
 
@@ -302,6 +309,36 @@ class SettingsWindow(Toplevel):
             del_rec(name)
             self.refresh_list()
             self.app.update_recipient_list()
+
+
+
+
+    def load_settings(self):
+        if os.path.exists(CONFIG_PATH):
+            try:
+                with open(CONFIG_PATH, "r") as f:
+                    data = json.load(f)
+                    self.server_var.set(data.get("server_type", "public"))
+                    self.custom_server_entry.delete(0, tk.END)
+                    self.custom_server_entry.insert(0, data.get("custom_url", "http://127.0.0.1:8000"))
+                    self.use_cert_var.set(data.get("use_cert", True))
+                    self.cert_entry.delete(0, tk.END)
+                    self.cert_entry.insert(0, data.get("cert_path", "utils/cert.pem"))
+            except Exception as e:
+                print("Failed to load settings:", e)
+
+    def save_settings_file(self):
+        data = {
+            "server_type": self.server_var.get(),
+            "custom_url": self.custom_server_entry.get().strip(),
+            "use_cert": self.use_cert_var.get(),
+            "cert_path": self.cert_entry.get().strip()
+        }
+
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        with open(CONFIG_PATH, "w") as f:
+            json.dump(data, f, indent=4)
+
 
 
 class CTkConfirmDialog(ctk.CTkToplevel):
