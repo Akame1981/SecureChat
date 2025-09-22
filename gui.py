@@ -51,6 +51,12 @@ class SecureChatApp(ctk.CTk):
         self.my_pub_hex = None
         self.recipient_pub_hex = None
 
+
+        # Default server values
+        self.SERVER_URL = "https://34.61.34.132:8000"
+        self.SERVER_CERT = "utils/cert.pem"
+
+
         self.init_keypair()
         self.create_widgets()
 
@@ -232,12 +238,14 @@ class SecureChatApp(ctk.CTk):
 
         # Send the message, passing both signing and encryption keys
         if send_message(
-            to_pub=self.recipient_pub_hex,   
-            signing_pub=self.signing_pub_hex, 
+            self,  # pass the app instance
+            to_pub=self.recipient_pub_hex,
+            signing_pub=self.signing_pub_hex,
             text=text,
             signing_key=self.signing_key,
-            enc_pub=self.my_pub_hex          
+            enc_pub=self.my_pub_hex
         ):
+
             # Display the message locally
             self.display_message(self.my_pub_hex, text)
 
@@ -263,7 +271,7 @@ class SecureChatApp(ctk.CTk):
 
     def fetch_loop(self):
         while not self.stop_event.is_set():
-            msgs = fetch_messages(self.my_pub_hex, self.private_key)
+            msgs = fetch_messages(self, self.my_pub_hex, self.private_key)
             for msg in msgs:
                 sender_pub = msg["from_enc"]  
                 encrypted_message = msg["message"]
