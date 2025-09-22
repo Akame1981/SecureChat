@@ -35,6 +35,9 @@ For detailed instructions on **setting up the server**, including HTTPS, self-si
 ## 🚀 Installation
 
 
+You can download it from [HERE](https://github.com/Akame1981/SecureChat/releases/tag/v0.1) but its buggy still. (Advised to run it from python)
+
+
 1. **Clone the repository**
 
 ```bash
