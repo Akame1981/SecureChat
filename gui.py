@@ -350,25 +350,30 @@ class SecureChatApp(ctk.CTk):
             try:
                 # Simple GET request to server root
                 resp = requests.get(self.SERVER_URL, verify=self.SERVER_CERT, timeout=3)
-                online = True  # If request succeeds, server is online
-            except requests.exceptions.ConnectionError:
-                # This includes WinError 10061: connection refused
-                print("⚠ Server offline (connection refused)")
-                self.notifier.show("⚠ Server offline (connection refused)", type_="error")
+                online = True  # Server is online if request succeeds
+            except requests.exceptions.ConnectionError as e:
+                msg = f"⚠ Server offline (connection refused): {e}"
+                print(msg)
+                if hasattr(self, 'notifier') and self.notifier:
+                    self.notifier.show(msg, type_="error")
                 online = False
-            except requests.exceptions.SSLError:
-                print("⚠ SSL verification failed, server might be online")
-                self.notifier.show("⚠ SSL verification failed, server might be online", type_="warning")
-                online = False  # optionally consider online
+            except requests.exceptions.SSLError as e:
+                msg = f"⚠ SSL verification failed: {e}"
+                print(msg)
+                if hasattr(self, 'notifier') and self.notifier:
+                    self.notifier.show(msg, type_="warning")
+                online = False
             except requests.exceptions.RequestException as e:
-                # Catch all other request errors
-                print("⚠ Server check failed:", e)
-                self.notifier.show("⚠ Server check failed:" + e, type_="error")
+                msg = f"⚠ Server check failed: {e}"
+                print(msg)
+                if hasattr(self, 'notifier') and self.notifier:
+                    self.notifier.show(msg, type_="error")
                 online = False
 
             # Update GUI indicator
             self.after(0, self.update_status_color, online)
             time.sleep(1)
+
 
 
 

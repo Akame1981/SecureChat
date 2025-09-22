@@ -11,6 +11,7 @@ class Notification(ctk.CTkToplevel):
     def __init__(self, parent, message: str, manager, type_: str = "info", duration=2500):
         super().__init__(parent)
         self.manager = manager
+        self.message = message  # store message for copying
         self.overrideredirect(True)
         self.attributes("-topmost", True)
         self.attributes("-alpha", 0.0)
@@ -28,11 +29,24 @@ class Notification(ctk.CTkToplevel):
         y = parent_y + parent_h - height - 20
         self.geometry(f"{width}x{height}+{x}+{y}")
 
+
+
         label = ctk.CTkLabel(self, text=message, text_color=fg, fg_color=bg, anchor="w")
         label.pack(expand=True, fill="both", padx=10, pady=10)
 
+        # Bind click to copy message 
+        label.bind("<Button-1>", self.copy_to_clipboard)
+
+
         self._fade_in()
         self.after(duration, self._fade_out)
+
+    def copy_to_clipboard(self, event=None):
+        self.clipboard_clear()
+        self.clipboard_append(self.message)
+        # Show a small "Copied!" notification
+        if hasattr(self.manager.parent, "notifier"):
+            self.manager.parent.notifier.show("Copied!", type_="success", duration=1000)
 
     def _fade_in(self, step=0.07):
         alpha = self.attributes("-alpha")
