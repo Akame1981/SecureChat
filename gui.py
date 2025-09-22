@@ -1,18 +1,32 @@
 import os
 import threading
 import time
+import tkinter as tk
+from tkinter import simpledialog, Toplevel
+
 import customtkinter as ctk
-from utils.crypto import load_key, save_key, PrivateKey, SigningKey, KEY_FILE, verify_signature, sign_message, encrypt_message, decrypt_message
-from utils.network import send_message, fetch_messages
-from gui.widgets.sidebar import Sidebar
+
+from gui.pin_dialog import PinDialog
 from gui.settings import SettingsWindow
 from gui.tooltip import ToolTip
-from gui.pin_dialog import PinDialog
-from utils.recipients import recipients, add_recipient, get_recipient_key, get_recipient_name
-from tkinter import simpledialog, messagebox, Toplevel
-import tkinter as tk
-from utils.chat_storage import save_message, load_messages
 from gui.widgets.notification import Notification, NotificationManager
+from gui.widgets.sidebar import Sidebar
+
+from utils.chat_storage import load_messages, save_message
+from utils.crypto import (
+    KEY_FILE,
+    PrivateKey,
+    SigningKey,
+    decrypt_message,
+    encrypt_message,
+    load_key,
+    save_key,
+    sign_message,
+    verify_signature,
+)
+from utils.network import fetch_messages, send_message
+from utils.recipients import add_recipient, get_recipient_key, get_recipient_name, recipients
+
 
 
 class SecureChatApp(ctk.CTk):

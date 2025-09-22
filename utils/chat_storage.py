@@ -1,9 +1,12 @@
-import os
 import json
-from utils.crypto import derive_master_key, MIN_PIN_LENGTH, zero_bytes
+import os
+import stat
+
 from nacl.secret import SecretBox
 from nacl.utils import random
-import stat
+
+from utils.crypto import MIN_PIN_LENGTH, derive_master_key, zero_bytes
+
 
 # -------------------------
 # --- Data folder setup ---

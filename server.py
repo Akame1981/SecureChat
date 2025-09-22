@@ -1,10 +1,11 @@
-import time
 import base64
+import threading
+import time
+
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 from nacl.public import PrivateKey
 from nacl.signing import VerifyKey
-import threading
+from pydantic import BaseModel
 
 
 # -------------------------
