@@ -42,14 +42,14 @@ You can download it from [HERE](https://github.com/Akame1981/SecureChat/releases
 
 ```bash
 git clone https://github.com/Akame1981/SecureChat.git
-```
-cd SecureChat
 
+cd SecureChat
+```
 2. Create and activate a Python virtual environment:
 
-
+```bash
     python -m venv venv
-
+```
 
 Windows :
 ```bash
