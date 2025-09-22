@@ -99,9 +99,11 @@ Get the server's encryption public key.
 ## Security Notes
 
 - The server does not store any private keys.
+- Messages are **never stored in plain text**; they are always encrypted.
 - Messages are only stored temporarily and are deleted after retrieval.
 - All messages must be signed and are verified before acceptance.
 - Rate limiting prevents abuse.
+
 
 ---
 
@@ -135,4 +137,5 @@ Get the server's encryption public key.
 ---
 
 For client documentation, see [docs/client-usage.md](client-usage.md).
+
 For server setup, see [docs/setup-server.md](setup-server.md).
