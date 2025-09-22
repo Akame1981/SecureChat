@@ -303,9 +303,9 @@ class SecureChatApp(ctk.CTk):
             return
 
         self.recipient_pub_hex = pub_hex
-        # Update Sidebar
         self.update_recipient_list()
         messagebox.showinfo("Saved", f"{name} saved and selected.")
+
 
 
 
