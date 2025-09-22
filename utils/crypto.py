@@ -1,15 +1,17 @@
-import os
 import base64
+import hashlib
+import hmac
+import json
+import os
+import stat
+
+from nacl.exceptions import CryptoError
+from nacl.pwhash import SCRYPT_MEMLIMIT_INTERACTIVE, SCRYPT_OPSLIMIT_INTERACTIVE, scrypt
 from nacl.public import PrivateKey, PublicKey, SealedBox
 from nacl.secret import SecretBox
-from nacl.exceptions import CryptoError
-from nacl.utils import random
-from nacl.pwhash import scrypt, SCRYPT_OPSLIMIT_INTERACTIVE, SCRYPT_MEMLIMIT_INTERACTIVE
 from nacl.signing import SigningKey, VerifyKey
-import hmac
-import hashlib
-import stat
-import json
+from nacl.utils import random
+
 
 # -------------------------
 # --- Data folder setup ---
