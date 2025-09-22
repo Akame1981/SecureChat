@@ -122,6 +122,68 @@ This project is licensed under the **Creative Commons Attribution-NonCommercial 
 SOON
 
 ---
+# 🔒 SecureChat Roadmap
+
+This roadmap outlines the upcoming updates and planned features for **SecureChat**.
+
+---
+
+## **Next Updates**
+
+### 1. UI & UX Improvements
+- Fix existing UI bugs
+- Improve overall user experience
+- Smooth animations and better layout responsiveness
+
+### 2. Offline Messaging
+- Queue messages when offline
+- Automatically send messages once the user reconnects
+- Notifications for pending messages
+
+### 3. Security Enhancements
+- Encrypt the recipient list
+- Secure storage of keys and sensitive data
+
+### 4. Customization
+- Add support for custom themes
+- Dark/light mode improvements
+- Optional user personalization (fonts, colors)
+
+### 5. Group Chats
+- Create and manage group conversations
+- Add/remove participants securely
+- Support for group message encryption
+
+### 6. File Sharing
+- Secure file sending between users
+- End-to-end encryption for attachments
+- Limit file size and type for security
+
+### 7. Account Management
+- Import and export account keys (keybin)
+- Backup and restore account safely
+- PIN-based access and optional biometric integration
+
+### 8. Voice/Video Calling
+- Secure calling between users
+- End-to-end encryption for calls
+- Call notifications
+
+### 9. Servers & Network
+- Add support for multiple servers
+- Server selection in settings
+- Improve server reliability and connection feedback
+
+---
+
+## **Future Vision**
+- Integration with mobile apps
+- Multi-device sync
+- Advanced chat features (reactions, message edits/deletes)
+
+---
+
+**Stay tuned!** More secure and user-friendly features are on the way. 🚀
 
 ## 🤝 Contributing
 Contributions are welcome!  
