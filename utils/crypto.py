@@ -9,6 +9,7 @@ from nacl.signing import SigningKey, VerifyKey
 import hmac
 import hashlib
 import stat
+import json
 
 # -------------------------
 # --- Data folder setup ---
@@ -20,7 +21,15 @@ os.makedirs(DATA_DIR, exist_ok=True)
 KEY_FILE = os.path.join(DATA_DIR, "keypair.bin")
 MIN_PIN_LENGTH = 6
 
-# -------------------------
+
+
+
+# Path to weak pins file 
+CONFIG_DIR = os.path.join(BASE_DIR, "../config")
+WEAK_PIN_FILE = os.path.join(CONFIG_DIR, "weak_pins.json")
+
+# -----------------
+# --------
 # --- Memory hygiene -------
 # -------------------------
 def zero_bytes(data):
@@ -158,9 +167,46 @@ def verify_signature(sender_pub_hex: str, message_b64: str, signature_b64: str) 
 # -------------------------
 # --- PIN Strength Check ---
 # -------------------------
-def is_strong_pin(pin: str) -> bool:
+def load_weak_pins_set() -> set:
+    """Load weak pins from JSON file into a lowercase set."""
+    if not os.path.exists(WEAK_PIN_FILE):
+        return set()  # fallback: empty set if file missing
+    try:
+        with open(WEAK_PIN_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, list):
+            return set()
+        return {x.strip().lower() for x in data if isinstance(x, str) and x.strip()}
+    except Exception:
+        return set()
+
+def is_strong_pin(pin: str) -> (bool, str):
+    """Validate pin strength using blacklist + rules. Returns (ok, reason)."""
+    pin = pin.strip()
     if len(pin) < MIN_PIN_LENGTH:
-        return False
-    if pin.isdigit():
-        return len(pin) >= 10
-    return True
+        return False, f"PIN too short (min {MIN_PIN_LENGTH})."
+
+    weak_set = load_weak_pins_set()
+    if pin.lower() in weak_set:
+        return False, "PIN is on the blacklist."
+
+    if len(set(pin)) == 1:
+        return False, "PIN cannot be a single repeated character."
+
+    # Simple sequential patterns (digits/letters)
+    digits = "0123456789"
+    letters = "abcdefghijklmnopqrstuvwxyz"
+    low = pin.lower()
+    if low in digits or low in digits[::-1] or low in letters or low in letters[::-1]:
+        return False, "PIN cannot be a simple sequence."
+
+    # Complexity: at least two types (digit, letter, special)
+    classes = sum([
+        any(c.isdigit() for c in pin),
+        any(c.isalpha() for c in pin),
+        any(not c.isalnum() for c in pin),
+    ])
+    if classes < 2:
+        return False, "Use at least two types: letters, numbers, symbols."
+
+    return True, ""
