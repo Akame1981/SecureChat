@@ -1,6 +1,7 @@
 import json
 import os
 import stat
+import sys
 
 from nacl.secret import SecretBox
 from nacl.utils import random
@@ -9,10 +10,19 @@ from utils.crypto import MIN_PIN_LENGTH, derive_master_key, zero_bytes
 
 
 # -------------------------
+# --- Base directory setup ---
+# -------------------------
+if getattr(sys, "frozen", False):
+    # Running as PyInstaller one-file bundle
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    # Running as a normal Python script
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# -------------------------
 # --- Data folder setup ---
 # -------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "../data")
+DATA_DIR = os.path.abspath(os.path.join(BASE_DIR, "../data"))
 CHATS_DIR = os.path.join(DATA_DIR, "chats")
 os.makedirs(CHATS_DIR, exist_ok=True)
 
