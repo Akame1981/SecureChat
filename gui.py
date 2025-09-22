@@ -1,6 +1,8 @@
 import os
 import threading
 import time
+import json
+import requests
 import tkinter as tk
 from tkinter import simpledialog, Toplevel
 
@@ -29,6 +31,8 @@ from utils.recipients import add_recipient, get_recipient_key, get_recipient_nam
 
 
 
+CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "config/settings.json"))
+
 class SecureChatApp(ctk.CTk):
 
     def update_recipient_list(self):
@@ -52,17 +56,21 @@ class SecureChatApp(ctk.CTk):
         self.recipient_pub_hex = None
 
 
-        # Default server values
+        # Default server values (backup if config load fails)
         self.SERVER_URL = "https://34.61.34.132:8000"
         self.SERVER_CERT = "utils/cert.pem"
 
+        # --- Load saved settings ---
+        self.load_app_settings()
 
+        # Initialize keypair
         self.init_keypair()
         self.create_widgets()
 
         # Start fetch loop
         self.stop_event = threading.Event()
         threading.Thread(target=self.fetch_loop, daemon=True).start()
+        threading.Thread(target=self.check_server_loop, daemon=True).start()
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -124,6 +132,19 @@ class SecureChatApp(ctk.CTk):
         # ---------------- Main Layout ----------------
         main_frame = ctk.CTkFrame(self, fg_color="transparent")
         main_frame.pack(fill="both", expand=True)
+
+
+
+
+
+
+        def update_status_color(online):
+            color = "green" if online else "red"
+            self.server_status.configure(text="●", text_color=color)
+
+        self.update_status_color = update_status_color  # store method
+
+
 
         # Sidebar (left)
         self.sidebar = Sidebar(main_frame, select_callback=self.select_recipient, add_callback=self.add_new_recipient)
@@ -194,6 +215,11 @@ class SecureChatApp(ctk.CTk):
 
         ctk.CTkButton(input_frame, text="Send", command=self.on_send, fg_color="#4a90e2").pack(side="right", padx=(0,5), pady=5)
 
+
+
+        # Server status (top-right corner)
+        self.server_status = ctk.CTkLabel(pub_frame, text="●", font=("Roboto", 16))
+        self.server_status.grid(row=0, column=3, padx=5)
     # ---------------- Public key ----------------
     def copy_pub_key(self):
         self.clipboard_clear()
@@ -268,6 +294,29 @@ class SecureChatApp(ctk.CTk):
         self.input_box.delete(0, tk.END)
 
 
+    def load_app_settings(self):
+        """Load server settings and other configurations at startup."""
+        if os.path.exists(CONFIG_PATH):
+            try:
+                with open(CONFIG_PATH, "r") as f:
+                    data = json.load(f)
+                
+                # Apply server type
+                server_type = data.get("server_type", "public")
+                custom_url = data.get("custom_url", "http://127.0.0.1:8000")
+                use_cert = data.get("use_cert", True)
+                cert_path = data.get("cert_path", "utils/cert.pem")
+
+                if server_type == "public":
+                    self.SERVER_URL = "https://34.61.34.132:8000"
+                    self.SERVER_CERT = "utils/cert.pem"
+                else:
+                    self.SERVER_URL = custom_url
+                    self.SERVER_CERT = cert_path if use_cert else None
+
+            except Exception as e:
+                print("Failed to load app settings:", e)
+
 
     def fetch_loop(self):
         while not self.stop_event.is_set():
@@ -293,6 +342,33 @@ class SecureChatApp(ctk.CTk):
 
 
 
+
+
+    def check_server_loop(self):
+        while not self.stop_event.is_set():
+            online = False
+            try:
+                # Simple GET request to server root
+                resp = requests.get(self.SERVER_URL, verify=self.SERVER_CERT, timeout=3)
+                online = True  # If request succeeds, server is online
+            except requests.exceptions.ConnectionError:
+                # This includes WinError 10061: connection refused
+                print("⚠ Server offline (connection refused)")
+                self.notifier.show("⚠ Server offline (connection refused)", type_="error")
+                online = False
+            except requests.exceptions.SSLError:
+                print("⚠ SSL verification failed, server might be online")
+                self.notifier.show("⚠ SSL verification failed, server might be online", type_="warning")
+                online = False  # optionally consider online
+            except requests.exceptions.RequestException as e:
+                # Catch all other request errors
+                print("⚠ Server check failed:", e)
+                self.notifier.show("⚠ Server check failed:" + e, type_="error")
+                online = False
+
+            # Update GUI indicator
+            self.after(0, self.update_status_color, online)
+            time.sleep(1)
 
 
 
