@@ -297,16 +297,6 @@ class SecureChatApp(ctk.CTk):
 
 
 
-
-
-
-
-
-
-
-        self.input_box.delete(0, tk.END)
-
-
     def load_app_settings(self):
         """Load server settings and other configurations at startup."""
         if os.path.exists(CONFIG_PATH):
