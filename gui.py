@@ -12,6 +12,7 @@ from utils.recipients import recipients, add_recipient, get_recipient_key, get_r
 from tkinter import simpledialog, messagebox, Toplevel
 import tkinter as tk
 from utils.chat_storage import save_message, load_messages
+from gui.widgets.notification import Notification, NotificationManager
 
 
 class SecureChatApp(ctk.CTk):
@@ -45,6 +46,9 @@ class SecureChatApp(ctk.CTk):
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
+        self.notifier = NotificationManager(self)
+
+
 # ---------------- Keypair ----------------
     def init_keypair(self):
         if os.path.exists(KEY_FILE):
@@ -58,7 +62,7 @@ class SecureChatApp(ctk.CTk):
                 self.private_key, self.signing_key = load_key(pin)
                 self.pin = pin  # <-- save PIN for chat encryption
             except ValueError:
-                messagebox.showerror("Error", "Incorrect PIN or corrupted key!")
+                self.notifier.show("Incorrect PIN or corrupted key!", type_="error")
                 self.destroy()
                 return
         else:
@@ -73,8 +77,7 @@ class SecureChatApp(ctk.CTk):
             self.signing_key = SigningKey.generate()
             save_key(self.private_key, self.signing_key, pin)
             self.pin = pin  # <-- save PIN for chat encryption
-            messagebox.showinfo("Key Created", "New keypair generated!")
-
+            self.notifier.show("New keypair generated!", type_="success")
 
         self.public_key = self.private_key.public_key
         self.my_pub_hex = self.public_key.encode().hex()
@@ -175,8 +178,7 @@ class SecureChatApp(ctk.CTk):
     def copy_pub_key(self):
         self.clipboard_clear()
         self.clipboard_append(self.my_pub_hex)
-        messagebox.showinfo("Copied", "Public key copied!")
-
+        self.notifier.show("Public key copied!", type_="success")
     # ---------------- Messages ----------------
     def display_message(self, sender_pub, text):
         self.messages_box.configure(state='normal')
@@ -211,7 +213,7 @@ class SecureChatApp(ctk.CTk):
 
         # No recipient selected
         if not self.recipient_pub_hex:
-            messagebox.showwarning("No recipient", "Select a recipient first (/choose)")
+            self.notifier.show("Select a recipient first", type_="warning")
             return
 
         # Send the message, passing both signing and encryption keys
@@ -293,25 +295,26 @@ class SecureChatApp(ctk.CTk):
             return
         pub_hex = simpledialog.askstring("Public Key", f"Public key for {name}:")
         if not pub_hex or len(pub_hex) != 64:
-            messagebox.showerror("Error", "Invalid public key")
+            self.notifier.show("Invalid public key", type_="error")
             return
         
         try:
             add_recipient(name, pub_hex)
         except ValueError as e:
-            messagebox.showerror("Error", str(e))
+            self.notifier.show(str(e), type_="error")
             return
 
         self.recipient_pub_hex = pub_hex
         self.update_recipient_list()
-        messagebox.showinfo("Saved", f"{name} saved and selected.")
+        self.notifier.show(f"{name} saved and selected.")
+
 
 
 
 
     def choose_recipient(self):
         if not recipients:
-            messagebox.showwarning("No recipients", "Add a recipient first (/new)")
+            self.notifier.show("Add a recipient first", type_="warning")
             return
         choose_win = Toplevel(self)
         choose_win.title("Choose Recipient")
