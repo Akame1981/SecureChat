@@ -40,10 +40,12 @@ def add_recipient(name: str, pub_key: str):
         existing_name = [n for n, k in recipients.items() if k == pub_key][0]
         raise ValueError(f"This public key is already assigned to '{existing_name}'.")
 
+    # Add recipient
     recipients[name] = pub_key
     save_recipients()
 
-
+    # ✅ Print log
+    print(f"Added recipient: {name} / {pub_key}")
 
 
 
