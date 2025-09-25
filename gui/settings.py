@@ -236,37 +236,36 @@ class SettingsWindow(Toplevel):
         CTkDialog(self, title="Success", label="PIN updated!").result
 
 
-    # --- Recipient management methods ---
+        # --- Recipient management methods ---
     def refresh_list(self):
         self.rec_listbox.delete(0, tk.END)
+        try:
+            recipients = load_recipients(self.app.pin)  # pass PIN from main app
+        except Exception as e:
+            print("Failed to load recipients:", e)
+            recipients = {}
         for name, key in recipients.items():
             self.rec_listbox.insert(tk.END, f"{name}: {key}")
 
     def add_recipient_gui(self):
-        # Custom dialog for recipient name
         name = CTkDialog(self, title="Add Recipient", label="Name:").result
         if not name:
             return
 
-        # Custom dialog for recipient public key
         pub_key = CTkDialog(self, title="Add Recipient", label="Public Key (64 hex chars):").result
         if not pub_key or len(pub_key) != 64:
-            messagebox.showerror("Error", "Invalid public key")
+            tk.messagebox.showerror("Error", "Invalid public key")
             return
 
-        add_recipient(name, pub_key)
+        add_recipient(name, pub_key, self.app.pin)   # pass PIN
         self.refresh_list()
-
-        # Safely update main app sidebar
         if hasattr(self.app, "update_recipient_list"):
             self.app.update_recipient_list()
-
 
     def edit_recipient(self):
         sel = self.rec_listbox.curselection()
         if not sel:
-            
-            messagebox.showwarning("Select", "Select a recipient to edit")
+            tk.messagebox.showwarning("Select", "Select a recipient to edit")
             return
 
         entry = self.rec_listbox.get(sel[0])
@@ -274,39 +273,35 @@ class SettingsWindow(Toplevel):
         name = name.strip()
         old_key = old_key.strip()
 
-        # Custom dialog for new name
         new_name = CTkDialog(self, title="Edit Recipient", label="New Name:", initial_value=name).result
         if not new_name:
             return
 
-        # Custom dialog for new public key
         new_key = CTkDialog(self, title="Edit Recipient", label="New Public Key:", initial_value=old_key).result
         if not new_key or len(new_key) != 64:
-            messagebox.showerror("Error", "Invalid public key")
+            tk.messagebox.showerror("Error", "Invalid public key")
             return
 
-        recipients.pop(name)
-        add_recipient(new_name, new_key)
+        from utils.recipients import delete_recipient
+        delete_recipient(name, self.app.pin)             # remove old one with pin
+        add_recipient(new_name, new_key, self.app.pin)   # save new one with pin
         self.refresh_list()
-
-        # Safely update main app sidebar
         if hasattr(self.app, "update_recipient_list"):
             self.app.update_recipient_list()
-
 
     def delete_recipient(self):
         sel = self.rec_listbox.curselection()
         if not sel:
-            
-            messagebox.showwarning("Select", "Select a recipient to delete")
+            tk.messagebox.showwarning("Select", "Select a recipient to delete")
             return
+
         entry = self.rec_listbox.get(sel[0])
         name = entry.split(":")[0].strip()
 
         confirm = CTkConfirmDialog(self, title="Delete Recipient", message=f"Delete {name}?")
         if confirm.result:
             from utils.recipients import delete_recipient as del_rec
-            del_rec(name)
+            del_rec(name, self.app.pin)  # pass PIN
             self.refresh_list()
             self.app.update_recipient_list()
 
