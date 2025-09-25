@@ -29,7 +29,7 @@ from utils.crypto import (
 )
 from utils.network import fetch_messages, send_message
 from utils.recipients import add_recipient, get_recipient_key, get_recipient_name, recipients
-
+from datetime import datetime
 
 
 CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "config/settings.json"))
@@ -129,14 +129,15 @@ class SecureChatApp(ctk.CTk):
         self.recipient_pub_hex = get_recipient_key(name)
         self.sidebar.update_list(selected_pub=self.recipient_pub_hex)
         
+        # Clear previous messages in the scrollable container
+        for widget in self.messages_container.winfo_children():
+            widget.destroy()
+
         # Load previous messages for this recipient
         if self.recipient_pub_hex:
-            self.messages_box.configure(state='normal')
-            self.messages_box.delete("1.0", tk.END)
-            messages = load_messages(self.recipient_pub_hex, self.pin)  # <-- pass self.pin
+            messages = load_messages(self.recipient_pub_hex, self.pin)  # <-- pass PIN
             for msg in messages:
                 self.display_message(msg["sender"], msg["text"])
-            self.messages_box.configure(state='disabled')
 
 
 
@@ -167,7 +168,7 @@ class SecureChatApp(ctk.CTk):
         chat_frame.pack(side="right", fill="both", expand=True)
 
 
-        # ---------------- Public Key Frame ----------------
+        # ---------------- Public Key Frame ----------------f
         pub_frame = ctk.CTkFrame(chat_frame, fg_color="#2e2e3f", corner_radius=10)
         pub_frame.pack(fill="x", padx=10, pady=10)
         pub_frame.grid_columnconfigure(0, weight=1)
@@ -215,8 +216,9 @@ class SecureChatApp(ctk.CTk):
 
 
         # Messages Box
-        self.messages_box = ctk.CTkTextbox(chat_frame, corner_radius=10, fg_color="#2e2e3f", text_color="white")
-        self.messages_box.pack(padx=10, pady=10, fill="both", expand=True)
+        self.messages_container = ctk.CTkScrollableFrame(chat_frame, fg_color="#2e2e3f", corner_radius=10)
+        self.messages_container.pack(padx=10, pady=10, fill="both", expand=True)
+        self.messages_container.grid_columnconfigure(0, weight=1)
 
         # Input Frame
         input_frame = ctk.CTkFrame(chat_frame, fg_color="transparent")
@@ -239,20 +241,55 @@ class SecureChatApp(ctk.CTk):
         self.clipboard_append(self.my_pub_hex)
         self.notifier.show("Public key copied!", type_="success")
     # ---------------- Messages ----------------
+
     def display_message(self, sender_pub, text):
-        self.messages_box.configure(state='normal')
         display_sender = "You" if sender_pub == self.my_pub_hex else get_recipient_name(sender_pub) or sender_pub
-        tag = "you" if display_sender == "You" else "other"
-        self.messages_box.insert(tk.END, f"{display_sender}: {text}\n", tag)
-        self.messages_box.see(tk.END)
-        self.messages_box.configure(state='disabled')
+        is_you = display_sender == "You"
+
+        bubble_color = "#7289da" if is_you else "#2f3136"
+
+
+        bubble_frame = ctk.CTkFrame(
+            self.messages_container,
+            fg_color=bubble_color,
+            corner_radius=20  #
+        )
+
+        # Sender + timestamp (soon gonna add the timestamp really its a placeholder)
+        timestamp = datetime.now().strftime("%H:%M")
+        sender_label = ctk.CTkLabel(
+            bubble_frame,
+            text=f"{display_sender} • {timestamp}",
+            text_color="white",
+            font=("Roboto", 10, "bold")
+        )
+        sender_label.pack(anchor="w" if not is_you else "e", pady=(0, 5), padx=20)
+
+        # Message text
+        msg_label = ctk.CTkLabel(
+            bubble_frame,
+            text=text,
+            wraplength=400,
+            justify="left" if not is_you else "right",
+            text_color="white",
+            font=("Roboto", 12)
+        )
+        msg_label.pack(anchor="w" if not is_you else "e", padx=20, pady=(0,10))
+
+
+        bubble_frame.pack(
+            anchor="w" if not is_you else "e",
+            pady=8,
+            padx=20,  
+            fill="x"
+        )
+
+        # Auto-scroll
+        self.messages_container._parent_canvas.update_idletasks()
+        self.messages_container._parent_canvas.yview_moveto(1.0)
 
 
 
-
-
-
-        
 
 
     def on_send(self):
