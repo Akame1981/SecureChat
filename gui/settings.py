@@ -8,7 +8,7 @@ import tkinter.filedialog as fd
 import customtkinter as ctk
 
 from utils.crypto import PrivateKey, SigningKey, load_key, save_key
-from utils.recipients import add_recipient, get_recipient_key, recipients
+from utils.recipients import add_recipient, get_recipient_key, get_recipient_name, load_recipients
 
 CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config/settings.json"))
 

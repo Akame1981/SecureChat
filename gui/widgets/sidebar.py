@@ -1,12 +1,13 @@
 import customtkinter as ctk
-from utils.recipients import recipients, add_recipient
+from utils.recipients import add_recipient, get_recipient_key, get_recipient_name, load_recipients
 from gui.widgets.notification import Notification, NotificationManager
 
 class Sidebar(ctk.CTkFrame):
-    def __init__(self, parent, select_callback, add_callback=None):
+    def __init__(self, parent, select_callback, add_callback=None, pin=None):
         super().__init__(parent, width=220, corner_radius=0)
         self.select_callback = select_callback
         self.add_callback = add_callback
+        self.pin = pin 
         self.pack(side="left", fill="y")
 
         self.notifier = NotificationManager(parent)
@@ -34,6 +35,10 @@ class Sidebar(ctk.CTkFrame):
         self.add_btn.pack(pady=12, padx=12, fill="x")
 
     def update_list(self, selected_pub=None):
+        # get current PIN from your app/session
+        pin = self.pin 
+        recipients = load_recipients(pin)
+
         for widget in self.recipient_listbox.winfo_children():
             widget.destroy()
 
@@ -50,17 +55,26 @@ class Sidebar(ctk.CTkFrame):
             )
             btn.pack(fill="x", pady=4, padx=5)
 
+
     def open_add_dialog(self):
-        AddRecipientDialog(self, self.notifier, self.update_list, self.add_callback)
+        AddRecipientDialog(
+            self, 
+            self.notifier, 
+            self.update_list, 
+            self.add_callback,
+            pin=self.pin
+        )
+
 
 
 class AddRecipientDialog(ctk.CTkToplevel):
-    def __init__(self, parent, notifier, update_list_callback, add_callback=None):
+    def __init__(self, parent, notifier, update_list_callback, add_callback=None, pin=None):
         super().__init__(parent)
         self.title("Add Recipient")
         self.geometry("360x260")
         self.resizable(False, False)
         self.grab_set()  # modal
+        self.pin = pin
 
         self.parent = parent
         self.notifier = notifier
@@ -106,7 +120,7 @@ class AddRecipientDialog(ctk.CTkToplevel):
         key = self.key_entry.get().strip()
         if name and key:
             try:
-                add_recipient(name, key) 
+                add_recipient(name, key, self.pin) 
                 print(f"Added recipient: {name} / {key}")
                 self.update_list_callback(selected_pub=key)
                 self.notifier.show(f"Recipient '{name}' added!", type_="success")
