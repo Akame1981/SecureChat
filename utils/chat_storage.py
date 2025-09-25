@@ -54,6 +54,14 @@ def decrypt_chat(enc_bytes: bytes, pin: str) -> dict:
     finally:
         zero_bytes(master_key)
 
+
+
+
+
+
+
+
+
 # -------------------------
 # --- Public functions ---
 # -------------------------

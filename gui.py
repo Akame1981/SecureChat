@@ -28,7 +28,7 @@ from utils.crypto import (
     verify_signature,
 )
 from utils.network import fetch_messages, send_message
-from utils.recipients import add_recipient, get_recipient_key, get_recipient_name, recipients
+from utils.recipients import add_recipient, get_recipient_key, get_recipient_name, load_recipients
 from datetime import datetime
 
 
@@ -126,18 +126,20 @@ class SecureChatApp(ctk.CTk):
 
 
     def select_recipient(self, name):
-        self.recipient_pub_hex = get_recipient_key(name)
+        # Pass self.pin to get_recipient_key
+        self.recipient_pub_hex = get_recipient_key(name, self.pin)
         self.sidebar.update_list(selected_pub=self.recipient_pub_hex)
-        
-        # Clear previous messages in the scrollable container
+
+        # Clear previous messages
         for widget in self.messages_container.winfo_children():
             widget.destroy()
 
-        # Load previous messages for this recipient
+        # Load messages for this recipient
         if self.recipient_pub_hex:
-            messages = load_messages(self.recipient_pub_hex, self.pin)  # <-- pass PIN
+            messages = load_messages(self.recipient_pub_hex, self.pin)
             for msg in messages:
                 self.display_message(msg["sender"], msg["text"])
+
 
 
 
@@ -161,8 +163,12 @@ class SecureChatApp(ctk.CTk):
 
 
         # Sidebar (left)
-        self.sidebar = Sidebar(main_frame, select_callback=self.select_recipient, add_callback=self.add_new_recipient)
-    
+        self.sidebar = Sidebar(
+            main_frame,
+            select_callback=self.select_recipient,
+            add_callback=self.add_new_recipient,
+            pin=self.pin
+        )
         # ---------------- Chat Area (right) ----------------
         chat_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
         chat_frame.pack(side="right", fill="both", expand=True)
@@ -243,7 +249,8 @@ class SecureChatApp(ctk.CTk):
     # ---------------- Messages ----------------
 
     def display_message(self, sender_pub, text):
-        display_sender = "You" if sender_pub == self.my_pub_hex else get_recipient_name(sender_pub) or sender_pub
+        display_sender = "You" if sender_pub == self.my_pub_hex else get_recipient_name(sender_pub, self.pin) or sender_pub
+
         is_you = display_sender == "You"
 
         bubble_color = "#7289da" if is_you else "#2f3136"
@@ -375,13 +382,10 @@ class SecureChatApp(ctk.CTk):
                     self.after(0, self.display_message, sender_pub, decrypted)
                     
                     # Save to local chat storage
-                    save_message(sender_pub, get_recipient_name(sender_pub) or sender_pub, decrypted, self.pin)  # pass PIN
+                    save_message(sender_pub, get_recipient_name(sender_pub, self.pin) or sender_pub, decrypted, self.pin)
 
 
             time.sleep(1)
-
-
-
 
 
 
@@ -417,13 +421,6 @@ class SecureChatApp(ctk.CTk):
 
 
 
-
-
-
-
-
-
-
     # ---------------- Settings ----------------
 
 
@@ -443,7 +440,7 @@ class SecureChatApp(ctk.CTk):
             return
         
         try:
-            add_recipient(name, pub_hex)
+            add_recipient(name, pub_hex, self.pin)
         except ValueError as e:
             self.notifier.show(str(e), type_="error")
             return
@@ -457,9 +454,11 @@ class SecureChatApp(ctk.CTk):
 
 
     def choose_recipient(self):
+        recipients = load_recipients(self.pin)  # <-- load recipients dynamically
         if not recipients:
             self.notifier.show("Add a recipient first", type_="warning")
             return
+
         choose_win = Toplevel(self)
         choose_win.title("Choose Recipient")
         choose_win.geometry("300x300")
@@ -474,8 +473,7 @@ class SecureChatApp(ctk.CTk):
             sel = listbox.curselection()
             if sel:
                 name = listbox.get(sel[0])
-                self.recipient_pub_hex = get_recipient_key(name)
-                
+                self.recipient_pub_hex = get_recipient_key(name, self.pin)
                 choose_win.destroy()
 
         tk.Button(choose_win, text="Select", command=select, bg="#4a90e2", fg="white").pack(pady=5)
