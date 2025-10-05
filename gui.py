@@ -10,7 +10,7 @@ from tkinter import simpledialog, Toplevel
 import customtkinter as ctk
 
 from gui.pin_dialog import PinDialog
-from gui.settings import SettingsWindow
+from gui.settings.window import SettingsWindow
 from gui.tooltip import ToolTip
 from gui.widgets.notification import Notification, NotificationManager
 from gui.widgets.sidebar import Sidebar
@@ -68,7 +68,7 @@ class SecureChatApp(ctk.CTk):
 
 
         self.notifier = NotificationManager(self)
-
+        
         # Default server values (backup if config load fails)
         self.SERVER_URL = "https://34.61.34.132:8000"
         self.SERVER_CERT = get_resource_path("utils/cert.pem")
