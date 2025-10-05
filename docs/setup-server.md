@@ -1,15 +1,15 @@
-# SecureChat Server Setup Guide
+# Whispr Server Setup Guide
 
-This guide will help you deploy your own **SecureChat** server using **FastAPI**.  
-The SecureChat client connects to the official public server by default, but you can host your own for full control and privacy.
+This guide will help you deploy your own **Whispr** server using **FastAPI**.  
+The Whispr client connects to the official public server by default, but you can host your own for full control and privacy.
 
 ---
 
 ## 1. Clone the Repository
 
 ```sh
-git clone https://github.com/Akame1981/SecureChat.git
-cd SecureChat
+git clone https://github.com/Akame1981/Whispr.git
+cd Whispr
 ```
 
 ---
@@ -43,7 +43,7 @@ If Redis is not available, the server will use in-memory storage (messages lost 
   redis-server
   ```
 
-> If Redis is running, SecureChat will use it automatically.  
+> If Redis is running, Whispr will use it automatically.  
 > If not, the server prints a warning and uses in-memory fallback.
 
 ---
@@ -57,7 +57,7 @@ Generate a self-signed certificate (replace placeholders as needed):
 ```sh
 openssl req -x509 -nodes -days 365 -newkey rsa:4096 \
     -keyout key.pem -out cert.pem \
-    -subj "/C=BG/ST=Sofia/L=Sofia/O=SecureChat/CN=YOUR_IP" \
+    -subj "/C=BG/ST=Sofia/L=Sofia/O=Whispr/CN=YOUR_IP" \
     -addext "subjectAltName=IP:YOUR_IP"
 ```
 
@@ -91,17 +91,17 @@ uvicorn server:app --host 0.0.0.0 --port 8000
 
 ## 7. (Optional) Run as a Systemd Service (Linux)
 
-Create `/etc/systemd/system/securechat.service`:
+Create `/etc/systemd/system/whispr.service`:
 
 ```ini
 [Unit]
-Description=SecureChat FastAPI server
+Description=Whispr FastAPI server
 After=network.target
 
 [Service]
 User=YOUR_USERNAME
-WorkingDirectory=/home/YOUR_USERNAME/SecureChat
-ExecStart=/home/YOUR_USERNAME/SecureChat/venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000 --ssl-keyfile /home/YOUR_USERNAME/SecureChat/key.pem --ssl-certfile /home/YOUR_USERNAME/SecureChat/cert.pem
+WorkingDirectory=/home/YOUR_USERNAME/Whispr
+ExecStart=/home/YOUR_USERNAME/Whispr/venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000 --ssl-keyfile /home/YOUR_USERNAME/Whispr/key.pem --ssl-certfile /home/YOUR_USERNAME/Whispr/cert.pem
 Restart=on-failure
 
 [Install]
@@ -112,9 +112,9 @@ Enable and start the service:
 
 ```sh
 sudo systemctl daemon-reload
-sudo systemctl enable securechat
-sudo systemctl start securechat
-sudo systemctl status securechat
+sudo systemctl enable whispr
+sudo systemctl start whispr
+sudo systemctl status whispr
 ```
 
 ---

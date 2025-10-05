@@ -42,7 +42,7 @@ def get_resource_path(relative_path):
         base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
 
-class SecureChatApp(ctk.CTk):
+class WhisprApp(ctk.CTk):
 
     def update_recipient_list(self):
         """Refresh the sidebar recipient buttons."""
@@ -54,7 +54,7 @@ class SecureChatApp(ctk.CTk):
 
     def __init__(self):
         super().__init__()
-        self.title("🔒 Secure Chat")
+        self.title("🕵️ Whispr")
         self.geometry("600x600")
 
         
@@ -488,5 +488,5 @@ class SecureChatApp(ctk.CTk):
 
 
 if __name__ == "__main__":
-    app = SecureChatApp()
+    app = WhisprApp()
     app.mainloop()

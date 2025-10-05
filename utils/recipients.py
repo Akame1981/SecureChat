@@ -99,4 +99,6 @@ def get_recipient_name(pub_key: str, pin: str):
             return name
     return None
 
+# Whispr recipients management
+
 
