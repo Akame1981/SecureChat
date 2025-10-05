@@ -13,7 +13,7 @@ class SettingsWindow(ctk.CTkToplevel):
         super().__init__(parent)
         self.parent = parent
         self.app = app
-        self.title("Settings")
+        self.title("Whispr Settings")
         self.geometry("500x450")
         self.minsize(400, 350)
         self.configure(bg="#1e1e2f")

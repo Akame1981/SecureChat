@@ -31,7 +31,7 @@ class ServerTab:
         self.use_cert_var.trace_add("write", lambda *_: self._update_cert_visibility())
 
     def _build_ui(self):
-        """Build all widgets for the Server tab."""
+        """Build all widgets for the Whispr Server tab."""
 
         ctk.CTkLabel(
             self.frame, text="Server Settings",

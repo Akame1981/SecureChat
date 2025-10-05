@@ -1,12 +1,12 @@
-# SecureChat Client Documentation
+# Whispr Client Documentation
 
-This document describes the structure and usage of the SecureChat client codebase.
+This document describes the structure and usage of the Whispr client codebase.
 
 ---
 
 ## Overview
 
-The SecureChat client is a Tkinter-based GUI application for end-to-end encrypted messaging.  
+The Whispr client is a Tkinter-based GUI application for end-to-end encrypted messaging.  
 It uses PyNaCl for cryptography and communicates with a FastAPI server.
 
 ---

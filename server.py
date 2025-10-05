@@ -152,3 +152,7 @@ def get_inbox(recipient_key: str):
 @app.get("/public-key")
 def get_server_public_key():
     return {"public_key": server_public.encode().hex()}
+
+# -------------------------
+# Whispr server implementation
+# -------------------------

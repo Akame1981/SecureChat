@@ -1,12 +1,12 @@
-# SecureChat Server Documentation
+# Whispr Server Documentation
 
-This document describes the SecureChat server codebase and its API.
+This document describes the Whispr server codebase and its API.
 
 ---
 
 ## Overview
 
-The SecureChat server is built with FastAPI and provides endpoints for sending and receiving encrypted messages.  
+The Whispr server is built with FastAPI and provides endpoints for sending and receiving encrypted messages.  
 It supports Redis for persistent, ephemeral message storage and rate limiting, with an in-memory fallback if Redis is unavailable.
 
 ---
