@@ -1,13 +1,13 @@
-# 🔒 SecureChat
+# 🕵️ Whispr
 
-**SecureChat** is a simple yet powerful end-to-end encrypted chat application built with **FastAPI**, **PyNaCl**, and **Tkinter**.  
+**Whispr** is a simple yet powerful end-to-end encrypted chat application built with **FastAPI**, **PyNaCl**, and **Tkinter**.  
 It allows users to send encrypted messages securely between public keys, store recipients, and manage encryption keys locally.
 
 ---
 
 ## ⚠️ Important Notice
 
-For detailed instructions on **setting up the server**, including HTTPS, self-signed certificates, and systemd setup, please refer to the [SecureChat Documentation](docs/setup-server.md).  
+For detailed instructions on **setting up the server**, including HTTPS, self-signed certificates, and systemd setup, please refer to the [Whispr Documentation](docs/setup-server.md).  
 
 > This ensures secure deployment and avoids accidental exposure of keys or misconfiguration.
 
@@ -35,15 +35,15 @@ For detailed instructions on **setting up the server**, including HTTPS, self-si
 ## 🚀 Installation
 
 
-You can download it from [HERE](https://github.com/Akame1981/SecureChat/releases/tag/v0.1) but its buggy still. (Advised to run it from python)
+You can download it from [HERE](https://github.com/Akame1981/Whispr/releases/tag/v0.1) but its buggy still. (Advised to run it from python)
 
 
 1. **Clone the repository**
 
 ```bash
-git clone https://github.com/Akame1981/SecureChat.git
+git clone https://github.com/Akame1981/Whispr.git
 
-cd SecureChat
+cd Whispr
 ```
 2. Create and activate a Python virtual environment:
 
@@ -81,7 +81,7 @@ pip install -r requirements.txt
 gui is the Tkinter chat client. It will ask for a PIN to unlock or generate your private key.
 
 
-By default it connects to the official public server. If you wanna make your own server, refer to the [SecureChat Documentation](docs/setup-server.md)
+By default it connects to the official public server. If you wanna make your own server, refer to the [Whispr Documentation](docs/setup-server.md)
 
 ---
 
@@ -122,9 +122,9 @@ This project is licensed under the **Creative Commons Attribution-NonCommercial 
 SOON
 
 ---
-# 🔒 SecureChat Roadmap
+# 🕵️ Whispr Roadmap
 
-This roadmap outlines the upcoming updates and planned features for **SecureChat**.
+This roadmap outlines the upcoming updates and planned features for **Whispr**.
 
 ---
 
@@ -194,4 +194,4 @@ Contributions are welcome!
 
 ## 📬 Contact
 Developed by **Akame1981**  
-💡 Share feedback, questions, or suggestions via **GitHub Issues**.  
+💡 Share feedback, questions, or suggestions via **GitHub Issues**.
