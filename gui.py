@@ -15,7 +15,7 @@ from gui.tooltip import ToolTip
 from gui.widgets.notification import Notification, NotificationManager
 from gui.widgets.sidebar import Sidebar
 from gui.layout import WhisprUILayout
-
+from gui.message_styling import create_message_bubble
 
 from utils.chat_storage import load_messages, save_message
 from utils.crypto import (
@@ -33,6 +33,8 @@ from utils.network import fetch_messages, send_message
 from utils.recipients import add_recipient, get_recipient_key, get_recipient_name, load_recipients
 from utils.chat_manager import ChatManager
 from utils.server_check import run_server_check_in_thread
+from utils.message_handler import handle_send
+from utils.key_manager import init_keypair
 
 from datetime import datetime
 import time  
@@ -105,38 +107,18 @@ class WhisprApp(ctk.CTk):
 
 # ---------------- Keypair ----------------
     def init_keypair(self):
-        if os.path.exists(KEY_FILE):
-            dlg = PinDialog(self, "Enter PIN to unlock keypair")
-            self.wait_window(dlg)
-            pin = dlg.pin
-            if not pin:
-                self.destroy()
-                return
-            try:
-                self.private_key, self.signing_key = load_key(pin)
-                self.pin = pin  # <-- save PIN for chat encryption
-            except ValueError:
-                self.notifier.show("Incorrect PIN or corrupted key!", type_="error")
-                self.destroy()
-                return
-        else:
-            dlg = PinDialog(self, "Set a new PIN", new_pin=True)
-            self.wait_window(dlg)
-            pin = dlg.pin
-            if not pin:
-                self.destroy()
-                return
+        result = init_keypair(self.notifier, PinDialog, self)
+        if not result:
+            self.destroy()
+            return
 
-            self.private_key = PrivateKey.generate()
-            self.signing_key = SigningKey.generate()
-            save_key(self.private_key, self.signing_key, pin)
-            self.pin = pin  # <-- save PIN for chat encryption
-            self.notifier.show("New keypair generated!", type_="success")
-
+        self.private_key, self.signing_key, self.pin = result
         self.public_key = self.private_key.public_key
         self.my_pub_hex = self.public_key.encode().hex()
         self.signing_pub_hex = self.signing_key.verify_key.encode().hex()
 
+
+        
 
     def select_recipient(self, name):
         # Pass self.pin to get_recipient_key
@@ -164,42 +146,7 @@ class WhisprApp(ctk.CTk):
     # ---------------- Messages ----------------
 
     def display_message(self, sender_pub, text, timestamp=None):
-        display_sender = "You" if sender_pub == self.my_pub_hex else get_recipient_name(sender_pub, self.pin) or sender_pub
-        is_you = display_sender == "You"
-        bubble_color = "#7289da" if is_you else "#2f3136"
-
-        bubble_frame = ctk.CTkFrame(
-            self.messages_container,
-            fg_color=bubble_color,
-            corner_radius=20
-        )
-
-        # Use timestamp if provided, else current time
-        ts_str = datetime.fromtimestamp(timestamp).strftime("%H:%M") if timestamp else datetime.now().strftime("%H:%M")
-        
-        sender_label = ctk.CTkLabel(
-            bubble_frame,
-            text=f"{display_sender} • {ts_str}",
-            text_color="white",
-            font=("Roboto", 10, "bold")
-        )
-        sender_label.pack(anchor="w" if not is_you else "e", pady=(0,5), padx=20)
-
-        msg_label = ctk.CTkLabel(
-            bubble_frame,
-            text=text,
-            wraplength=400,
-            justify="left" if not is_you else "right",
-            text_color="white",
-            font=("Roboto", 12)
-        )
-        msg_label.pack(anchor="w" if not is_you else "e", padx=20, pady=(0,10))
-
-        bubble_frame.pack(anchor="w" if not is_you else "e", pady=8, padx=20, fill="x")
-
-        # Auto-scroll
-        self.messages_container._parent_canvas.update_idletasks()
-        self.messages_container._parent_canvas.yview_moveto(1.0)
+         create_message_bubble(self.messages_container, sender_pub, text, self.my_pub_hex, self.pin)
 
 
 
@@ -207,44 +154,7 @@ class WhisprApp(ctk.CTk):
 
 
     def on_send(self):
-        text = self.input_box.get().strip()
-        if not text:
-            return
-
-        # Handle special commands
-        if text.startswith("/new"):
-            self.add_new_recipient()
-            self.input_box.delete(0, tk.END)
-            return
-        if text.startswith("/choose"):
-            self.choose_recipient()
-            self.input_box.delete(0, tk.END)
-            return
-
-        # No recipient selected
-        if not self.recipient_pub_hex:
-            self.notifier.show("Select a recipient first", type_="warning")
-            return
-
-        # Send the message, passing both signing and encryption keys
-        if send_message(
-            self,  # pass the app instance
-            to_pub=self.recipient_pub_hex,
-            signing_pub=self.signing_pub_hex,
-            text=text,
-            signing_key=self.signing_key,
-            enc_pub=self.my_pub_hex
-        ):
-
-            # Display the message locally
-            self.display_message(self.my_pub_hex, text)
-
-            # Save message to local chat storage
-            save_message(self.recipient_pub_hex, "You", text, self.pin, timestamp=time())
-
-
-        # Clear input box after sending
-        self.input_box.delete(0, tk.END)
+        handle_send(self)
 
 
 
