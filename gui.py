@@ -29,6 +29,7 @@ from utils.crypto import (
 )
 from utils.network import fetch_messages, send_message
 from utils.recipients import add_recipient, get_recipient_key, get_recipient_name, load_recipients
+from utils.chat_manager import ChatManager
 from datetime import datetime
 
 
@@ -68,7 +69,10 @@ class WhisprApp(ctk.CTk):
 
 
         self.notifier = NotificationManager(self)
-        
+
+
+
+
         # Default server values (backup if config load fails)
         self.SERVER_URL = "https://34.61.34.132:8000"
         self.SERVER_CERT = get_resource_path("utils/cert.pem")
@@ -80,10 +84,12 @@ class WhisprApp(ctk.CTk):
         # Initialize keypair
         self.init_keypair()
         self.create_widgets()
+        self.chat_manager = ChatManager(self)
 
         # Start fetch loop
         self.stop_event = threading.Event()
-        threading.Thread(target=self.fetch_loop, daemon=True).start()
+        threading.Thread(target=self.chat_manager.fetch_loop, daemon=True).start()
+
         threading.Thread(target=self.check_server_loop, daemon=True).start()
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -232,10 +238,23 @@ class WhisprApp(ctk.CTk):
 
         self.input_box = ctk.CTkEntry(input_frame, placeholder_text="Type a message...")
         self.input_box.pack(side="left", expand=True, fill="x", padx=(0,5), pady=5)
-        self.input_box.bind("<Return>", lambda event: self.on_send())
+        def on_enter_pressed(event):
+            text = self.input_box.get().strip()
+            if text:
+                self.chat_manager.send(text)
+                self.input_box.delete(0, tk.END)  
 
-        ctk.CTkButton(input_frame, text="Send", command=self.on_send, fg_color="#4a90e2").pack(side="right", padx=(0,5), pady=5)
+        self.input_box.bind("<Return>", on_enter_pressed)
 
+        ctk.CTkButton(
+            input_frame,
+            text="Send",
+            command=lambda: [
+                self.chat_manager.send(self.input_box.get().strip()),
+                self.input_box.delete(0, tk.END)  
+            ],
+            fg_color="#4a90e2"
+        ).pack(side="right", padx=(0,5), pady=5)
 
 
         # Server status (top-right corner)
@@ -366,26 +385,7 @@ class WhisprApp(ctk.CTk):
                 print("Failed to load app settings:", e)
 
 
-    def fetch_loop(self):
-        while not self.stop_event.is_set():
-            msgs = fetch_messages(self, self.my_pub_hex, self.private_key)
-            for msg in msgs:
-                sender_pub = msg["from_enc"]  
-                encrypted_message = msg["message"]
-                signature = msg.get("signature")
 
-                # Verify signature using signing key
-                if signature and verify_signature(msg["from_sign"], encrypted_message, signature):
-                    decrypted = decrypt_message(encrypted_message, self.private_key)
-                    
-                    # Display in GUI
-                    self.after(0, self.display_message, sender_pub, decrypted)
-                    
-                    # Save to local chat storage
-                    save_message(sender_pub, get_recipient_name(sender_pub, self.pin) or sender_pub, decrypted, self.pin)
-
-
-            time.sleep(1)
 
 
 
