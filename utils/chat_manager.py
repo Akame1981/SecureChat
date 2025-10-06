@@ -1,8 +1,8 @@
 # chat_manager.py
 import threading
 import time
-from datetime import datetime
 import queue
+from datetime import datetime
 
 from utils.chat_storage import load_messages, save_message
 from utils.crypto import decrypt_message, verify_signature
@@ -33,7 +33,12 @@ class ChatManager:
         while not self.stop_event.is_set():
             try:
                 # Fetch messages since last timestamp
-                msgs = fetch_messages(self.app, self.app.my_pub_hex, self.app.private_key, since=self.last_fetch_ts)
+                msgs = fetch_messages(
+                    self.app,
+                    self.app.my_pub_hex,
+                    self.app.private_key,
+                    since=self.last_fetch_ts
+                )
 
                 for msg in msgs:
                     sender_pub = msg["from_enc"]
@@ -94,6 +99,7 @@ class ChatManager:
             except queue.Empty:
                 continue
 
+    # ---------------- Queue message ----------------
     def send(self, text):
         """
         Queue a message to be sent to the currently selected recipient.
