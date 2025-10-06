@@ -37,20 +37,46 @@ class KeysTab:
             fg_color="#4a90e2"
         ).grid(row=2, column=0, pady=5, padx=20, sticky="ew")
 
-        # Add Export/Import buttons
+
+        ctk.CTkLabel(
+            self.frame,
+            text=(
+                "⚠ Exporting your account will create a backup containing your encrypted keys and messages.\n"
+                "Keep this file safe. You will need your original PIN to import it."
+            ),
+            font=("Roboto", 11),
+            text_color="orange",
+            justify="left"
+        ).grid(row=3, column=0, pady=(10, 2), padx=20, sticky="w")
+
+        # Export Account button
         ctk.CTkButton(
             self.frame,
             text="Export Account",
             command=self.export_account,
             fg_color="#4a90e2"
-        ).grid(row=3, column=0, pady=5, padx=20, sticky="ew")
+        ).grid(row=4, column=0, pady=5, padx=20, sticky="ew")
 
+
+        ctk.CTkLabel(
+            self.frame,
+            text=(
+                "⚠ Importing an account will overwrite your existing keys and messages.\n"
+                "Make sure this is a valid backup. You will need the original PIN."
+            ),
+            font=("Roboto", 11),
+            text_color="orange",
+            justify="left"
+        ).grid(row=5, column=0, pady=(10, 2), padx=20, sticky="w")
+
+        # Import Account button
         ctk.CTkButton(
             self.frame,
             text="Import Account",
             command=self.import_account,
             fg_color="#4a90e2"
-        ).grid(row=4, column=0, pady=5, padx=20, sticky="ew")
+        ).grid(row=6, column=0, pady=5, padx=20, sticky="ew")
+
 
     # --- Existing methods ---
     def new_key(self):
@@ -91,7 +117,7 @@ class KeysTab:
         save_key(priv, sign, new_pin)
         CTkDialog(self.frame, title="Success", label="PIN updated!").result
 
-    # --- New methods ---
+
     def export_account(self):
         pin = CTkDialog(self.frame, title="PIN", label="Enter your PIN to export account:", show="*").result
         if not pin:
