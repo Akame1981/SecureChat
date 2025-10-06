@@ -5,6 +5,8 @@ import customtkinter as ctk
 from gui.settings.keys_tab import KeysTab
 from gui.settings.recipients_tab import RecipientsTab
 from gui.settings.server_tab import ServerTab
+from gui.settings.appearance_tab import AppearanceTab
+
 
 CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../config/settings.json"))
 
@@ -38,18 +40,21 @@ class SettingsWindow(ctk.CTkToplevel):
         self.tabs.add("Keys")
         self.tabs.add("Recipients")
         self.tabs.add("Server")
+        self.tabs.add("Appearance")
 
         # Pass the already-created tab frame to each tab class
         self.keys_tab = KeysTab(self.tabs.tab("Keys"), self.app)
         self.recipients_tab = RecipientsTab(self.tabs.tab("Recipients"), self.app)
         self.server_tab = ServerTab(self.tabs.tab("Server"), self.app, CONFIG_PATH)
+        self.appearance_tab = AppearanceTab(self.tabs.tab("Appearance"), self.app, CONFIG_PATH)
 
         # --- Recipients Tab ---
         self.recipients_tab.refresh_list()  # initial refresh
 
 
         # Ensure all tabs expand correctly
-        for tab_name in ["Keys", "Recipients", "Server"]:
+        for tab_name in ["Keys", "Recipients", "Server", "Appearance"]:
             tab = self.tabs.tab(tab_name)
             tab.grid_rowconfigure(0, weight=1)
             tab.grid_columnconfigure(0, weight=1)
+

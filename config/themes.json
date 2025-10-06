@@ -1,0 +1,41 @@
+{
+  "Dark": {
+    "mode": "Dark",
+    "background": "#1e1e2f",
+    "sidebar_bg": "#2a2a3a",
+    "sidebar_text": "#ffffff",
+    "sidebar_button": "#4a90e2",
+    "sidebar_button_hover": "#357ABD",
+    "bubble_you": "#7289da",
+    "bubble_other": "#2f3136",
+    "text": "#ffffff",
+    "input_bg": "#2e2e3f",
+    "input_text": "#ffffff",
+    "button_send": "#4a90e2",
+    "button_send_hover": "#357ABD",
+    "server_online": "#00ff00",
+    "server_offline": "#ff0000",
+    "pub_frame_bg": "#2e2e3f",
+    "pub_text": "#ffffff"
+  },
+  "Light": {
+    "mode": "Light",
+    "background": "#f0f0f0",
+    "sidebar_bg": "#e0e0e0",
+    "sidebar_text": "#ffffff",
+    "sidebar_button": "#4a90e2",
+    "sidebar_button_hover": "#357ABD",
+    "bubble_you": "#c7d3ff",
+    "bubble_other": "#e5e5e5",
+    "text": "#000000",
+    "input_bg": "#ffffff",
+    "input_text": "#000000",
+    "button_send": "#4a90e2",
+    "button_send_hover": "#357ABD",
+    "server_online": "#00aa00",
+    "server_offline": "#ff0000",
+    "pub_frame_bg": "#e0e0e0",
+    "pub_text": "#000000"
+  }
+
+}
