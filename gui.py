@@ -14,6 +14,8 @@ from gui.settings.window import SettingsWindow
 from gui.tooltip import ToolTip
 from gui.widgets.notification import Notification, NotificationManager
 from gui.widgets.sidebar import Sidebar
+from gui.layout import WhisprUILayout
+
 
 from utils.chat_storage import load_messages, save_message
 from utils.crypto import (
@@ -86,7 +88,9 @@ class WhisprApp(ctk.CTk):
 
         # Initialize keypair
         self.init_keypair()
-        self.create_widgets()
+        self.layout = WhisprUILayout(self)
+        self.layout.create_widgets()
+
         self.chat_manager = ChatManager(self)
 
         # Start fetch loop
@@ -152,117 +156,6 @@ class WhisprApp(ctk.CTk):
 
 
 
-    # ---------------- GUI ----------------
-    def create_widgets(self):
-        # ---------------- Main Layout ----------------
-        main_frame = ctk.CTkFrame(self, fg_color="transparent")
-        main_frame.pack(fill="both", expand=True)
-
-
-
-
-
-
-        def update_status_color(online):
-            color = "green" if online else "red"
-            self.server_status.configure(text="●", text_color=color)
-
-        self.update_status_color = update_status_color  # store method
-
-
-
-        # Sidebar (left)
-        self.sidebar = Sidebar(
-            main_frame,
-            select_callback=self.select_recipient,
-            add_callback=self.add_new_recipient,
-            pin=self.pin
-        )
-        # ---------------- Chat Area (right) ----------------
-        chat_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        chat_frame.pack(side="right", fill="both", expand=True)
-
-
-        # ---------------- Public Key Frame ----------------f
-        pub_frame = ctk.CTkFrame(chat_frame, fg_color="#2e2e3f", corner_radius=10)
-        pub_frame.pack(fill="x", padx=10, pady=10)
-        pub_frame.grid_columnconfigure(0, weight=1)
-        pub_frame.grid_columnconfigure(1, weight=0)
-        pub_frame.grid_columnconfigure(2, weight=0)
-
-
-
-
-
-        # Then the label
-        self.pub_label = ctk.CTkLabel(pub_frame, text="", justify="left", anchor="w")
-        self.pub_label.grid(row=0, column=0, padx=10, pady=10, sticky="we")
-
-        def update_pub_label(event=None):
-            pub_frame.update_idletasks()
-            frame_width = pub_frame.winfo_width() - self.copy_btn.winfo_width() - self.settings_btn.winfo_width() - 30
-            approx_char_width = 7
-            max_chars = max(10, frame_width // approx_char_width)
-
-            truncated = self.my_pub_hex
-            if len(truncated) > max_chars:
-                truncated = truncated[:max_chars-3] + "..."
-            
-            self.pub_label.configure(text=f"My Public Key: {truncated}")
-
-            # Add tooltip for full key
-            if not hasattr(self, 'pub_tooltip'):
-                self.pub_tooltip = ToolTip(self.pub_label, self.my_pub_hex)
-            else:
-                self.pub_tooltip.text = self.my_pub_hex
-
-
-
-        pub_frame.bind("<Configure>", update_pub_label)
-        self.after(200, update_pub_label)  # initial update
-
-
-
-        self.copy_btn = ctk.CTkButton(pub_frame, text="Copy", command=self.copy_pub_key, fg_color="#4a4a6a")
-        self.copy_btn.grid(row=0, column=1, padx=5, pady=10)
-
-        self.settings_btn = ctk.CTkButton(pub_frame, text="Settings", command=self.open_settings, fg_color="#4a90e2")
-        self.settings_btn.grid(row=0, column=2, padx=5, pady=10)
-
-
-        # Messages Box
-        self.messages_container = ctk.CTkScrollableFrame(chat_frame, fg_color="#2e2e3f", corner_radius=10)
-        self.messages_container.pack(padx=10, pady=10, fill="both", expand=True)
-        self.messages_container.grid_columnconfigure(0, weight=1)
-
-        # Input Frame
-        input_frame = ctk.CTkFrame(chat_frame, fg_color="transparent")
-        input_frame.pack(fill="x", padx=10, pady=(0,10))
-
-        self.input_box = ctk.CTkEntry(input_frame, placeholder_text="Type a message...")
-        self.input_box.pack(side="left", expand=True, fill="x", padx=(0,5), pady=5)
-        def on_enter_pressed(event):
-            text = self.input_box.get().strip()
-            if text:
-                self.chat_manager.send(text)
-                self.input_box.delete(0, tk.END)  
-
-        self.input_box.bind("<Return>", on_enter_pressed)
-
-        ctk.CTkButton(
-            input_frame,
-            text="Send",
-            command=lambda: [
-                self.chat_manager.send(self.input_box.get().strip()),
-                self.input_box.delete(0, tk.END)  
-            ],
-            fg_color="#4a90e2"
-        ).pack(side="right", padx=(0,5), pady=5)
-
-
-        # Server status (top-right corner)
-        self.server_status = ctk.CTkLabel(pub_frame, text="●", font=("Roboto", 16))
-        self.server_status.grid(row=0, column=3, padx=5)
     # ---------------- Public key ----------------
     def copy_pub_key(self):
         self.clipboard_clear()
