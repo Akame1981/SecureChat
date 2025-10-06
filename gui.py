@@ -30,6 +30,8 @@ from utils.crypto import (
 from utils.network import fetch_messages, send_message
 from utils.recipients import add_recipient, get_recipient_key, get_recipient_name, load_recipients
 from utils.chat_manager import ChatManager
+from utils.server_check import run_server_check_in_thread
+
 from datetime import datetime
 import time  
 
@@ -91,7 +93,7 @@ class WhisprApp(ctk.CTk):
         self.stop_event = threading.Event()
         threading.Thread(target=self.chat_manager.fetch_loop, daemon=True).start()
 
-        threading.Thread(target=self.check_server_loop, daemon=True).start()
+        run_server_check_in_thread(self, interval=1.0)
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -382,35 +384,6 @@ class WhisprApp(ctk.CTk):
 
 
 
-    def check_server_loop(self):
-        while not self.stop_event.is_set():
-            online = False
-            try:
-                # Simple GET request to server root
-                resp = requests.get(self.SERVER_URL, verify=self.SERVER_CERT, timeout=3)
-                online = True  # Server is online if request succeeds
-            except requests.exceptions.ConnectionError as e:
-                msg = f"⚠ Server offline (connection refused): {e}"
-                print(msg)
-                if hasattr(self, 'notifier') and self.notifier:
-                    self.notifier.show(msg, type_="error")
-                online = False
-            except requests.exceptions.SSLError as e:
-                msg = f"⚠ SSL verification failed: {e}"
-                print(msg)
-                if hasattr(self, 'notifier') and self.notifier:
-                    self.notifier.show(msg, type_="warning")
-                online = False
-            except requests.exceptions.RequestException as e:
-                msg = f"⚠ Server check failed: {e}"
-                print(msg)
-                if hasattr(self, 'notifier') and self.notifier:
-                    self.notifier.show(msg, type_="error")
-                online = False
-
-            # Update GUI indicator
-            self.after(0, self.update_status_color, online)
-            time.sleep(1)
 
 
 
