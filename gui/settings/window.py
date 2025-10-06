@@ -17,7 +17,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self.app = app
         self.title("Whispr Settings")
         self.geometry("500x450")
-        self.minsize(400, 350)
+        self.minsize(600, 550)
         self.configure(bg="#1e1e2f")
 
         # Make window resizable
