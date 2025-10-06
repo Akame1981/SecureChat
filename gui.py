@@ -118,7 +118,7 @@ class WhisprApp(ctk.CTk):
         self.signing_pub_hex = self.signing_key.verify_key.encode().hex()
 
 
-        
+
 
     def select_recipient(self, name):
         # Pass self.pin to get_recipient_key
@@ -146,7 +146,14 @@ class WhisprApp(ctk.CTk):
     # ---------------- Messages ----------------
 
     def display_message(self, sender_pub, text, timestamp=None):
-         create_message_bubble(self.messages_container, sender_pub, text, self.my_pub_hex, self.pin)
+        create_message_bubble(
+            self.messages_container,
+            sender_pub,
+            text,
+            self.my_pub_hex,
+            self.pin,
+            timestamp=timestamp
+        )
 
 
 
