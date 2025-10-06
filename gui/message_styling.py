@@ -2,7 +2,7 @@ import customtkinter as ctk
 from datetime import datetime
 from utils.recipients import get_recipient_name
 
-def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin):
+def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, timestamp=None):
     """Create a styled message bubble in the parent container."""
     display_sender = "You" if sender_pub == my_pub_hex else get_recipient_name(sender_pub, pin) or sender_pub
     is_you = display_sender == "You"
@@ -14,7 +14,8 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin):
         corner_radius=20
     )
 
-    ts_str = datetime.now().strftime("%H:%M")  # You can pass timestamp if needed
+    # ✅ Use the real timestamp if provided, fallback to current time
+    ts_str = datetime.fromtimestamp(timestamp).strftime("%H:%M") if timestamp else datetime.now().strftime("%H:%M")
 
     sender_label = ctk.CTkLabel(
         bubble_frame,
@@ -22,7 +23,7 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin):
         text_color="white",
         font=("Roboto", 10, "bold")
     )
-    sender_label.pack(anchor="w" if not is_you else "e", pady=(0,5), padx=20)
+    sender_label.pack(anchor="w" if not is_you else "e", pady=(0, 5), padx=20)
 
     msg_label = ctk.CTkLabel(
         bubble_frame,
@@ -32,7 +33,7 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin):
         text_color="white",
         font=("Roboto", 12)
     )
-    msg_label.pack(anchor="w" if not is_you else "e", padx=20, pady=(0,10))
+    msg_label.pack(anchor="w" if not is_you else "e", padx=20, pady=(0, 10))
 
     bubble_frame.pack(anchor="w" if not is_you else "e", pady=8, padx=20, fill="x")
 
