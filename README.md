@@ -16,19 +16,23 @@ For detailed instructions on **setting up the server**, including HTTPS, self-si
 
 # Features
 
-- **End-to-End Encryption**: Messages are encrypted using `SealedBox` and signed with `Ed25519`.
-- **FastAPI Backend with SSL**: Handles message storage, retrieval, and ephemeral messages over HTTPS for secure transport.
-- **Local Key Management**: Private keys are encrypted with a PIN using `SecretBox`.
-- **Persistent Recipients**: Add, select, and manage contacts with saved public keys in `recipients.json`.
-- **Tkinter GUI Client**: Cross-platform chat interface with message history.
-- **Message History**: Server stores the last 5 messages per recipient, ephemeral messages by default. (Database or other persistent storage can be added, but ephemeral storage is more private.)
-- **Rate Limiting**: Prevents spam with max 10 messages/sec per sender. (May be more than needed for normal users.)
+- **End-to-End Encryption**: All messages are encrypted with `SealedBox` and signed using `Ed25519` for authenticity.
+- **FastAPI Backend with SSL**: Secure HTTPS server for message storage and retrieval, supporting ephemeral and in-memory storage.
+- **Local Key Management**: Private keys are encrypted locally with a PIN using `SecretBox`. PIN strength is enforced.
+- **Recipient Management**: Add, edit, delete, and select contacts with saved public keys in `recipients.json`.
+- **Tkinter GUI Client**: Modern, cross-platform chat interface with customizable themes, dark/light mode, and message history.
+- **Message History**: Server stores only the last 5 messages per recipient (ephemeral by default for privacy). Local encrypted message history per contact.
+- **Rate Limiting**: Prevents spam with a maximum of 10 messages per second per sender.
 - **Customizable Settings**:
-  - Generate a new keypair
+  - Generate or import/export keypairs
   - Change your PIN
   - Copy your public key
-  - Manage recipients
+  - Manage recipients and server settings
+  - Switch between public and custom servers
+  - Choose and save color themes
 - **Cross-platform**: Runs on Windows, macOS, and Linux.
+- **Offline Mode (Planned)**: Queue messages when offline and send automatically when reconnected.
+- **Group Chat, File Sharing, and Calls (Planned)**: Secure group messaging, file attachments, and voice/video calls are on the roadmap.
 
 ---
 
