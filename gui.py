@@ -31,6 +31,7 @@ from utils.network import fetch_messages, send_message
 from utils.recipients import add_recipient, get_recipient_key, get_recipient_name, load_recipients
 from utils.chat_manager import ChatManager
 from datetime import datetime
+import time  
 
 
 CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "config/settings.json"))
@@ -144,7 +145,7 @@ class WhisprApp(ctk.CTk):
         if self.recipient_pub_hex:
             messages = load_messages(self.recipient_pub_hex, self.pin)
             for msg in messages:
-                self.display_message(msg["sender"], msg["text"])
+                        self.display_message(msg["sender"], msg["text"], timestamp=msg.get("timestamp"))
 
 
 
@@ -267,31 +268,28 @@ class WhisprApp(ctk.CTk):
         self.notifier.show("Public key copied!", type_="success")
     # ---------------- Messages ----------------
 
-    def display_message(self, sender_pub, text):
+    def display_message(self, sender_pub, text, timestamp=None):
         display_sender = "You" if sender_pub == self.my_pub_hex else get_recipient_name(sender_pub, self.pin) or sender_pub
-
         is_you = display_sender == "You"
-
         bubble_color = "#7289da" if is_you else "#2f3136"
-
 
         bubble_frame = ctk.CTkFrame(
             self.messages_container,
             fg_color=bubble_color,
-            corner_radius=20  #
+            corner_radius=20
         )
 
-        # Sender + timestamp (soon gonna add the timestamp really its a placeholder)
-        timestamp = datetime.now().strftime("%H:%M")
+        # Use timestamp if provided, else current time
+        ts_str = datetime.fromtimestamp(timestamp).strftime("%H:%M") if timestamp else datetime.now().strftime("%H:%M")
+        
         sender_label = ctk.CTkLabel(
             bubble_frame,
-            text=f"{display_sender} • {timestamp}",
+            text=f"{display_sender} • {ts_str}",
             text_color="white",
             font=("Roboto", 10, "bold")
         )
-        sender_label.pack(anchor="w" if not is_you else "e", pady=(0, 5), padx=20)
+        sender_label.pack(anchor="w" if not is_you else "e", pady=(0,5), padx=20)
 
-        # Message text
         msg_label = ctk.CTkLabel(
             bubble_frame,
             text=text,
@@ -302,17 +300,12 @@ class WhisprApp(ctk.CTk):
         )
         msg_label.pack(anchor="w" if not is_you else "e", padx=20, pady=(0,10))
 
-
-        bubble_frame.pack(
-            anchor="w" if not is_you else "e",
-            pady=8,
-            padx=20,  
-            fill="x"
-        )
+        bubble_frame.pack(anchor="w" if not is_you else "e", pady=8, padx=20, fill="x")
 
         # Auto-scroll
         self.messages_container._parent_canvas.update_idletasks()
         self.messages_container._parent_canvas.yview_moveto(1.0)
+
 
 
 
@@ -352,7 +345,7 @@ class WhisprApp(ctk.CTk):
             self.display_message(self.my_pub_hex, text)
 
             # Save message to local chat storage
-            save_message(self.recipient_pub_hex, "You", text, self.pin)
+            save_message(self.recipient_pub_hex, "You", text, self.pin, timestamp=time())
 
 
         # Clear input box after sending

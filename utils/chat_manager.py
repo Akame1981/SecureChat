@@ -32,7 +32,6 @@ class ChatManager:
         """
         while not self.stop_event.is_set():
             try:
-                # Fetch messages since last timestamp
                 msgs = fetch_messages(
                     self.app,
                     self.app.my_pub_hex,
@@ -44,29 +43,28 @@ class ChatManager:
                     sender_pub = msg["from_enc"]
                     encrypted_message = msg["message"]
                     signature = msg.get("signature")
-                    timestamp = msg.get("timestamp", time.time())
+                    timestamp = msg.get("timestamp", time.time())  # fallback
 
                     if signature and verify_signature(msg["from_sign"], encrypted_message, signature):
                         decrypted = decrypt_message(encrypted_message, self.app.private_key)
 
-                        # Display in GUI
-                        self.app.after(0, self.app.display_message, sender_pub, decrypted)
+                        # Display in GUI with timestamp
+                        self.app.after(0, self.app.display_message, sender_pub, decrypted, timestamp)
 
-                        # Save locally
+                        # Save locally with timestamp
                         save_message(
                             sender_pub,
                             get_recipient_name(sender_pub, self.app.pin) or sender_pub,
                             decrypted,
-                            self.app.pin
+                            self.app.pin,
+                            timestamp=timestamp  #
                         )
 
-                        # Update last fetch timestamp
                         self.last_fetch_ts = max(self.last_fetch_ts, timestamp)
 
             except Exception as e:
                 print("Fetch Error:", e)
 
-            # Adaptive sleep: slower if no messages
             time.sleep(1 if msgs else 2)
 
     # ---------------- Sending messages ----------------
@@ -79,6 +77,7 @@ class ChatManager:
                 item = self.send_queue.get(timeout=1)
                 text = item["text"]
                 recipient_pub = item["to_pub"]
+                ts = time.time()
 
                 success = send_message(
                     self.app,
@@ -90,9 +89,9 @@ class ChatManager:
                 )
 
                 if success:
-                    # Display locally
-                    self.app.after(0, self.app.display_message, self.app.my_pub_hex, text)
-                    save_message(recipient_pub, "You", text, self.app.pin)
+                    # Display locally with timestamp
+                    self.app.after(0, self.app.display_message, self.app.my_pub_hex, text, ts)
+                    save_message(recipient_pub, "You", text, self.app.pin, timestamp=ts)
                 else:
                     self.app.notifier.show("Failed to send message", type_="error")
 
@@ -101,13 +100,9 @@ class ChatManager:
 
     # ---------------- Queue message ----------------
     def send(self, text):
-        """
-        Queue a message to be sent to the currently selected recipient.
-        """
         if not self.app.recipient_pub_hex:
             self.app.notifier.show("Select a recipient first", type_="warning")
             return
-
         self.send_queue.put({"text": text, "to_pub": self.app.recipient_pub_hex})
 
     # ---------------- Stop ChatManager ----------------
