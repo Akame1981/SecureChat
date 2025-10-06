@@ -34,54 +34,61 @@ For detailed instructions on **setting up the server**, including HTTPS, self-si
 
 ## 🚀 Installation
 
+> **You can download it from [HERE](https://github.com/Akame1981/Whispr/releases/tag/v0.1) but it's still buggy.**  
+> **Recommended:** Run it from Python for best results.
 
-You can download it from [HERE](https://github.com/Akame1981/Whispr/releases/tag/v0.1) but its buggy still. (Advised to run it from python)
+---
 
-
-1. **Clone the repository**
+### 1. **Clone the Repository**
 
 ```bash
 git clone https://github.com/Akame1981/Whispr.git
-
 cd Whispr
 ```
-2. Create and activate a Python virtual environment:
+
+---
+
+### 2. **Create and Activate a Virtual Environment**
+
+<details>
+<summary><strong>Windows</strong></summary>
 
 ```bash
-    python -m venv venv
-```
-
-Windows :
-```bash
+python -m venv venv
 venv\Scripts\activate
-
 ```
+</details>
 
-macOS/Linux : 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
+python3 -m venv venv
 source venv/bin/activate
-
 ```
+</details>
 
+---
 
-3. Install dependencies:
+### 3. **Install Dependencies**
 
 ```bash
 pip install -r requirements.txt
-
 ```
+
+---
 
 # Running the App
 
-## Launch the GUI client
+## Launch the GUI Client
 
 ```bash
- python gui.py
+python gui.py
 ```
-gui is the Tkinter chat client. It will ask for a PIN to unlock or generate your private key.
 
+The GUI is the Tkinter chat client. It will ask for a PIN to unlock or generate your private key.
 
-By default it connects to the official public server. If you wanna make your own server, refer to the [Whispr Documentation](docs/setup-server.md)
+By default, it connects to the official public server. If you want to run your own server, refer to the [Whispr Documentation](docs/setup-server.md).
 
 ---
 
@@ -147,10 +154,6 @@ This is a task-oriented roadmap for **Whispr**.
   - [ ] Queue messages when offline
   - [ ] Automatically send messages once the user reconnects
   - [ ] Notifications for pending messages
-- [ ] Customization
-  - [ ] Add support for custom themes
-  - [ ] Dark/light mode improvements
-  - [ ] Optional user personalization (fonts, colors)
 - [ ] Group Chats
   - [ ] Create and manage group conversations
   - [ ] Add/remove participants securely
