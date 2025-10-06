@@ -126,12 +126,19 @@ SOON
 
 This is a task-oriented roadmap for **Whispr**.
 
+---
+
 ## 🔄 In Progress
 - [ ] UI & UX Improvements (90% done)
   - [x] Fix existing UI bugs
   - [x] Improve overall user experience
   - [x] Smooth animations and better layout responsiveness
   - [ ] Final bug fixes and testing
+- [ ] Customization (90% done)
+  - [x] Add support for custom themes
+  - [x] Dark/light mode improvements
+  - [x] Optional user personalization (fonts, colors)
+  - [ ] Final testing and minor tweaks
 
 ---
 
