@@ -2,5 +2,6 @@
     "server_type": "public",
     "custom_url": "http://127.0.0.1:8000",
     "use_cert": false,
-    "cert_path": "utils/cert.pem"
+    "cert_path": "utils/cert.pem",
+    "theme_name": "Dark"
 }
