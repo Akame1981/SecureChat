@@ -37,21 +37,16 @@ from utils.chat_manager import ChatManager
 from utils.server_check import run_server_check_in_thread
 from utils.message_handler import handle_send
 from utils.key_manager import init_keypair
+from utils.app_settings import load_app_settings
+from gui.theme_manager import ThemeManager
+from utils.path_utils import get_resource_path
 
 
 from datetime import datetime
-import time  
+import time
 
 
 CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "config/settings.json"))
-def get_resource_path(relative_path):
-    """Return absolute path to resource, works for dev and PyInstaller."""
-    if getattr(sys, "_MEIPASS", False):
-        # PyInstaller onefile mode
-        base_path = sys._MEIPASS
-    else:
-        base_path = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_path, relative_path)
 
 class WhisprApp(ctk.CTk):
 
@@ -60,59 +55,38 @@ class WhisprApp(ctk.CTk):
         if hasattr(self, "sidebar") and self.sidebar:
             self.sidebar.update_list(selected_pub=self.recipient_pub_hex)
     
-    def load_theme_from_settings(self):
-        """Load saved theme and apply appearance mode and color theme."""
-        self.current_theme = "Dark"  # fallback
-        self.theme_colors = {}
-
-        # Load saved theme name
-        if os.path.exists(CONFIG_PATH):
-            try:
-                with open(CONFIG_PATH, "r") as f:
-                    data = json.load(f)
-                    self.current_theme = data.get("theme_name", "Dark")
-            except Exception as e:
-                print("Failed to load theme:", e)
-
-        # Load all themes
-        themes_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "config/themes.json"))
-        if os.path.exists(themes_file):
-            try:
-                with open(themes_file, "r") as f:
-                    self.theme_colors = json.load(f)
-            except Exception as e:
-                print("Failed to load themes.json:", e)
-
-        # Apply appearance mode
-        theme = self.theme_colors.get(self.current_theme, {})
-        mode = theme.get("mode", "Dark")
-        ctk.set_appearance_mode(mode.lower())
-
-        # Apply accent color if present (default to blue)
-        accent_color = theme.get("accent_color", "blue")
-        ctk.set_default_color_theme(accent_color)
-
-
     def update_message_bubbles_theme(self):
-        if not hasattr(self, "messages_container") or not hasattr(self, "theme_colors") or not hasattr(self, "current_theme"):
+        if not hasattr(self, "messages_container") or not hasattr(self, "theme_manager"):
             return
 
-        theme = self.theme_colors.get(self.current_theme, {})
-        bubble_you_color = theme.get("bubble_you", "#7289da")
-        bubble_other_color = theme.get("bubble_other", "#2f3136")
-        text_color = theme.get("text", "white")
+        colors = self.theme_manager.get_bubble_colors()
+        bubble_you_color = colors.get("bubble_you")
+        bubble_other_color = colors.get("bubble_other")
+        text_color = colors.get("text")
 
         for bubble in self.messages_container.winfo_children():
             if hasattr(bubble, "is_you") and hasattr(bubble, "sender_label") and hasattr(bubble, "msg_label"):
-                bubble.configure(fg_color=bubble_you_color if bubble.is_you else bubble_other_color)
-                bubble.sender_label.configure(text_color=text_color)
-                bubble.msg_label.configure(text_color=text_color)
+                try:
+                    bubble.configure(fg_color=bubble_you_color if bubble.is_you else bubble_other_color)
+                    bubble.sender_label.configure(text_color=text_color)
+                    bubble.msg_label.configure(text_color=text_color)
+                except Exception:
+                    # If widget API differs, skip
+                    pass
 
 
     def __init__(self):
         super().__init__()
-        
-        self.load_theme_from_settings()
+        # Load settings and theme manager
+        self.app_settings = load_app_settings()
+        self.SERVER_URL = self.app_settings.get("server_url")
+        self.SERVER_CERT = self.app_settings.get("server_cert")
+
+        self.theme_manager = ThemeManager()
+        # If config provided a theme name, apply it
+        cfg_theme = self.app_settings.get("theme_name")
+        if cfg_theme:
+            self.theme_manager.set_theme_by_name(cfg_theme)
 
 
         self.title("🕵️ Whispr")
@@ -133,13 +107,17 @@ class WhisprApp(ctk.CTk):
 
 
         # Default server values (backup if config load fails)
-        self.SERVER_URL = "https://34.61.34.132:8000"
-        self.SERVER_CERT = get_resource_path("utils/cert.pem")
+        if not getattr(self, "SERVER_URL", None):
+            self.SERVER_URL = "https://34.61.34.132:8000"
+        if not getattr(self, "SERVER_CERT", None):
+            # Use packaged cert as fallback
+            try:
+                self.SERVER_CERT = get_resource_path("utils/cert.pem")
+            except Exception:
+                self.SERVER_CERT = None
 
 
-        # --- Load saved settings ---
-        self.load_app_settings()
-        self.load_theme_from_settings()
+    # --- Settings and theme already loaded above ---
 
         # Initialize keypair
         self.init_keypair()
@@ -261,27 +239,9 @@ class WhisprApp(ctk.CTk):
 
     def load_app_settings(self):
         """Load server settings and other configurations at startup."""
-        if os.path.exists(CONFIG_PATH):
-            try:
-                with open(CONFIG_PATH, "r") as f:
-                    data = json.load(f)
-                
-                # Apply server type
-                server_type = data.get("server_type", "public")
-                custom_url = data.get("custom_url", "http://127.0.0.1:8000")
-                use_cert = data.get("use_cert", True)
-                cert_path = data.get("cert_path", "utils/cert.pem")
-
-                if server_type == "public":
-                    self.SERVER_URL = "https://34.61.34.132:8000"
-                    self.SERVER_CERT = get_resource_path("utils/cert.pem")  
-                else:
-                    self.SERVER_URL = custom_url
-                    self.SERVER_CERT = get_resource_path(cert_path) if use_cert else None
-
-
-            except Exception as e:
-                print("Failed to load app settings:", e)
+        # Settings are handled by utils.app_settings.load_app_settings
+        # This method is retained for backward compatibility but does nothing.
+        return
 
 
 

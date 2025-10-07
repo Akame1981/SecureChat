@@ -21,22 +21,29 @@ class WhisprUILayout:
         main_frame.pack(fill="both", expand=True)
 
         # --- Sidebar ---
-        sidebar_bg = app.theme_colors.get(app.current_theme, {}).get("sidebar_bg", "#2a2a3a")
-        sidebar_text = app.theme_colors.get(app.current_theme, {}).get("sidebar_text", "white")
+        # Support new ThemeManager (preferred) or fallback to legacy attributes
+        if hasattr(app, "theme_manager"):
+            current_theme = getattr(app.theme_manager, "current_theme", "Dark")
+            theme = getattr(app.theme_manager, "theme_colors", {}).get(current_theme, {})
+        else:
+            current_theme = getattr(app, "current_theme", "Dark")
+            theme = getattr(app, "theme_colors", {}).get(current_theme, {})
+
+        sidebar_bg = theme.get("sidebar_bg", "#2a2a3a")
+        sidebar_text = theme.get("sidebar_text", "white")
         app.sidebar = Sidebar(
             main_frame,
             app,  # <-- pass the main app instance here
             select_callback=app.select_recipient,
             add_callback=app.add_new_recipient,
             pin=app.pin,
-            theme_colors=app.theme_colors.get(app.current_theme, {})
+            theme_colors=theme,
         )
 
         # --- Chat Frame ---
         chat_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
         chat_frame.pack(side="right", fill="both", expand=True)
 
-        theme = app.theme_colors.get(app.current_theme, {})
         pub_bg = theme.get("pub_frame_bg", "#2e2e3f")
         pub_text = theme.get("pub_text", "white")
 
