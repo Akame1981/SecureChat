@@ -109,6 +109,15 @@ class Sidebar(ctk.CTkFrame):
         self.pin = pin
         self.theme = resolved
         self.pack(side="left", fill="y")
+        # Cache for recipient identicon images: pub_key -> CTkImage
+        self.recipient_avatar_cache = {}
+
+        # Register with theme manager for live updates
+        if hasattr(app, "theme_manager"):
+            try:
+                app.theme_manager.register_listener(self.refresh_theme)
+            except Exception:
+                pass
 
         self.notifier = NotificationManager(parent)
 
@@ -120,10 +129,11 @@ class Sidebar(ctk.CTkFrame):
         add_hover = self.theme.get("sidebar_button_hover", "#357ABD")
 
         # --- Section title ---
-        ctk.CTkLabel(
+        self.title_label = ctk.CTkLabel(
             self, text="Recipients", font=("Segoe UI", 16, "bold"),
             text_color=title_color
-        ).pack(pady=(12, 10))
+        )
+        self.title_label.pack(pady=(12, 10))
 
         # --- Scrollable recipient list ---
         self.recipient_listbox = ctk.CTkScrollableFrame(
@@ -135,6 +145,7 @@ class Sidebar(ctk.CTkFrame):
         # --- Bottom user frame (add button + avatar + username) ---
         user_frame = ctk.CTkFrame(self, fg_color="transparent")
         user_frame.pack(side="bottom", pady=15, padx=12, fill="x")
+        self.user_frame = user_frame
 
         # Avatar (identicon) - clickable, fully visible
         try:
@@ -150,6 +161,7 @@ class Sidebar(ctk.CTkFrame):
             ))
             # Make cursor indicate clickable
             avatar_label.configure(cursor="hand2")
+            self.avatar_widget = avatar_label
         except Exception:
             # Fallback to a simple initial button if identicon generation fails
             avatar_btn = ctk.CTkButton(
@@ -162,14 +174,15 @@ class Sidebar(ctk.CTkFrame):
                 )
             )
             avatar_btn.pack(side="left")
+            self.avatar_widget = avatar_btn
 
         # Username label (middle)
-        username_label = ctk.CTkLabel(
+        self.username_label = ctk.CTkLabel(
             user_frame, text=getattr(app, 'username', 'Anonymous'),
             font=("Segoe UI", 12, "bold"), text_color=title_color
         )
-        username_label.pack(side="left", padx=8)
-        username_label.bind("<Button-1>", lambda e: open_profile(
+        self.username_label.pack(side="left", padx=8)
+        self.username_label.bind("<Button-1>", lambda e: open_profile(
             self.app, self.app.my_pub_hex, self.app.signing_pub_hex, self.app.copy_pub_key
         ))
 
@@ -215,6 +228,56 @@ class Sidebar(ctk.CTkFrame):
         self.settings_btn.pack(side="right", padx=(8, 0))
         self.add_btn.pack(side="right", padx=(8, 0))
 
+    def refresh_theme(self, theme: dict):
+        """Update colors of sidebar when theme changes (registered as ThemeManager listener)."""
+        if not theme:
+            return
+        self.theme = theme
+        try:
+            self.configure(fg_color=theme.get("sidebar_bg", "#2a2a3a"))
+        except Exception:
+            pass
+        # Title
+        if hasattr(self, 'title_label'):
+            try:
+                self.title_label.configure(text_color=theme.get("sidebar_text", "white"))
+            except Exception:
+                pass
+        # Username
+        if hasattr(self, 'username_label'):
+            try:
+                self.username_label.configure(text_color=theme.get("sidebar_text", "white"))
+            except Exception:
+                pass
+        # Add button
+        if hasattr(self, 'add_btn'):
+            try:
+                self.add_btn.configure(fg_color=theme.get("sidebar_button", "#4a90e2"),
+                                       hover_color=theme.get("sidebar_button_hover", "#357ABD"),
+                                       text_color=theme.get("sidebar_text", "white"))
+            except Exception:
+                pass
+        # Recipient list container
+        if hasattr(self, 'recipient_listbox'):
+            try:
+                self.recipient_listbox.configure(fg_color=theme.get("sidebar_bg", "#2a2a3a"))
+            except Exception:
+                pass
+        # Avatar widget (only recolor text fg for fallback button)
+        if hasattr(self, 'avatar_widget'):
+            try:
+                if isinstance(self.avatar_widget, ctk.CTkButton):
+                    self.avatar_widget.configure(fg_color=theme.get("sidebar_button", "#4a90e2"),
+                                                 hover_color=theme.get("sidebar_button_hover", "#357ABD"),
+                                                 text_color=theme.get("sidebar_text", "white"))
+            except Exception:
+                pass
+        # Rebuild recipient entries with new colors
+        try:
+            self.update_list(selected_pub=getattr(self.app, 'recipient_pub_hex', None))
+        except Exception:
+            pass
+
     # ---------------- Recipient List ----------------
     def update_list(self, selected_pub=None):
         pin = self.pin
@@ -238,12 +301,23 @@ class Sidebar(ctk.CTkFrame):
             )
             frame.pack(fill="x", pady=4, padx=4)
 
-            # Avatar circle
-            avatar = ctk.CTkLabel(
-                frame, text=name[0].upper(), width=32, height=32,
-                fg_color=avatar_bg, text_color=text_color, corner_radius=16
-            )
-            avatar.pack(side="left", padx=8, pady=4)
+            # Avatar identicon (fallback to initial if generation fails)
+            avatar_label = None
+            ident_size = 32
+            try:
+                if key not in self.recipient_avatar_cache:
+                    pil_img = generate_identicon(key, size=ident_size)
+                    ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(ident_size, ident_size))
+                    self.recipient_avatar_cache[key] = ctk_img
+                ctk_img = self.recipient_avatar_cache[key]
+                avatar_label = ctk.CTkLabel(frame, image=ctk_img, text="", width=ident_size, height=ident_size)
+                avatar_label.image = ctk_img
+            except Exception:
+                avatar_label = ctk.CTkLabel(
+                    frame, text=name[0].upper(), width=32, height=32,
+                    fg_color=avatar_bg, text_color=text_color, corner_radius=16
+                )
+            avatar_label.pack(side="left", padx=8, pady=4)
 
             # Name label
             label = ctk.CTkLabel(frame, text=name, font=("Segoe UI", 12, "bold"),
@@ -252,7 +326,7 @@ class Sidebar(ctk.CTkFrame):
 
             # Click binding
             frame.bind("<Button-1>", lambda e, n=name: self.select_callback(n))
-            avatar.bind("<Button-1>", lambda e, n=name: self.select_callback(n))
+            avatar_label.bind("<Button-1>", lambda e, n=name: self.select_callback(n))
             label.bind("<Button-1>", lambda e, n=name: self.select_callback(n))
 
     def open_add_dialog(self):

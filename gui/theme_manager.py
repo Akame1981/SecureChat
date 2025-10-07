@@ -12,6 +12,7 @@ class ThemeManager:
     def __init__(self):
         self.current_theme = "Dark"
         self.theme_colors: Dict[str, Any] = {}
+        self._listeners = []  # callables receiving (theme_dict)
 
         self._load_themes()
         # Ensure the default (or previously selected) theme is applied immediately
@@ -35,6 +36,16 @@ class ThemeManager:
             self.current_theme = name
         self.apply()
 
+    def register_listener(self, func):
+        if callable(func) and func not in self._listeners:
+            self._listeners.append(func)
+
+    def unregister_listener(self, func):
+        try:
+            self._listeners.remove(func)
+        except ValueError:
+            pass
+
     def apply(self):
         theme = self.theme_colors.get(self.current_theme, {})
         mode = theme.get("mode", "Dark")
@@ -45,6 +56,13 @@ class ThemeManager:
         except Exception:
             # Some versions expect a file path or a theme name; ignore failures
             pass
+        # Notify listeners so they can update widget colors live
+        for listener in list(self._listeners):
+            try:
+                listener(theme)
+            except Exception:
+                # Ignore listener failures to avoid breaking theme changes
+                pass
 
     def get_bubble_colors(self):
         theme = self.theme_colors.get(self.current_theme, {})
