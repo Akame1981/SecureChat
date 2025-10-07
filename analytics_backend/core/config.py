@@ -1,4 +1,7 @@
-from pydantic import BaseSettings
+try:
+    from pydantic_settings import BaseSettings  # Pydantic v2
+except ImportError:  # Fallback for pydantic v1 if environment differs
+    from pydantic import BaseSettings  # type: ignore
 from functools import lru_cache
 
 class Settings(BaseSettings):
