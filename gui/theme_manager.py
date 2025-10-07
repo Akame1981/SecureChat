@@ -14,6 +14,12 @@ class ThemeManager:
         self.theme_colors: Dict[str, Any] = {}
 
         self._load_themes()
+        # Ensure the default (or previously selected) theme is applied immediately
+        # so widgets created afterwards don't momentarily show mixed/system colors.
+        try:
+            self.apply()
+        except Exception:
+            pass
 
     def _load_themes(self):
         themes_file = get_resource_path(THEMES_REL)
