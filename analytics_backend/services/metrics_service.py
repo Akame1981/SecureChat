@@ -2,7 +2,11 @@ import psutil
 import time
 import os
 from typing import Optional
-from .event_collector import get_user_stats as ec_user_stats, get_message_stats as ec_message_stats
+from .event_collector import (
+    get_user_stats as ec_user_stats,
+    get_message_stats as ec_message_stats,
+    register_message as ec_register_message
+)
 
 # Optional Redis integration for cross-process metrics
 try:
@@ -34,55 +38,91 @@ def get_system_stats() -> dict:
         'uptime_seconds': uptime
     }
 
-def get_user_stats() -> dict:
-    if _redis_client:
-        import datetime
-        now = datetime.datetime.utcnow()
-        day_key = now.strftime('%Y%m%d')
-        total_users = _redis_client.scard('metrics:users:all') or 0
-        new_users_today = _redis_client.scard(f'metrics:users:new:{day_key}') or 0
-        # Active: last 5 minutes window from sorted set
-        cutoff = time.time() - 300
-        # Remove anything older than a day opportunistically
-        try:
-            _redis_client.zremrangebyscore('metrics:active_users', 0, time.time() - 86400)
-        except Exception:
-            pass
-        active_users = _redis_client.zcount('metrics:active_users', cutoff, '+inf') or 0
-        return {
-            'total_users': total_users,
-            'active_users': active_users,
-            'new_users_today': new_users_today
-        }
-    return ec_user_stats()
+def _redis_user_stats():
+    import datetime
+    now = datetime.datetime.utcnow()
+    day_key = now.strftime('%Y%m%d')
+    total_users = _redis_client.scard('metrics:users:all') or 0
+    new_users_today = _redis_client.scard(f'metrics:users:new:{day_key}') or 0
+    cutoff = time.time() - 300
+    try:
+        _redis_client.zremrangebyscore('metrics:active_users', 0, time.time() - 86400)
+    except Exception:
+        pass
+    active_users = _redis_client.zcount('metrics:active_users', cutoff, '+inf') or 0
+    return {
+        'total_users': total_users,
+        'active_users': active_users,
+        'new_users_today': new_users_today
+    }
 
-def get_message_stats() -> dict:
+def _redis_message_stats():
+    import datetime
+    now = datetime.datetime.utcnow()
+    day_key = now.strftime('%Y%m%d')
+    messages_today = int(_redis_client.get(f'metrics:messages:count:{day_key}') or 0)
+    bytes_today = int(_redis_client.get(f'metrics:messages:bytes:{day_key}') or 0)
+    avg_size = (bytes_today / messages_today) if messages_today else 0.0
+    per_hour = []
+    for i in range(23, -1, -1):
+        h = now - datetime.timedelta(hours=i)
+        hour_key = h.strftime('%Y%m%d%H')
+        count = int(_redis_client.get(f'metrics:messages:hour:{hour_key}') or 0)
+        per_hour.append({'hour': h.strftime('%H:00'), 'messages': count})
+    per_day = []
+    for i in range(6, -1, -1):
+        d = now - datetime.timedelta(days=i)
+        d_key = d.strftime('%Y%m%d')
+        count = int(_redis_client.get(f'metrics:messages:count:{d_key}') or 0)
+        per_day.append({'day': d.strftime('%Y-%m-%d'), 'messages': count})
+    return {
+        'messages_today': messages_today,
+        'avg_message_size': avg_size,
+        'per_hour': per_hour,
+        'per_day': per_day
+    }
+
+# Lightweight ingestion from file log when Redis absent
+_last_ingested_offset = 0
+def _ingest_file_events():
+    global _last_ingested_offset
+    log_file = 'analytics_events.log'
+    try:
+        import os, json
+        if not os.path.exists(log_file):
+            return
+        size = os.path.getsize(log_file)
+        if size < _last_ingested_offset:
+            # file rotated or truncated
+            _last_ingested_offset = 0
+        with open(log_file, 'r', encoding='utf-8') as f:
+            f.seek(_last_ingested_offset)
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    evt = json.loads(line)
+                    ec_register_message(size_bytes=evt.get('size',0), sender=evt.get('from','?'), recipient=evt.get('to','?'), ts=evt.get('ts'))
+                except Exception:
+                    continue
+            _last_ingested_offset = f.tell()
+    except Exception:
+        pass
+
+# Wrap original functions so they trigger ingestion when Redis is not in use
+_orig_ec_user_stats = ec_user_stats
+_orig_ec_message_stats = ec_message_stats
+
+def get_user_stats():  # type: ignore[override]
     if _redis_client:
-        import datetime
-        now = datetime.datetime.utcnow()
-        day_key = now.strftime('%Y%m%d')
-        # Daily counts
-        messages_today = int(_redis_client.get(f'metrics:messages:count:{day_key}') or 0)
-        bytes_today = int(_redis_client.get(f'metrics:messages:bytes:{day_key}') or 0)
-        avg_size = (bytes_today / messages_today) if messages_today else 0.0
-        # Hour series (last 24h)
-        per_hour = []
-        for i in range(23, -1, -1):
-            h = now - datetime.timedelta(hours=i)
-            hour_key = h.strftime('%Y%m%d%H')
-            count = int(_redis_client.get(f'metrics:messages:hour:{hour_key}') or 0)
-            per_hour.append({'hour': h.strftime('%H:00'), 'messages': count})
-        # Day series (last 7 days)
-        per_day = []
-        for i in range(6, -1, -1):
-            d = now - datetime.timedelta(days=i)
-            d_key = d.strftime('%Y%m%d')
-            count = int(_redis_client.get(f'metrics:messages:count:{d_key}') or 0)
-            per_day.append({'day': d.strftime('%Y-%m-%d'), 'messages': count})
-        return {
-            'messages_today': messages_today,
-            'avg_message_size': avg_size,
-            'per_hour': per_hour,
-            'per_day': per_day
-        }
-    return ec_message_stats()
+        return _redis_user_stats()
+    _ingest_file_events()
+    return _orig_ec_user_stats()
+
+def get_message_stats():  # type: ignore[override]
+    if _redis_client:
+        return _redis_message_stats()
+    _ingest_file_events()
+    return _orig_ec_message_stats()
+
