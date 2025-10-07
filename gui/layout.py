@@ -3,6 +3,8 @@ import customtkinter as ctk
 from datetime import datetime
 from gui.tooltip import ToolTip
 from gui.widgets.sidebar import Sidebar
+from PIL import Image, ImageTk
+
 
 class WhisprUILayout:
     def __init__(self, app):
@@ -80,14 +82,21 @@ class WhisprUILayout:
         app.messages_container.pack(padx=10, pady=10, fill="both", expand=True)
         app.messages_container.grid_columnconfigure(0, weight=1)
 
+
         # --- Input Frame ---
         input_frame = ctk.CTkFrame(chat_frame, fg_color="transparent")
         input_frame.pack(fill="x", padx=10, pady=(0,10))
 
-        app.input_box = ctk.CTkEntry(input_frame,
-                                     placeholder_text="Type a message...",
-                                     fg_color=theme.get("input_bg", "#2e2e3f"),
-                                     text_color=theme.get("input_text", "white"))
+        # Chat input box
+        app.input_box = ctk.CTkEntry(
+            input_frame,
+            placeholder_text="Type a message...",
+            fg_color=theme.get("input_bg", "#2e2e3f"),
+            text_color=theme.get("input_text", "white"),
+            corner_radius=20,  # rounded corners
+            border_width=0,
+            height=40
+        )
         app.input_box.pack(side="left", expand=True, fill="x", padx=(0,5), pady=5)
 
         def on_enter_pressed(event):
@@ -97,13 +106,34 @@ class WhisprUILayout:
                 app.input_box.delete(0, tk.END)
         app.input_box.bind("<Return>", on_enter_pressed)
 
-        ctk.CTkButton(
+        # Send button with icon
+        send_img = Image.open("gui/data/images/send_btn.png")
+        send_img = send_img.resize((24, 24), Image.Resampling.LANCZOS)
+        send_icon = ImageTk.PhotoImage(send_img)
+
+                
+        send_btn = ctk.CTkButton(
             input_frame,
-            text="Send",
-            command=lambda: [app.chat_manager.send(app.input_box.get().strip()), app.input_box.delete(0, tk.END)],
-            fg_color=theme.get("button_send", "#4a90e2"),
-            hover_color=theme.get("button_send_hover", "#357ABD")
-        ).pack(side="right", padx=(0,5), pady=5)
+            width=24,
+            height=24,
+            fg_color=theme.get("input_bg", "#2e2e3f"),  # match input box bg
+            hover_color=theme.get("input_bg", "#2e2e3f"),  # same, so no hover effect
+            text="",
+            image=send_icon,
+            corner_radius=0,
+            border_width=0,
+            command=lambda: [
+                app.chat_manager.send(app.input_box.get().strip()),
+                app.input_box.delete(0, tk.END)
+            ]
+        )
+        send_btn.pack(side="right", padx=(0,5), pady=5)
+        send_btn.image = send_icon
+
+
+
+
+
 
         # --- Server Status ---
         app.server_status = ctk.CTkLabel(pub_frame, text="●", font=("Roboto", 16),
