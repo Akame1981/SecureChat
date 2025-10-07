@@ -32,7 +32,7 @@ app = FastAPI()
 
 # Attempt to import analytics event collector to feed live stats
 try:
-    from analytics_backend.services.event_collector import register_message  # type: ignore
+    from server_utils.analytics_backend.services.event_collector import register_message  # type: ignore
     ANALYTICS_ENABLED = True
 except Exception:
     ANALYTICS_ENABLED = False
