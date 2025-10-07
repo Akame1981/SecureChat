@@ -47,14 +47,14 @@ Whispr is an **opportunistic, minimal E2EE pull‑relay**. The server acts only 
 
 ### Message Payload (client side structure before sending)
 
-```jsonc
+```json
 {
-  to: <recipient_enc_pub_hex>,
-  from_: <sender_signing_pub_hex>,
-  enc_pub: <sender_enc_pub_hex>,
-  message: <base64 sealedbox ciphertext>,
-  signature: <base64 signature(bytes)>,
-  timestamp: <epoch seconds>
+  "to": "<recipient_enc_pub_hex>",
+  "from_": "<sender_signing_pub_hex>",
+  "enc_pub": "<sender_enc_pub_hex>",
+  "message": "<base64 sealedbox ciphertext>",
+  "signature": "<base64 signature(bytes)>",
+  "timestamp": "<epoch seconds>"
 }
 ```
 `signature = Ed25519( raw_ciphertext_bytes )` enabling tamper detection.
