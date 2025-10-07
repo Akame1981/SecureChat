@@ -111,7 +111,7 @@ class WhisprUILayout:
 
 
         # --- Load and prepare images ---
-        send_img = Image.open("gui/data/images/send_btn.png").resize((48, 48), Image.Resampling.LANCZOS)
+        send_img = Image.open("gui/src/images/send_btn.png").resize((48, 48), Image.Resampling.LANCZOS)
 
         # Normal icon
         send_icon = CTkImage(light_image=send_img, dark_image=send_img, size=(48, 48))
