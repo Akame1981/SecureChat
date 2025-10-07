@@ -4,9 +4,7 @@ from customtkinter import CTkImage
 from datetime import datetime
 from gui.tooltip import ToolTip
 from gui.widgets.sidebar import Sidebar
-from PIL import Image, ImageTk
-from PIL import ImageEnhance
-
+from PIL import Image, ImageEnhance, ImageDraw, ImageOps
 class WhisprUILayout:
     def __init__(self, app):
         """

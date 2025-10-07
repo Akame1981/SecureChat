@@ -17,6 +17,14 @@ class Sidebar(ctk.CTkFrame):
         # Use app theme for buttons
         self.notifier = NotificationManager(parent)
 
+        # Username display
+        ctk.CTkLabel(
+            self,
+            text=f"User: {getattr(app, 'username', 'Anonymous')}",
+            font=("Segoe UI", 13, "bold"),
+            text_color="#4a90e2"
+        ).pack(pady=(10, 0))
+
         # Title
         ctk.CTkLabel(self, text="Recipients", font=("Segoe UI", 16, "bold"),
                      text_color=self.theme.get("sidebar_text", "white")).pack(pady=12)

@@ -125,7 +125,7 @@ class WhisprApp(ctk.CTk):
         self.public_key = None
         self.my_pub_hex = None
         self.recipient_pub_hex = None
-
+        self.username = "Anonymous"
 
         self.notifier = NotificationManager(self)
 
@@ -167,7 +167,7 @@ class WhisprApp(ctk.CTk):
             self.destroy()
             return
 
-        self.private_key, self.signing_key, self.pin = result
+        self.private_key, self.signing_key, self.pin, self.username = result
         self.public_key = self.private_key.public_key
         self.my_pub_hex = self.public_key.encode().hex()
         self.signing_pub_hex = self.signing_key.verify_key.encode().hex()
@@ -314,7 +314,7 @@ class WhisprApp(ctk.CTk):
 
 
     def open_profile(self):
-        open_profile(self, self.my_pub_hex, self.signing_pub_hex, self.copy_pub_key)
+        open_profile(self, self.my_pub_hex, self.signing_pub_hex, self.copy_pub_key, username=self.username)
 
 
 

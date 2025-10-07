@@ -92,10 +92,9 @@ def derive_master_key(pin: str, salt: bytes, size: int = SecretBox.KEY_SIZE*2) -
 # -------------------------
 # --- Key saving / loading ---
 # -------------------------
-def save_key(private_key: PrivateKey, signing_key: SigningKey, pin: str):
-    """Save keys encrypted with PIN and HMAC"""
+def save_key(private_key: PrivateKey, signing_key: SigningKey, pin: str, username: str = "Anonymous"):
+    """Save keys encrypted with PIN and HMAC, plus username."""
     if os.path.exists(KEY_FILE):
-        # Load existing salt if file exists
         with open(KEY_FILE, "rb") as f:
             version = f.read(1)
             if version != b'\x01':
@@ -109,7 +108,9 @@ def save_key(private_key: PrivateKey, signing_key: SigningKey, pin: str):
     hmac_key = master_key[32:]
 
     box = SecretBox(enc_key)
-    data = private_key.encode() + signing_key.encode()
+    # Store username as JSON, then keys
+    username_bytes = json.dumps({"username": username}).encode()
+    data = len(username_bytes).to_bytes(2, "big") + username_bytes + private_key.encode() + signing_key.encode()
     encrypted = box.encrypt(data)
     tag = hmac.new(hmac_key, encrypted, hashlib.sha256).digest()
 
@@ -122,7 +123,7 @@ def save_key(private_key: PrivateKey, signing_key: SigningKey, pin: str):
     zero_bytes(hmac_key)
 
 def load_key(pin: str):
-    """Load keys using PIN"""
+    """Load keys and username using PIN"""
     if not os.path.exists(KEY_FILE):
         raise FileNotFoundError("Key file not found.")
 
@@ -150,9 +151,12 @@ def load_key(pin: str):
     box = SecretBox(enc_key)
     try:
         decrypted = box.decrypt(encrypted)
-        priv_bytes = decrypted[:32]
-        sign_bytes = decrypted[32:]
-        return PrivateKey(priv_bytes), SigningKey(sign_bytes)
+        username_len = int.from_bytes(decrypted[:2], "big")
+        username_json = decrypted[2:2+username_len]
+        username = json.loads(username_json.decode()).get("username", "Anonymous")
+        priv_bytes = decrypted[2+username_len:2+username_len+32]
+        sign_bytes = decrypted[2+username_len+32:]
+        return PrivateKey(priv_bytes), SigningKey(sign_bytes), username
     finally:
         zero_bytes(master_key)
         zero_bytes(enc_key)
@@ -162,7 +166,7 @@ def load_key(pin: str):
 # --- Change PIN ----------
 # -------------------------
 def change_pin(old_pin: str, new_pin: str):
-    priv, sign = load_key(old_pin)
+    priv, sign, _ = load_key(old_pin)
     save_key(priv, sign, new_pin)
 
 # -------------------------
