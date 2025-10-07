@@ -49,30 +49,53 @@ class AppearanceTab:
 
     # -------------------- Apply selected theme --------------------
     def apply_theme(self):
-        theme = self.themes.get(self.current_theme, {})
-        if not theme:
-            return
+        # Prefer the ThemeManager if the app has one (new API)
+        if hasattr(self.app, "theme_manager"):
+            # Tell the theme manager to switch and apply global appearance
+            self.app.theme_manager.set_theme_by_name(self.current_theme)
+            # Get resolved theme values
+            theme = self.app.theme_manager.theme_colors.get(self.app.theme_manager.current_theme, {})
+        else:
+            theme = self.themes.get(self.current_theme, {})
+            if not theme:
+                return
 
-        # Apply appearance mode
-        mode = theme.get("mode", "Dark")
-        ctk.set_appearance_mode(mode.lower())
+            # Apply appearance mode for older code paths
+            mode = theme.get("mode", "Dark")
+            ctk.set_appearance_mode(mode.lower())
 
-        # Apply colors to main app elements
-        self.app.configure(fg_color=theme.get("background", "#1e1e2f"))
+        # Apply colors to main app elements (both new and legacy)
+        try:
+            self.app.configure(fg_color=theme.get("background", "#1e1e2f"))
+        except Exception:
+            pass
 
         if hasattr(self.app, "sidebar"):
-            self.app.sidebar.configure(fg_color=theme.get("sidebar_bg", "#2a2a3a"))
+            try:
+                self.app.sidebar.configure(fg_color=theme.get("sidebar_bg", "#2a2a3a"))
+            except Exception:
+                pass
 
+        # Update all existing message bubbles
         if hasattr(self.app, "messages_container"):
             for bubble in self.app.messages_container.winfo_children():
                 if hasattr(bubble, "is_you") and bubble.is_you:
-                    bubble.configure(fg_color=theme.get("bubble_you", "#7289da"))
+                    try:
+                        bubble.configure(fg_color=theme.get("bubble_you", "#7289da"))
+                    except Exception:
+                        pass
                 else:
-                    bubble.configure(fg_color=theme.get("bubble_other", "#2f3136"))
+                    try:
+                        bubble.configure(fg_color=theme.get("bubble_other", "#2f3136"))
+                    except Exception:
+                        pass
 
-        # Update all existing message bubbles
+        # Update message bubble widgets via app helper (uses ThemeManager when available)
         if hasattr(self.app, "update_message_bubbles_theme"):
-            self.app.update_message_bubbles_theme()
+            try:
+                self.app.update_message_bubbles_theme()
+            except Exception:
+                pass
 
 
     # -------------------- Settings Handling --------------------
@@ -89,6 +112,13 @@ class AppearanceTab:
         self.settings["theme_name"] = self.current_theme
         with open(self.config_path, "w") as f:
             json.dump(self.settings, f, indent=4)
+        # Update app-level settings and theme manager (if present)
+        if hasattr(self.app, "app_settings"):
+            try:
+                self.app.app_settings["theme_name"] = self.current_theme
+            except Exception:
+                pass
 
+        # Apply the theme and notify the user
         self.apply_theme()
         self.app.notifier.show("Theme saved!", type_="success")
