@@ -1,6 +1,7 @@
 # gui/widgets/sidebar.py
 import customtkinter as ctk
-from PIL import Image
+from PIL import Image, ImageEnhance
+from utils.path_utils import get_resource_path
 from gui.identicon import generate_identicon
 from utils.recipients import add_recipient, load_recipients
 from gui.widgets.notification import NotificationManager
@@ -172,12 +173,45 @@ class Sidebar(ctk.CTkFrame):
             self.app, self.app.my_pub_hex, self.app.signing_pub_hex, self.app.copy_pub_key
         ))
 
-        # Add Recipient Button (rightmost)
+        # Settings and Add Recipient Buttons (rightmost)
+        # Load settings icon
+        try:
+            # load smaller icon and prepare hover (darker) variant
+            base_img = Image.open(get_resource_path("gui/data/images/settings_btn.png")).resize((28, 28), Image.Resampling.LANCZOS)
+            # darker hover image
+            hover_pil = ImageEnhance.Brightness(base_img).enhance(0.78)
+            settings_ctk = ctk.CTkImage(light_image=base_img, dark_image=base_img, size=(28, 28))
+            settings_hover_ctk = ctk.CTkImage(light_image=hover_pil, dark_image=hover_pil, size=(28, 28))
+
+            # Use a label for image-only, borderless, clickable icon
+            self.settings_btn = ctk.CTkLabel(user_frame, image=settings_ctk, text="", fg_color="transparent")
+            # keep references
+            self.settings_btn.image = settings_ctk
+            self.settings_btn.hover_image = settings_hover_ctk
+
+            # Bind click and hover
+            self.settings_btn.bind("<Button-1>", lambda e: self.app.open_settings())
+            self.settings_btn.bind("<Enter>", lambda e: self.settings_btn.configure(image=self.settings_btn.hover_image))
+            self.settings_btn.bind("<Leave>", lambda e: self.settings_btn.configure(image=self.settings_btn.image))
+            self.settings_btn.configure(cursor="hand2")
+        except Exception:
+            # Fallback to a minimal text label if image missing; make it smaller
+            self.settings_btn = ctk.CTkLabel(user_frame, text="⚙️", fg_color="transparent", text_color=avatar_text, font=("Segoe UI", 12))
+            self.settings_btn.bind("<Button-1>", lambda e: self.app.open_settings())
+            # hover behavior for fallback
+            self.settings_btn.bind("<Enter>", lambda e: self.settings_btn.configure(text_color=self.theme.get("button_send_hover", "#357ABD")))
+            self.settings_btn.bind("<Leave>", lambda e: self.settings_btn.configure(text_color=avatar_text))
+            self.settings_btn.configure(cursor="hand2")
+
+        # Add button (to the left of settings)
         self.add_btn = ctk.CTkButton(
             user_frame, text="➕", width=36, height=36, corner_radius=18,
             fg_color=add_fg, hover_color=add_hover, text_color=avatar_text,
             font=("Segoe UI", 18, "bold"), command=self.open_add_dialog
         )
+
+        # Pack order: pack settings first (rightmost), then add button (left of settings)
+        self.settings_btn.pack(side="right", padx=(8, 0))
         self.add_btn.pack(side="right", padx=(8, 0))
 
     # ---------------- Recipient List ----------------
