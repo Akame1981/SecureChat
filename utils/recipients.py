@@ -28,18 +28,20 @@ SALT_SIZE = 32  # random salt for encryption
 def encrypt_data(data: dict, pin: str) -> bytes:
     salt = random(SALT_SIZE)
     master_key = derive_master_key(pin, salt)
-    box = SecretBox(master_key[:32])
-    json_bytes = json.dumps(data).encode()
-    encrypted = box.encrypt(json_bytes)
-    zero_bytes(master_key)
-    return salt + encrypted
+    try:
+        box = SecretBox(bytes(master_key[:32]))
+        json_bytes = json.dumps(data).encode()
+        encrypted = box.encrypt(json_bytes)
+        return salt + encrypted
+    finally:
+        zero_bytes(master_key)
 
 def decrypt_data(enc_bytes: bytes, pin: str) -> dict:
     salt = enc_bytes[:SALT_SIZE]
     ciphertext = enc_bytes[SALT_SIZE:]
     master_key = derive_master_key(pin, salt)
-    box = SecretBox(master_key[:32])
     try:
+        box = SecretBox(bytes(master_key[:32]))
         decrypted = box.decrypt(ciphertext)
         return json.loads(decrypted.decode())
     finally:
