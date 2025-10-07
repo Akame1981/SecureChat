@@ -7,9 +7,16 @@ from .config import get_settings
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-def verify_password(plain_password: str, stored_password: str) -> bool:
-    # For now stored password is plain in env; can hash later
-    return plain_password == stored_password or pwd_context.verify(plain_password, stored_password)
+def verify_password(plain_password: str, stored_password: str, stored_hash: str | None = None) -> bool:
+    if stored_hash:
+        return pwd_context.verify(plain_password, stored_hash)
+    # fallback to plain compare or bcrypt hash in stored_password
+    try:
+        if stored_password.startswith('$2b$') or stored_password.startswith('$2a$'):
+            return pwd_context.verify(plain_password, stored_password)
+    except Exception:
+        pass
+    return plain_password == stored_password
 
 
 def create_access_token(subject: str, expires_minutes: Optional[int] = None) -> str:
