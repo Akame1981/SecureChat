@@ -10,24 +10,40 @@ class PinDialog(ctk.CTkToplevel):
         self.pin = None
         self.username = None
 
+        # Resolve theme values from parent/app if available
+        app_obj = getattr(parent, "app", parent)
+        theme = {}
+        if hasattr(app_obj, "theme_manager"):
+            tm = app_obj.theme_manager
+            theme = tm.theme_colors.get(tm.current_theme, {})
+        # keep theme on the instance for later use (update_strength)
+        self._theme = theme
+
         # --- Window Setup ---
         self.title(title)
         self.geometry("380x320" if new_pin else "380x200")
         self.resizable(False, False)
-        self.configure(fg_color="#1f1f2e")
+        win_bg = theme.get("background", "#1f1f2e")
+        self.configure(fg_color=win_bg)
         self.grab_set()
 
         # Title
+        title_color = theme.get("text", "white")
         self.label = ctk.CTkLabel(self, text=title, font=("Segoe UI", 16, "bold"),
-                                  text_color="white")
+                                  text_color=title_color)
         self.label.pack(pady=(20, 15))
+
+        # Resolve entry colors (used for username and PIN fields)
+        entry_bg = theme.get("input_bg", "#2a2a3f")
+        entry_text = theme.get("input_text", "white")
+        placeholder_color = theme.get("placeholder_text", "gray70")
 
         # Username entry (optional)
         if self.new_pin:
             self.username_entry = ctk.CTkEntry(
                 self, placeholder_text="Username (default: Anonymous)",
-                height=40, corner_radius=12, fg_color="#2a2a3f", text_color="white",
-                placeholder_text_color="gray70"
+                height=40, corner_radius=12, fg_color=entry_bg, text_color=entry_text,
+                placeholder_text_color=placeholder_color
             )
             self.username_entry.pack(pady=5, padx=30, fill="x")
         else:
@@ -36,8 +52,8 @@ class PinDialog(ctk.CTkToplevel):
         # PIN entry
         self.entry = ctk.CTkEntry(
             self, show="*", placeholder_text="Enter PIN",
-            height=40, corner_radius=12, fg_color="#2a2a3f", text_color="white",
-            placeholder_text_color="gray70"
+            height=40, corner_radius=12, fg_color=entry_bg, text_color=entry_text,
+            placeholder_text_color=placeholder_color
         )
         self.entry.pack(pady=5, padx=30, fill="x")
         self.entry.focus()
@@ -58,25 +74,27 @@ class PinDialog(ctk.CTkToplevel):
 
             self.confirm_entry = ctk.CTkEntry(
                 self, show="*", placeholder_text="Confirm PIN",
-                height=40, corner_radius=12, fg_color="#2a2a3f", text_color="white",
-                placeholder_text_color="gray70"
+                height=40, corner_radius=12, fg_color=entry_bg, text_color=entry_text,
+                placeholder_text_color=placeholder_color
             )
             self.confirm_entry.pack(pady=5, padx=30, fill="x")
 
             # Strength text above the bar
             self.strength_label = ctk.CTkLabel(
                 self, text="", font=("Segoe UI", 12, "bold"),
-                text_color="white"
+                text_color=entry_text
             )
             self.strength_label.pack(pady=(10, 2))
 
             # Small strength bar
-            self.strength_frame = ctk.CTkFrame(self, fg_color="#2a2a3f", corner_radius=8, height=8)
+            self.strength_frame = ctk.CTkFrame(self, fg_color=entry_bg, corner_radius=8, height=8)
             self.strength_frame.pack(padx=30, fill="x")
             self.strength_frame.pack_propagate(False)
 
             # Inner colored bar
-            self.strength_bar = ctk.CTkFrame(self.strength_frame, width=0, fg_color="#e74c3c", corner_radius=8)
+            # initial bar color uses server_offline as a red fallback
+            bar_color = theme.get("server_offline", "#e74c3c")
+            self.strength_bar = ctk.CTkFrame(self.strength_frame, width=0, fg_color=bar_color, corner_radius=8)
             self.strength_bar.place(relheight=1, x=0, y=0)
         else:
             self.confirm_entry = None
@@ -89,15 +107,21 @@ class PinDialog(ctk.CTkToplevel):
         # contains additional new-account fields above.
         btn_frame.pack(side="bottom", pady=15)
 
+        ok_color = theme.get("button_send", "#4a90e2")
+        ok_hover = theme.get("button_send_hover", "#357ABD")
+
         self.ok_btn = ctk.CTkButton(
             btn_frame, text="OK", width=100, height=42, corner_radius=12,
-            fg_color="#4a90e2", hover_color="#357ABD", command=self.on_ok
+            fg_color=ok_color, hover_color=ok_hover, command=self.on_ok
         )
         self.ok_btn.pack(side="left", padx=10)
 
+        cancel_color = theme.get("cancel_button", "#d9534f")
+        cancel_hover = theme.get("cancel_button_hover", "#b03a2e")
+
         self.cancel_btn = ctk.CTkButton(
             btn_frame, text="Cancel", width=100, height=42, corner_radius=12,
-            fg_color="#d9534f", hover_color="#b03a2e", command=self.on_cancel
+            fg_color=cancel_color, hover_color=cancel_hover, command=self.on_cancel
         )
         self.cancel_btn.pack(side="right", padx=10)
 
@@ -176,21 +200,23 @@ class PinDialog(ctk.CTkToplevel):
         max_width = self.strength_frame.winfo_width() or 300
 
         if not pin:
-            self.animate_bar(0, "#e74c3c", "")
+            weak_color = self._theme.get("strength_weak", "#e74c3c")
+            self.animate_bar(0, weak_color, "")
+            return
             return
 
         ok, reason = is_strong_pin(pin)
 
         if not ok:
-            color = "#e74c3c"
+            color = self._theme.get("strength_weak", "#e74c3c")
             width = max_width * 0.33
             text = reason  # show reason only
         elif len(pin) < 8:
-            color = "#f1c40f"
+            color = self._theme.get("strength_medium", "#f1c40f")
             width = max_width * 0.66
             text = "Medium"
         else:
-            color = "#2ecc71"
+            color = self._theme.get("strength_strong", "#2ecc71")
             width = max_width
             text = "Strong"
 

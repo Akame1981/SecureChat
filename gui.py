@@ -1,14 +1,18 @@
+# --- Standard library ---
 import os
-import threading
+import sys
 import time
 import json
-import requests
-import sys
+import threading
+from datetime import datetime
 import tkinter as tk
 from tkinter import simpledialog, Toplevel
 
+# --- Third-party ---
+import requests
 import customtkinter as ctk
 
+# --- GUI modules ---
 from gui.pin_dialog import PinDialog
 from gui.settings.window import SettingsWindow
 from gui.tooltip import ToolTip
@@ -17,8 +21,10 @@ from gui.widgets.sidebar import Sidebar
 from gui.layout import WhisprUILayout
 from gui.message_styling import create_message_bubble
 from gui.profile_window import open_profile
+from gui.theme_manager import ThemeManager
+from gui.locked_screen import show_locked_screen
 
-
+# --- Utils modules ---
 from utils.chat_storage import load_messages, save_message
 from utils.crypto import (
     KEY_FILE,
@@ -38,12 +44,8 @@ from utils.server_check import run_server_check_in_thread
 from utils.message_handler import handle_send
 from utils.key_manager import init_keypair
 from utils.app_settings import load_app_settings
-from gui.theme_manager import ThemeManager
 from utils.path_utils import get_resource_path
 
-
-from datetime import datetime
-import time
 
 
 CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "config/settings.json"))
@@ -125,7 +127,7 @@ class WhisprApp(ctk.CTk):
         # If keypair failed to load (incorrect PIN or user cancelled), show a
         # locked placeholder UI so the app remains open and user can retry.
         if not getattr(self, "private_key", None):
-            self._show_locked_screen()
+            show_locked_screen(self)
         else:
             self._post_key_init()
 
@@ -145,21 +147,7 @@ class WhisprApp(ctk.CTk):
 
         run_server_check_in_thread(self, interval=1.0)
 
-    def _show_locked_screen(self):
-        """Display a simple locked screen with options to retry PIN, open Settings, or quit."""
-        # Clear title area and show a centered frame
-        self.lock_frame = ctk.CTkFrame(self, fg_color="#1b1b2a")
-        self.lock_frame.pack(fill="both", expand=True, padx=20, pady=40)
-
-        ctk.CTkLabel(self.lock_frame, text="Whispr is locked", font=("Segoe UI", 18, "bold"), text_color="white").pack(pady=(20,10))
-        ctk.CTkLabel(self.lock_frame, text="Unlock your account to continue.", font=("Segoe UI", 12), text_color="gray70").pack(pady=(0,20))
-
-        btns = ctk.CTkFrame(self.lock_frame, fg_color="transparent")
-        btns.pack(pady=10)
-
-        ctk.CTkButton(btns, text="Unlock", fg_color="#4a90e2", command=self._try_unlock, width=120).pack(side="left", padx=8)
-        ctk.CTkButton(btns, text="Settings", fg_color="#4a90e2", command=lambda: SettingsWindow(self, self), width=120).pack(side="left", padx=8)
-        ctk.CTkButton(btns, text="Quit", fg_color="#d9534f", command=self.on_close, width=120).pack(side="left", padx=8)
+    # locked screen UI moved to gui/locked_screen.show_locked_screen
 
     def _try_unlock(self):
         """Prompt for PIN again and initialize the app if successful."""
