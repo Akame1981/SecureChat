@@ -19,6 +19,8 @@ class WhisprUILayout:
         # --- Main Frame ---
         main_frame = ctk.CTkFrame(app, fg_color="transparent")
         main_frame.pack(fill="both", expand=True)
+        # Expose for theme refresh
+        app.main_frame = main_frame
 
         # --- Sidebar ---
         # Support new ThemeManager (preferred) or fallback to legacy attributes
@@ -43,6 +45,7 @@ class WhisprUILayout:
         # --- Chat Frame ---
         chat_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
         chat_frame.pack(side="right", fill="both", expand=True)
+        app.chat_frame = chat_frame
 
         pub_bg = theme.get("pub_frame_bg", "#2e2e3f")
         pub_text = theme.get("pub_text", "white")
@@ -51,6 +54,7 @@ class WhisprUILayout:
         pub_frame = ctk.CTkFrame(chat_frame, fg_color=pub_bg, corner_radius=10)
         pub_frame.pack(fill="x", padx=10, pady=10)
         pub_frame.grid_columnconfigure(0, weight=1)
+        app.pub_frame = pub_frame
 
         app.pub_label = ctk.CTkLabel(pub_frame, text="", justify="left", anchor="w", text_color=pub_text)
         app.pub_label.grid(row=0, column=0, padx=10, pady=10, sticky="we")
@@ -89,6 +93,7 @@ class WhisprUILayout:
         # --- Input Frame ---
         input_frame = ctk.CTkFrame(chat_frame, fg_color="transparent")
         input_frame.pack(fill="x", padx=10, pady=(0,10))
+        app.input_frame = input_frame
 
         # Chat input box
         app.input_box = ctk.CTkEntry(
@@ -163,3 +168,23 @@ class WhisprUILayout:
             color = theme.get("server_online", "green") if online else theme.get("server_offline", "red")
             app.server_status.configure(text="●", text_color=color)
         app.update_status_color = update_status_color
+
+    def refresh_theme(self, theme: dict):
+        """Update top-level layout frame colors when theme changes."""
+        app = self.app
+        try:
+            if hasattr(app, 'pub_frame'):
+                app.pub_frame.configure(fg_color=theme.get('pub_frame_bg', '#2e2e3f'))
+        except Exception:
+            pass
+        try:
+            if hasattr(app, 'messages_container'):
+                app.messages_container.configure(fg_color=theme.get('background', '#2e2e3f'))
+        except Exception:
+            pass
+        try:
+            if hasattr(app, 'input_box'):
+                app.input_box.configure(fg_color=theme.get('input_bg', '#2e2e3f'),
+                                        text_color=theme.get('input_text', 'white'))
+        except Exception:
+            pass

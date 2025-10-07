@@ -97,6 +97,12 @@ class WhisprApp(ctk.CTk):
         except Exception:
             pass
 
+        # Register a listener so future theme changes apply live
+        try:
+            self.theme_manager.register_listener(self._on_theme_changed)
+        except Exception:
+            pass
+
 
         self.title("🕵️ Whispr")
         self.geometry("600x600")
@@ -180,7 +186,70 @@ class WhisprApp(ctk.CTk):
                 self.lock_frame.destroy()
             except Exception:
                 pass
-            self._post_key_init()
+
+    def _on_theme_changed(self, theme):
+        """Callback invoked by ThemeManager when theme changes; update all dynamic widget colors."""
+        try:
+            self.configure(fg_color=theme.get("background", "#1c1c28"))
+        except Exception:
+            pass
+
+        # Sidebar
+        if hasattr(self, "sidebar"):
+            try:
+                self.sidebar.configure(fg_color=theme.get("sidebar_bg", "#252536"))
+                # force relist to recolor entries
+                self.sidebar.theme = theme
+                self.sidebar.update_list(selected_pub=self.recipient_pub_hex)
+            except Exception:
+                pass
+
+        # Layout-level frames (pub_frame, messages container, etc.)
+        if hasattr(self, 'layout') and hasattr(self.layout, 'refresh_theme'):
+            try:
+                self.layout.refresh_theme(theme)
+            except Exception:
+                pass
+
+        # Public key frame / labels
+        try:
+            if hasattr(self, "pub_label") and self.pub_label.winfo_exists():
+                self.pub_label.configure(text_color=theme.get("pub_text", "white"))
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "copy_btn"):
+                self.copy_btn.configure(fg_color=theme.get("button_send", "#5a9bf6"),
+                                        hover_color=theme.get("button_send_hover", "#3d7ddb"))
+        except Exception:
+            pass
+
+        # Messages container background
+        if hasattr(self, "messages_container"):
+            try:
+                self.messages_container.configure(fg_color=theme.get("background", "#2e2e3f"))
+            except Exception:
+                pass
+
+        # Input box
+        if hasattr(self, "input_box"):
+            try:
+                self.input_box.configure(fg_color=theme.get("input_bg", "#2e2e3f"),
+                                         text_color=theme.get("input_text", "white"))
+            except Exception:
+                pass
+
+        # Server status dot color might depend on online/offline state; just re-run update if function exists
+        if hasattr(self, "update_status_color"):
+            try:
+                # if we tracked online state, we could store it; for now assume offline->online refresh not critical
+                pass
+            except Exception:
+                pass
+
+        # Update existing message bubbles colors/text
+        self.update_message_bubbles_theme()
 
 
 
