@@ -143,10 +143,21 @@ class WhisprApp(ctk.CTk):
 
         # Initialize keypair
         self.init_keypair()
+
+        # If keypair failed to load (incorrect PIN or user cancelled), show a
+        # locked placeholder UI so the app remains open and user can retry.
+        if not getattr(self, "private_key", None):
+            self._show_locked_screen()
+        else:
+            self._post_key_init()
+
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def _post_key_init(self):
+        """Run initialization steps that require a loaded keypair."""
         self.layout = WhisprUILayout(self)
         self.layout.create_widgets()
         self.update_message_bubbles_theme()
-
 
         self.chat_manager = ChatManager(self)
 
@@ -156,15 +167,43 @@ class WhisprApp(ctk.CTk):
 
         run_server_check_in_thread(self, interval=1.0)
 
-        self.protocol("WM_DELETE_WINDOW", self.on_close)
+    def _show_locked_screen(self):
+        """Display a simple locked screen with options to retry PIN, open Settings, or quit."""
+        # Clear title area and show a centered frame
+        self.lock_frame = ctk.CTkFrame(self, fg_color="#1b1b2a")
+        self.lock_frame.pack(fill="both", expand=True, padx=20, pady=40)
+
+        ctk.CTkLabel(self.lock_frame, text="Whispr is locked", font=("Segoe UI", 18, "bold"), text_color="white").pack(pady=(20,10))
+        ctk.CTkLabel(self.lock_frame, text="Unlock your account to continue.", font=("Segoe UI", 12), text_color="gray70").pack(pady=(0,20))
+
+        btns = ctk.CTkFrame(self.lock_frame, fg_color="transparent")
+        btns.pack(pady=10)
+
+        ctk.CTkButton(btns, text="Unlock", fg_color="#4a90e2", command=self._try_unlock, width=120).pack(side="left", padx=8)
+        ctk.CTkButton(btns, text="Settings", fg_color="#4a90e2", command=lambda: SettingsWindow(self, self), width=120).pack(side="left", padx=8)
+        ctk.CTkButton(btns, text="Quit", fg_color="#d9534f", command=self.on_close, width=120).pack(side="left", padx=8)
+
+    def _try_unlock(self):
+        """Prompt for PIN again and initialize the app if successful."""
+        self.init_keypair()
+        if getattr(self, "private_key", None):
+            # Remove locked UI and continue initialization
+            try:
+                self.lock_frame.destroy()
+            except Exception:
+                pass
+            self._post_key_init()
 
 
 
 # ---------------- Keypair ----------------
     def init_keypair(self):
         result = init_keypair(self.notifier, PinDialog, self)
+        # If init_keypair returned None, it means the user cancelled or the PIN
+        # was incorrect. Don't destroy the application here — just return and
+        # let the caller decide how to proceed. This prevents an immediate
+        # crash caused by continuing initialization after destroying the root.
         if not result:
-            self.destroy()
             return
 
         self.private_key, self.signing_key, self.pin, self.username = result
@@ -323,8 +362,29 @@ class WhisprApp(ctk.CTk):
 
 
     def on_close(self):
-        self.stop_event.set()
-        self.destroy()
+        # Stop background loops if they were started
+        try:
+            if hasattr(self, "stop_event") and self.stop_event:
+                self.stop_event.set()
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "chat_manager") and self.chat_manager:
+                # ChatManager.stop sets its internal event
+                self.chat_manager.stop()
+        except Exception:
+            pass
+
+        # Finally destroy the window
+        try:
+            self.destroy()
+        except Exception:
+            # Last resort: quit the Tk mainloop
+            try:
+                self.quit()
+            except Exception:
+                pass
 
 
 
