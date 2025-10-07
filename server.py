@@ -30,6 +30,15 @@ except ImportError:
 # -------------------------
 app = FastAPI()
 
+# Attempt to import analytics event collector to feed live stats
+try:
+    from analytics_backend.services.event_collector import register_message  # type: ignore
+    ANALYTICS_ENABLED = True
+except Exception:
+    ANALYTICS_ENABLED = False
+    def register_message(*args, **kwargs):  # fallback no-op
+        return None
+
 if not REDIS_AVAILABLE:
     messages_store = {}
     rate_limit_store = {}
@@ -113,7 +122,14 @@ def send_message(msg: Message):
             messages_store[msg.to].append(stored_msg)
             messages_store[msg.to] = messages_store[msg.to][-MAX_MESSAGES_PER_RECIPIENT:]
 
-    return {"status": "ok"}
+    # Feed analytics (size is base64 message length decoded approx)
+    try:
+        size_bytes = len(base64.b64decode(msg.message))
+    except Exception:
+        size_bytes = len(msg.message)
+    register_message(size_bytes=size_bytes, sender=msg.from_, recipient=msg.to, ts=stored_msg["timestamp"])
+
+    return {"status": "ok", "analytics": ANALYTICS_ENABLED}
 
 
 # -------------------------
@@ -148,4 +164,4 @@ def get_inbox(recipient_key: str, since: Optional[float] = Query(0)):
 # -------------------------
 @app.get("/public-key")
 def get_server_public_key():
-    return {"public_key": server_public.encode().hex()}
+    return {"public_key": server_public.encode().hex(), "analytics": ANALYTICS_ENABLED}
