@@ -1,10 +1,11 @@
 import tkinter as tk
 import customtkinter as ctk
+from customtkinter import CTkImage
 from datetime import datetime
 from gui.tooltip import ToolTip
 from gui.widgets.sidebar import Sidebar
 from PIL import Image, ImageTk
-
+from PIL import ImageEnhance
 
 class WhisprUILayout:
     def __init__(self, app):
@@ -93,7 +94,7 @@ class WhisprUILayout:
             placeholder_text="Type a message...",
             fg_color=theme.get("input_bg", "#2e2e3f"),
             text_color=theme.get("input_text", "white"),
-            corner_radius=20,  # rounded corners
+            corner_radius=20, 
             border_width=0,
             height=40
         )
@@ -106,32 +107,46 @@ class WhisprUILayout:
                 app.input_box.delete(0, tk.END)
         app.input_box.bind("<Return>", on_enter_pressed)
 
-        # Send button with icon
-        send_img = Image.open("gui/data/images/send_btn.png")
-        send_img = send_img.resize((24, 24), Image.Resampling.LANCZOS)
-        send_icon = ImageTk.PhotoImage(send_img)
 
-                
-        send_btn = ctk.CTkButton(
+        # --- Load and prepare images ---
+        send_img = Image.open("gui/data/images/send_btn.png").resize((48, 48), Image.Resampling.LANCZOS)
+
+        # Normal icon
+        send_icon = CTkImage(light_image=send_img, dark_image=send_img, size=(48, 48))
+
+        # Darker icon for hover
+        enhancer = ImageEnhance.Brightness(send_img)
+        dark_img = enhancer.enhance(0.7)  # 0.7 = 30% darker
+        send_hover_icon = CTkImage(light_image=dark_img, dark_image=dark_img, size=(48, 48))
+
+        # --- Create clickable label ---
+        send_btn = ctk.CTkLabel(
             input_frame,
-            width=24,
-            height=24,
-            fg_color=theme.get("input_bg", "#2e2e3f"),  # match input box bg
-            hover_color=theme.get("input_bg", "#2e2e3f"),  # same, so no hover effect
-            text="",
             image=send_icon,
-            corner_radius=0,
-            border_width=0,
-            command=lambda: [
-                app.chat_manager.send(app.input_box.get().strip()),
-                app.input_box.delete(0, tk.END)
-            ]
+            text="",
+            fg_color="transparent"
         )
         send_btn.pack(side="right", padx=(0,5), pady=5)
+
+        # Keep references
         send_btn.image = send_icon
+        send_btn.hover_image = send_hover_icon
 
+        # --- Bind click ---
+        send_btn.bind("<Button-1>", lambda e: [
+            app.chat_manager.send(app.input_box.get().strip()),
+            app.input_box.delete(0, tk.END)
+        ])
 
+        # --- Bind hover effects ---
+        def on_enter(e):
+            send_btn.configure(image=send_btn.hover_image)
 
+        def on_leave(e):
+            send_btn.configure(image=send_btn.image)
+
+        send_btn.bind("<Enter>", on_enter)
+        send_btn.bind("<Leave>", on_leave)
 
 
 
