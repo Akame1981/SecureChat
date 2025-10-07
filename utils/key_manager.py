@@ -26,9 +26,9 @@ def init_keypair(notifier, pin_dialog_cls, parent):
         if not pin:
             return None
 
-        # Ask for username (optional)
-        username = askstring("Username", "Choose a username (leave blank for Anonymous):", parent=parent)
-        if not username or not username.strip():
+        # Get username from dialog (default handled in dialog)
+        username = getattr(dlg, "username", None)
+        if not username:
             username = "Anonymous"
 
         private_key = PrivateKey.generate()
