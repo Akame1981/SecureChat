@@ -5,6 +5,7 @@ import json
 import os
 import stat
 import sys
+import tempfile
 
 from nacl.exceptions import CryptoError
 from nacl.pwhash import SCRYPT_MEMLIMIT_INTERACTIVE, SCRYPT_OPSLIMIT_INTERACTIVE, scrypt
@@ -12,10 +13,6 @@ from nacl.public import PrivateKey, PublicKey, SealedBox
 from nacl.secret import SecretBox
 from nacl.signing import SigningKey, VerifyKey
 from nacl.utils import random
-
-
-import os
-import sys
 
 
 
@@ -65,6 +62,25 @@ WEAK_PIN_FILE = dev_file if os.path.exists(dev_file) else internal_file
 # --- Memory hygiene -------
 # -------------------------
 def zero_bytes(data):
+    """Attempt to zero a mutable bytearray in-place.
+
+    Notes:
+    - Immutable `bytes` cannot be reliably zeroed in-place in Python.
+    - For values we control (derived keys) we convert to `bytearray` so this
+      function can zero them in-place. If an immutable `bytes` is passed we
+      convert and zero the temporary copy (best-effort).
+    """
+    if isinstance(data, bytearray):
+        for i in range(len(data)):
+            data[i] = 0
+        return
+    if isinstance(data, memoryview):
+        try:
+            data.cast('B')[:] = b'\x00' * len(data)
+            return
+        except Exception:
+            pass
+    # Fallback: make a mutable copy and zero that (best-effort)
     if isinstance(data, str):
         data = bytearray(data.encode())
     elif isinstance(data, bytes):
@@ -75,7 +91,7 @@ def zero_bytes(data):
 # -------------------------
 # --- Key derivation -------
 # -------------------------
-def derive_master_key(pin: str, salt: bytes, size: int = SecretBox.KEY_SIZE*2) -> bytes:
+def derive_master_key(pin: str, salt: bytes, size: int = SecretBox.KEY_SIZE*2) -> bytearray:
     if len(pin) < MIN_PIN_LENGTH:
         raise ValueError(f"PIN too short. Must be at least {MIN_PIN_LENGTH} characters.")
     pin_bytes = pin.encode()
@@ -86,38 +102,64 @@ def derive_master_key(pin: str, salt: bytes, size: int = SecretBox.KEY_SIZE*2) -
         opslimit=SCRYPT_OPSLIMIT_INTERACTIVE,
         memlimit=SCRYPT_MEMLIMIT_INTERACTIVE
     )
+    # Convert to mutable bytearray so callers can securely zero it later
+    key_ba = bytearray(key)
     zero_bytes(pin_bytes)
-    return key
+    # Attempt to zero the original immutable bytes object 'key'
+    try:
+        zero_bytes(key)
+    except Exception:
+        pass
+    return key_ba
 
 # -------------------------
 # --- Key saving / loading ---
 # -------------------------
 def save_key(private_key: PrivateKey, signing_key: SigningKey, pin: str, username: str = "Anonymous"):
-    """Save keys encrypted with PIN and HMAC, plus username."""
-    if os.path.exists(KEY_FILE):
-        with open(KEY_FILE, "rb") as f:
-            version = f.read(1)
-            if version != b'\x01':
-                raise ValueError("Unsupported key file version")
-            salt = f.read(scrypt.SALTBYTES)
-    else:
-        salt = random(scrypt.SALTBYTES)
+    """Save keys encrypted with PIN and HMAC, plus username.
+
+    Always generate a fresh salt on save to avoid reuse across rekey operations.
+    Write is atomic (temp file + replace) to avoid half-written files.
+    """
+    salt = random(scrypt.SALTBYTES)
 
     master_key = derive_master_key(pin, salt)
+    # master_key is a bytearray now
     enc_key = master_key[:32]
     hmac_key = master_key[32:]
 
-    box = SecretBox(enc_key)
+    box = SecretBox(bytes(enc_key))
     # Store username as JSON, then keys
     username_bytes = json.dumps({"username": username}).encode()
     data = len(username_bytes).to_bytes(2, "big") + username_bytes + private_key.encode() + signing_key.encode()
     encrypted = box.encrypt(data)
-    tag = hmac.new(hmac_key, encrypted, hashlib.sha256).digest()
+    tag = hmac.new(bytes(hmac_key), encrypted, hashlib.sha256).digest()
 
-    with open(KEY_FILE, "wb") as f:
-        f.write(b'\x01' + salt + tag + encrypted)
-    os.chmod(KEY_FILE, stat.S_IRUSR | stat.S_IWUSR)
+    # Atomic write: write to a temp file then replace
+    dirpath = os.path.dirname(KEY_FILE)
+    fd, tmp_path = tempfile.mkstemp(dir=dirpath)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(b'\x01' + salt + tag + encrypted)
+        try:
+            os.replace(tmp_path, KEY_FILE)
+        except Exception:
+            # Fallback to rename
+            os.rename(tmp_path, KEY_FILE)
+        try:
+            os.chmod(KEY_FILE, stat.S_IRUSR | stat.S_IWUSR)
+        except Exception:
+            # os.chmod may be a no-op on Windows; ignore failures
+            pass
+    finally:
+        # Ensure tmp file is removed if something went wrong
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
 
+    # Zero sensitive material
     zero_bytes(master_key)
     zero_bytes(enc_key)
     zero_bytes(hmac_key)
@@ -138,36 +180,49 @@ def load_key(pin: str):
     encrypted = data[1+scrypt.SALTBYTES+32:]
 
     master_key = derive_master_key(pin, salt)
+    # master_key is a bytearray
     enc_key = master_key[:32]
     hmac_key = master_key[32:]
 
-    expected_tag = hmac.new(hmac_key, encrypted, hashlib.sha256).digest()
+    expected_tag = hmac.new(bytes(hmac_key), encrypted, hashlib.sha256).digest()
     if not hmac.compare_digest(expected_tag, tag):
         zero_bytes(master_key)
         zero_bytes(enc_key)
         zero_bytes(hmac_key)
         raise ValueError("Incorrect PIN or corrupted key file!")
 
-    box = SecretBox(enc_key)
+    # SecretBox requires an immutable 32-byte key
+    box = SecretBox(bytes(enc_key))
     try:
-        decrypted = box.decrypt(encrypted)
-        username_len = int.from_bytes(decrypted[:2], "big")
-        username_json = decrypted[2:2+username_len]
-        username = json.loads(username_json.decode()).get("username", "Anonymous")
-        priv_bytes = decrypted[2+username_len:2+username_len+32]
-        sign_bytes = decrypted[2+username_len+32:]
-        return PrivateKey(priv_bytes), SigningKey(sign_bytes), username
+        decrypted = box.decrypt(encrypted)  # bytes
+        # Work on a mutable copy so we can zero it after parsing
+        buf = bytearray(decrypted)
+        try:
+            username_len = int.from_bytes(buf[:2], "big")
+            username_json = bytes(buf[2:2+username_len])
+            username = json.loads(username_json.decode()).get("username", "Anonymous")
+            priv_bytes = bytes(buf[2+username_len:2+username_len+32])
+            sign_bytes = bytes(buf[2+username_len+32:])
+            return PrivateKey(priv_bytes), SigningKey(sign_bytes), username
+        finally:
+            # Zero the mutable buffer containing plaintext
+            zero_bytes(buf)
     finally:
-        zero_bytes(master_key)
-        zero_bytes(enc_key)
-        zero_bytes(hmac_key)
+        # Attempt to zero sensitive in-memory buffers
+        try:
+            zero_bytes(master_key)
+            zero_bytes(enc_key)
+            zero_bytes(hmac_key)
+        except Exception:
+            pass
 
 # -------------------------
 # --- Change PIN ----------
 # -------------------------
 def change_pin(old_pin: str, new_pin: str):
-    priv, sign, _ = load_key(old_pin)
-    save_key(priv, sign, new_pin)
+    priv, sign, username = load_key(old_pin)
+    # Re-save with same username and a fresh salt
+    save_key(priv, sign, new_pin, username)
 
 # -------------------------
 # --- Authenticated Encryption ---
@@ -218,7 +273,7 @@ def load_weak_pins_set() -> set:
 
 
 weak_set = load_weak_pins_set()
-def is_strong_pin(pin: str) -> (bool, str):
+def is_strong_pin(pin: str) -> tuple[bool, str]:
     """Validate pin strength using blacklist + rules. Returns (ok, reason)."""
     pin = pin.strip()
     if len(pin) < MIN_PIN_LENGTH:
