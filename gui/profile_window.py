@@ -1,50 +1,13 @@
 import tkinter as tk
 import customtkinter as ctk
-from PIL import Image, ImageTk, ImageDraw, ImageOps
+from PIL import Image, ImageTk
 import qrcode
-import hashlib
 import io
 import webbrowser
 from datetime import datetime
-import hashlib
 
 
-def generate_identicon(data, size=96, block_size=8):
-    """
-    Generate a circular identicon avatar from the public key.
-    This version uses multiple colors and symmetry for uniqueness.
-    """
-    # Hash the data to bytes
-    hash_bytes = hashlib.sha256(data.encode()).digest()
-    
-    # Define colors based on hash
-    colors = [
-        f"#{hash_bytes[0]:02x}{hash_bytes[1]:02x}{hash_bytes[2]:02x}",
-        f"#{hash_bytes[3]:02x}{hash_bytes[4]:02x}{hash_bytes[5]:02x}",
-        f"#{hash_bytes[6]:02x}{hash_bytes[7]:02x}{hash_bytes[8]:02x}"
-    ]
-    
-    img = Image.new("RGB", (size, size), "white")
-    draw = ImageDraw.Draw(img)
-
-    blocks = size // block_size
-
-    for y in range(blocks):
-        for x in range((blocks + 1) // 2):  # symmetry
-            idx = (y * blocks + x) % len(hash_bytes)
-            color_idx = hash_bytes[idx] % len(colors)
-            if hash_bytes[idx] % 2 == 0:
-                fill_color = colors[color_idx]
-                # Draw symmetric blocks
-                draw.rectangle([x*block_size, y*block_size, (x+1)*block_size-1, (y+1)*block_size-1], fill=fill_color)
-                draw.rectangle([(blocks-1-x)*block_size, y*block_size, (blocks-x)*block_size-1, (y+1)*block_size-1], fill=fill_color)
-    
-    # Make it circular
-    mask = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
-    img.putalpha(mask)
-    
-    return img
+from gui.identicon import generate_identicon
 
 def short_fingerprint(key, chars=8):
     """Return a short fingerprint for easier display."""
