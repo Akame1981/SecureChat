@@ -30,7 +30,8 @@ def open_profile(
     copy_pub_callback, 
     messages_sent=0, 
     messages_received=0, 
-    last_login=None
+    last_login=None,
+    username="Anonymous"
 ):
     """Open a modern profile window with QR code, identicon, analytics, and share options."""
     
@@ -48,6 +49,15 @@ def open_profile(
         bg="#1e1e2f",
         fg="white"
     ).pack(pady=10)
+
+    # --- Username ---
+    tk.Label(
+        profile_win,
+        text=f"Username: {username}",
+        font=("Arial", 13, "bold"),
+        bg="#1e1e2f",
+        fg="#4a90e2"
+    ).pack(pady=(0, 6))
 
     # --- Identicon avatar ---
     avatar_img = generate_identicon(public_key, size=80)
