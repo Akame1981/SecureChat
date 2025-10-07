@@ -9,9 +9,10 @@ class PinDialog(ctk.CTkToplevel):
         self.parent = parent
         self.new_pin = new_pin
         self.pin = None
+        self.username = None  # <-- Add username attribute
 
         self.title(title)
-        self.geometry("350x260" if new_pin else "350x180")
+        self.geometry("350x300" if new_pin else "350x180")
         self.resizable(False, False)
         self.grab_set()
 
@@ -28,8 +29,11 @@ class PinDialog(ctk.CTkToplevel):
 
         # Confirmation + strength only if creating a new PIN
         if self.new_pin:
-            self.entry.bind("<KeyRelease>", self.update_strength)
+            # Username entry
+            self.username_entry = ctk.CTkEntry(self, placeholder_text="Username (default: Anonymous)")
+            self.username_entry.pack(pady=5, padx=20, fill="x")
 
+            self.entry.bind("<KeyRelease>", self.update_strength)
 
             self.confirm_entry = ctk.CTkEntry(self, show="*", placeholder_text="Confirm PIN")
             self.confirm_entry.pack(pady=5, padx=20, fill="x")
@@ -39,6 +43,7 @@ class PinDialog(ctk.CTkToplevel):
         else:
             self.confirm_entry = None
             self.strength_label = None
+            self.username_entry = None
 
         # Buttons
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -89,9 +94,16 @@ class PinDialog(ctk.CTkToplevel):
                 messagebox.showwarning("Weak PIN", f"PIN rejected: {reason}")
                 return
 
+            # Get username from entry, default to "Anonymous"
+            username = self.username_entry.get().strip() if self.username_entry else ""
+            if not username:
+                username = "Anonymous"
+            self.username = username
+
         self.pin = pin
         self.destroy()
 
     def on_cancel(self):
         self.pin = None
+        self.username = None
         self.destroy()
