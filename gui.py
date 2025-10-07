@@ -16,6 +16,8 @@ from gui.widgets.notification import Notification, NotificationManager
 from gui.widgets.sidebar import Sidebar
 from gui.layout import WhisprUILayout
 from gui.message_styling import create_message_bubble
+from gui.profile_window import open_profile
+
 
 from utils.chat_storage import load_messages, save_message
 from utils.crypto import (
@@ -283,7 +285,7 @@ class WhisprApp(ctk.CTk):
 
 
     def choose_recipient(self):
-        recipients = load_recipients(self.pin)  # <-- load recipients dynamically
+        recipients = load_recipients(self.pin)  
         if not recipients:
             self.notifier.show("Add a recipient first", type_="warning")
             return
@@ -307,9 +309,19 @@ class WhisprApp(ctk.CTk):
 
         tk.Button(choose_win, text="Select", command=select, bg="#4a90e2", fg="white").pack(pady=5)
 
-    # ---------------- Close ----------------
-
     
+
+
+
+    def open_profile(self):
+        open_profile(self, self.my_pub_hex, self.signing_pub_hex, self.copy_pub_key)
+
+
+
+
+
+
+
     def on_close(self):
         self.stop_event.set()
         self.destroy()

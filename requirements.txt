@@ -5,3 +5,5 @@ pynacl
 requests
 redis  
 customtkinter
+qrcode
+pillow
