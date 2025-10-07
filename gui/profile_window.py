@@ -1,14 +1,14 @@
 import tkinter as tk
 import customtkinter as ctk
-from PIL import Image, ImageTk, ImageDraw
+from PIL import Image, ImageTk, ImageDraw, ImageOps
 import qrcode
 import hashlib
 import io
 import webbrowser
 from datetime import datetime
 
-def generate_identicon(data, size=64, block_size=8):
-    """Generate a simple identicon (square pattern) from data."""
+def generate_identicon(data, size=96, block_size=8):
+    """Generate a circular identicon avatar from data."""
     hash_bytes = hashlib.md5(data.encode()).digest()
     img = Image.new("RGB", (size, size), "white")
     draw = ImageDraw.Draw(img)
@@ -16,7 +16,12 @@ def generate_identicon(data, size=64, block_size=8):
         for x in range(0, size, block_size):
             idx = ((y//block_size)*size//block_size + (x//block_size)) % len(hash_bytes)
             if hash_bytes[idx] % 2 == 0:
-                draw.rectangle([x, y, x+block_size-1, y+block_size-1], fill="black")
+                draw.rectangle([x, y, x+block_size-1, y+block_size-1], fill="#4a90e2")
+    # Make it circular
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
+    img = ImageOps.fit(img, (size, size))
+    img.putalpha(mask)
     return img
 
 def short_fingerprint(key, chars=8):
@@ -34,123 +39,140 @@ def open_profile(
     username="Anonymous"
 ):
     """Open a modern profile window with QR code, identicon, analytics, and share options."""
-    
-    profile_win = tk.Toplevel(parent)
+
+    profile_win = ctk.CTkToplevel(parent)
     profile_win.title("Your Profile")
-    profile_win.configure(bg="#1e1e2f")
-    profile_win.geometry("360x550")
-    profile_win.minsize(320, 500)
+    profile_win.geometry("400x650")
+    profile_win.minsize(360, 600)
+    profile_win.configure(fg_color="#181926")
 
-    # --- Title ---
-    tk.Label(
-        profile_win,
-        text="🕵️ Your Profile",
-        font=("Arial", 16, "bold"),
-        bg="#1e1e2f",
-        fg="white"
-    ).pack(pady=10)
+    # --- Scrollable main frame ---
+    scroll_frame = ctk.CTkScrollableFrame(profile_win, fg_color="#181926", corner_radius=0)
+    scroll_frame.pack(fill="both", expand=True)
 
-    # --- Username ---
-    tk.Label(
-        profile_win,
-        text=f"Username: {username}",
-        font=("Arial", 13, "bold"),
-        bg="#1e1e2f",
-        fg="#4a90e2"
-    ).pack(pady=(0, 6))
+    # --- Header Frame ---
+    header = ctk.CTkFrame(scroll_frame, fg_color="#23243a", corner_radius=0)
+    header.pack(fill="x", pady=(0, 0), padx=0)
 
     # --- Identicon avatar ---
-    avatar_img = generate_identicon(public_key, size=80)
+    avatar_img = generate_identicon(public_key, size=96)
     avatar_tk = ImageTk.PhotoImage(avatar_img)
-    avatar_label = tk.Label(profile_win, image=avatar_tk, bg="#1e1e2f")
+    avatar_label = tk.Label(header, image=avatar_tk, bg="#23243a", bd=0)
     avatar_label.image = avatar_tk
-    avatar_label.pack(pady=5)
+    avatar_label.pack(pady=(24, 8))
 
-    # --- Keys ---
-    tk.Label(
-        profile_win,
-        text=f"Public Key:\n{short_fingerprint(public_key)}",
-        wraplength=320,
-        bg="#1e1e2f",
-        fg="white"
-    ).pack(pady=2)
+    # --- Username ---
+    ctk.CTkLabel(
+        header,
+        text=username,
+        font=("Segoe UI", 18, "bold"),
+        text_color="#4a90e2",
+        fg_color="transparent"
+    ).pack(pady=(0, 2))
 
-    tk.Label(
-        profile_win,
-        text=f"Signing Key:\n{short_fingerprint(signing_key)}",
-        wraplength=320,
-        bg="#1e1e2f",
-        fg="white"
-    ).pack(pady=2)
+    # --- Fingerprint ---
+    ctk.CTkLabel(
+        header,
+        text=f"ID: {short_fingerprint(public_key, 10)}",
+        font=("Segoe UI", 12, "bold"),
+        text_color="#b2b8d6",
+        fg_color="transparent"
+    ).pack(pady=(0, 10))
 
     # --- Copy Public Key button ---
-    ctk.CTkButton(profile_win, text="Copy Public Key", command=copy_pub_callback).pack(pady=5)
+    ctk.CTkButton(
+        header, text="Copy Public Key", command=copy_pub_callback,
+        fg_color="#4a90e2", hover_color="#357ABD", width=180, height=36, corner_radius=16
+    ).pack(pady=(0, 18))
 
-    # --- Analytics / Stats ---
-    stats_frame = ctk.CTkFrame(profile_win, fg_color="#2a2a3a", corner_radius=10)
-    stats_frame.pack(pady=10, padx=10, fill="x")
-
-    tk.Label(stats_frame, text=f"Messages Sent: {messages_sent}", bg="#2a2a3a", fg="white").pack(pady=2)
-    tk.Label(stats_frame, text=f"Messages Received: {messages_received}", bg="#2a2a3a", fg="white").pack(pady=2)
+    # --- Last Login (optional) ---
     if last_login:
         last_login_str = last_login if isinstance(last_login, str) else last_login.strftime("%Y-%m-%d %H:%M:%S")
-        tk.Label(stats_frame, text=f"Last Login: {last_login_str}", bg="#2a2a3a", fg="white").pack(pady=2)
+        ctk.CTkLabel(
+            header,
+            text=f"Last Login: {last_login_str}",
+            font=("Segoe UI", 12),
+            text_color="#b2b8d6",
+            fg_color="transparent"
+        ).pack(pady=(0, 10))
 
-    # --- QR Code ---
+    # --- Keys Frame ---
+    keys_frame = ctk.CTkFrame(scroll_frame, fg_color="#23243a", corner_radius=16)
+    keys_frame.pack(pady=(18, 0), padx=24, fill="x")
+
+    ctk.CTkLabel(keys_frame, text="Public Key", font=("Segoe UI", 12, "bold"), text_color="#b2b8d6").pack(anchor="w", padx=10, pady=(10, 0))
+    pub_entry = ctk.CTkEntry(keys_frame, width=340)
+    pub_entry.insert(0, public_key)
+    pub_entry.configure(state="readonly")
+    pub_entry.pack(padx=10, pady=(0, 8), fill="x")
+
+    ctk.CTkLabel(keys_frame, text="Signing Key", font=("Segoe UI", 12, "bold"), text_color="#b2b8d6").pack(anchor="w", padx=10, pady=(0, 0))
+    sign_entry = ctk.CTkEntry(keys_frame, width=340)
+    sign_entry.insert(0, signing_key)
+    sign_entry.configure(state="readonly")
+    sign_entry.pack(padx=10, pady=(0, 10), fill="x")
+
+    # --- QR Code Frame ---
+    qr_frame = ctk.CTkFrame(scroll_frame, fg_color="#23243a", corner_radius=16)
+    qr_frame.pack(pady=(18, 0), padx=24, fill="x")
+
+    ctk.CTkLabel(qr_frame, text="Scan to Add", font=("Segoe UI", 13, "bold"), text_color="#4a90e2").pack(pady=(10, 0))
+
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=2
+        box_size=8,
+        border=4
     )
     qr.add_data(public_key)
     qr.make(fit=True)
-    pil_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    pil_img = qr.make_image(fill_color="#4a90e2", back_color="white").convert("RGB")
 
-    qr_label = tk.Label(profile_win, bg="#1e1e2f")
-    qr_label.pack(pady=10, expand=True)
+    qr_img_tk = ImageTk.PhotoImage(pil_img)
+    qr_label = tk.Label(qr_frame, bg="#23243a", image=qr_img_tk)
+    qr_label.image = qr_img_tk
+    qr_label.pack(pady=10)
 
     # --- Export / Share buttons frame ---
-    btn_frame = ctk.CTkFrame(profile_win, fg_color="transparent")
-    btn_frame.pack(pady=5)
+    btn_frame = ctk.CTkFrame(qr_frame, fg_color="transparent")
+    btn_frame.pack(pady=(0, 10))
 
-    # Save QR button
     def save_qr():
         filename = f"{short_fingerprint(public_key, 6)}_qr.png"
         pil_img.save(filename)
-        print(f"QR saved as {filename}")
-
-    ctk.CTkButton(btn_frame, text="Save QR", command=save_qr, width=100).pack(side="left", padx=5)
-
-    # Copy QR on click
-    def copy_qr(event=None):
         profile_win.clipboard_clear()
+        profile_win.clipboard_append(filename)
+        profile_win.update()
+        ctk.CTkLabel(qr_frame, text=f"QR saved as {filename}", text_color="#4a90e2").pack(pady=2)
+
+    ctk.CTkButton(btn_frame, text="Save QR", command=save_qr, width=100, fg_color="#4a90e2").pack(side="left", padx=5)
+
+    def copy_qr(event=None):
         output = io.BytesIO()
         pil_img.save(output, format="PNG")
+        profile_win.clipboard_clear()
         profile_win.clipboard_append(output.getvalue())
         profile_win.update()
-        print("QR code copied to clipboard")
+        ctk.CTkLabel(qr_frame, text="QR code copied to clipboard", text_color="#4a90e2").pack(pady=2)
 
     qr_label.bind("<Button-1>", copy_qr)
 
-    # Share via email
     def share_email():
         subject = "My Public Key"
         body = f"Here is my public key:\n\n{public_key}"
         webbrowser.open(f"mailto:?subject={subject}&body={body}")
 
-    ctk.CTkButton(btn_frame, text="Share via Email", command=share_email, width=120).pack(side="left", padx=5)
+    ctk.CTkButton(btn_frame, text="Share via Email", command=share_email, width=120, fg_color="#4a90e2").pack(side="left", padx=5)
 
-    # --- Resize QR dynamically ---
-    def resize_qr(event=None):
-        max_size = min(profile_win.winfo_width() - 40, profile_win.winfo_height() - 350)
-        if max_size <= 0:
-            return
-        resized_img = pil_img.resize((max_size, max_size), Image.NEAREST)
-        qr_img_tk = ImageTk.PhotoImage(resized_img)
-        qr_label.configure(image=qr_img_tk)
-        qr_label.image = qr_img_tk
+    # --- Footer ---
+    ctk.CTkLabel(
+        scroll_frame,
+        text="Tip: Click the QR code to copy it.\nShare your public key to receive messages.",
+        font=("Segoe UI", 10),
+        text_color="#b2b8d6",
+        fg_color="transparent"
+    ).pack(pady=(10, 8))
 
-    profile_win.bind("<Configure>", resize_qr)
-    profile_win.update_idletasks()
-    resize_qr()
+
+
+
