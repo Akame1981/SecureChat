@@ -24,6 +24,7 @@ class WhisprUILayout:
         sidebar_text = app.theme_colors.get(app.current_theme, {}).get("sidebar_text", "white")
         app.sidebar = Sidebar(
             main_frame,
+            app,  # <-- pass the main app instance here
             select_callback=app.select_recipient,
             add_callback=app.add_new_recipient,
             pin=app.pin,

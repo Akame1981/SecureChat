@@ -2,10 +2,12 @@
 import customtkinter as ctk
 from utils.recipients import add_recipient, get_recipient_key, load_recipients
 from gui.widgets.notification import NotificationManager
+from gui.profile_window import open_profile
 
 class Sidebar(ctk.CTkFrame):
-    def __init__(self, parent, select_callback, add_callback=None, pin=None, theme_colors=None):
+    def __init__(self, parent, app, *, select_callback, add_callback=None, pin=None, theme_colors=None):
         super().__init__(parent, width=220, corner_radius=0)
+        self.app = app
         self.select_callback = select_callback
         self.add_callback = add_callback
         self.pin = pin
@@ -38,6 +40,27 @@ class Sidebar(ctk.CTkFrame):
             height=48
         )
         self.add_btn.pack(pady=12, padx=12, fill="x")
+
+
+        # Profile button
+        self.profile_btn = ctk.CTkButton(
+            self,
+            text="👤 Profile",
+            command=lambda: open_profile(
+                self.app,  # <-- use the main app reference
+                self.app.my_pub_hex,
+                self.app.signing_pub_hex,
+                self.app.copy_pub_key
+            ),
+            fg_color=self.theme.get("sidebar_button", "#4a90e2"),
+            hover_color=self.theme.get("sidebar_button_hover", "#357ABD"),
+            text_color=self.theme.get("sidebar_text", "white"),
+            font=("Segoe UI", 14, "bold"),
+            corner_radius=20,
+            height=48
+        )
+        self.profile_btn.pack(pady=6, padx=12, fill="x")
+
 
 
         # Apply initial theme
