@@ -1,5 +1,7 @@
 # gui/widgets/sidebar.py
 import customtkinter as ctk
+from PIL import Image
+from gui.identicon import generate_identicon
 from utils.recipients import add_recipient, load_recipients
 from gui.widgets.notification import NotificationManager
 from gui.profile_window import open_profile
@@ -100,17 +102,32 @@ class Sidebar(ctk.CTkFrame):
         user_frame = ctk.CTkFrame(self, fg_color="transparent")
         user_frame.pack(side="bottom", pady=15, padx=12, fill="x")
 
-        # Avatar button (left)
-        avatar_btn = ctk.CTkButton(
-            user_frame, text=(getattr(app, 'username', 'A')[0].upper()),
-            width=36, height=36, corner_radius=18, fg_color="#4a90e2",
-            hover_color="#357ABD", text_color="white",
-            font=("Segoe UI", 12, "bold"),
-            command=lambda: open_profile(
+        # Avatar (identicon) - clickable, fully visible
+        try:
+            ident_size = 40
+            avatar_img = generate_identicon(getattr(app, 'my_pub_hex', ''), size=ident_size)
+            # Wrap the PIL image in a CTkImage so CTkLabel can scale it on HighDPI displays
+            ctk_img = ctk.CTkImage(light_image=avatar_img, size=(ident_size, ident_size))
+            avatar_label = ctk.CTkLabel(user_frame, image=ctk_img, text="", width=ident_size, height=ident_size)
+            avatar_label.image = ctk_img
+            avatar_label.pack(side="left")
+            avatar_label.bind("<Button-1>", lambda e: open_profile(
                 self.app, self.app.my_pub_hex, self.app.signing_pub_hex, self.app.copy_pub_key
+            ))
+            # Make cursor indicate clickable
+            avatar_label.configure(cursor="hand2")
+        except Exception:
+            # Fallback to a simple initial button if identicon generation fails
+            avatar_btn = ctk.CTkButton(
+                user_frame, text=(getattr(app, 'username', 'A')[0].upper()),
+                width=36, height=36, corner_radius=18, fg_color="#4a90e2",
+                hover_color="#357ABD", text_color="white",
+                font=("Segoe UI", 12, "bold"),
+                command=lambda: open_profile(
+                    self.app, self.app.my_pub_hex, self.app.signing_pub_hex, self.app.copy_pub_key
+                )
             )
-        )
-        avatar_btn.pack(side="left")
+            avatar_btn.pack(side="left")
 
         # Username label (middle)
         username_label = ctk.CTkLabel(

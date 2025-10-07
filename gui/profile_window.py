@@ -1,6 +1,6 @@
 import tkinter as tk
 import customtkinter as ctk
-from PIL import Image, ImageTk
+from PIL import Image
 import qrcode
 import io
 import webbrowser
@@ -41,9 +41,10 @@ def open_profile(
 
     # --- Identicon avatar ---
     avatar_img = generate_identicon(public_key, size=96)
-    avatar_tk = ImageTk.PhotoImage(avatar_img)
-    avatar_label = tk.Label(header, image=avatar_tk, bg="#23243a", bd=0)
-    avatar_label.image = avatar_tk
+    avatar_ctk = ctk.CTkImage(light_image=avatar_img, size=(96, 96))
+    # Use a CTkLabel so the CTkImage is handled correctly by CustomTkinter
+    avatar_label = ctk.CTkLabel(header, image=avatar_ctk, text="", fg_color="#23243a", corner_radius=0)
+    avatar_label.image = avatar_ctk
     avatar_label.pack(pady=(24, 8))
 
     # --- Username ---
@@ -113,9 +114,9 @@ def open_profile(
     qr.make(fit=True)
     pil_img = qr.make_image(fill_color="#4a90e2", back_color="white").convert("RGB")
 
-    qr_img_tk = ImageTk.PhotoImage(pil_img)
-    qr_label = tk.Label(qr_frame, bg="#23243a", image=qr_img_tk)
-    qr_label.image = qr_img_tk
+    qr_ctk = ctk.CTkImage(light_image=pil_img, size=(pil_img.width, pil_img.height))
+    qr_label = ctk.CTkLabel(qr_frame, image=qr_ctk, text="", fg_color="#23243a", corner_radius=0)
+    qr_label.image = qr_ctk
     qr_label.pack(pady=10)
 
     # --- Export / Share buttons frame ---
