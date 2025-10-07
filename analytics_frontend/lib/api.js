@@ -18,7 +18,7 @@ export const login = (username, password) => {
   const fd = new URLSearchParams()
   fd.set('username', username)
   fd.set('password', password)
-  fd.set('grant_type', '')
+  fd.set('grant_type', 'password')
   return api.post('/api/auth/login', fd).then(r=>r.data)
 }
 
