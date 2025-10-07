@@ -22,6 +22,13 @@ class PinDialog(ctk.CTkToplevel):
         self.label = ctk.CTkLabel(self, text=title, font=("Segoe UI", 14, "bold"))
         self.label.pack(pady=(15, 10))
 
+        # Username entry above PIN input if creating new PIN
+        if self.new_pin:
+            self.username_entry = ctk.CTkEntry(self, placeholder_text="Username (default: Anonymous)")
+            self.username_entry.pack(pady=5, padx=20, fill="x")
+        else:
+            self.username_entry = None
+
         # Main PIN entry
         self.entry = ctk.CTkEntry(self, show="*", placeholder_text="Enter PIN")
         self.entry.pack(pady=5, padx=20, fill="x")
@@ -29,10 +36,6 @@ class PinDialog(ctk.CTkToplevel):
 
         # Confirmation + strength only if creating a new PIN
         if self.new_pin:
-            # Username entry
-            self.username_entry = ctk.CTkEntry(self, placeholder_text="Username (default: Anonymous)")
-            self.username_entry.pack(pady=5, padx=20, fill="x")
-
             self.entry.bind("<KeyRelease>", self.update_strength)
 
             self.confirm_entry = ctk.CTkEntry(self, show="*", placeholder_text="Confirm PIN")
@@ -43,7 +46,6 @@ class PinDialog(ctk.CTkToplevel):
         else:
             self.confirm_entry = None
             self.strength_label = None
-            self.username_entry = None
 
         # Buttons
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
