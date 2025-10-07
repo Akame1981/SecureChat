@@ -93,22 +93,37 @@ class PinDialog(ctk.CTkToplevel):
         self.bind("<Escape>", lambda e: self.on_cancel())
 
     # --- Animate strength bar smoothly 0-100% ---
-    
     def animate_bar(self, target_width, color, text):
-        current_width = self.strength_bar.winfo_width()
-        steps = 20
-        step = (target_width - current_width) / steps
+        if hasattr(self, "_animating") and self._animating:
+            self._target_width = target_width
+            self._target_color = color
+            self._target_text = text
+            return
 
-        def step_animation(count=0):
-            nonlocal current_width
-            if count >= steps:
+        self._animating = True
+        self._target_width = target_width
+        self._target_color = color
+        self._target_text = text
+
+        def step_animation():
+            current_width = self.strength_bar.winfo_width()
+            diff = self._target_width - current_width
+            step = diff * 0.2  # smooth easing, ~20% of remaining distance per frame
+
+            if abs(diff) < 1:  # finished
+                self.strength_bar.configure(width=int(self._target_width), fg_color=self._target_color)
+                self.strength_label.configure(text=self._target_text, text_color=self._target_color)
+                self._animating = False
                 return
-            current_width += step
-            self.strength_bar.configure(width=max(0, int(current_width)), fg_color=color)
-            self.strength_label.configure(text=text, text_color=color)  # text color matches bar
-            self.after(15, lambda: step_animation(count + 1))
+
+            self.strength_bar.configure(width=int(current_width + step), fg_color=self._target_color)
+            self.strength_label.configure(text=self._target_text, text_color=self._target_color)
+            self.after(16, step_animation)  # ~60 FPS
 
         step_animation()
+
+
+
 
     def update_strength(self, event=None):
         if not self.new_pin:
