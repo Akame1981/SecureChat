@@ -33,6 +33,21 @@ export default function Overview(){
   const dayDistribution = messages.per_day.map(d => ({ name: d.day, value: d.messages }))
   const colors = ['#6366f1','#8b5cf6','#ec4899','#10b981','#f59e0b','#ef4444','#3b82f6']
 
+  const exportCsv = async () => {
+    try {
+      const token = getToken()
+      const res = await fetch((process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001') + '/api/stats/export.csv', { headers: { Authorization: `Bearer ${token}` }})
+      if(!res.ok) return
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'analytics_export.csv'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch(e) {}
+  }
+
   return (
     <Layout>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -43,9 +58,10 @@ export default function Overview(){
         <MetricCard title="Total Users" value={users.total_users} />
         <MetricCard title="Messages Today" value={messages.messages_today} />
         <MetricCard title="Avg Msg Size" value={messages.avg_message_size.toFixed(1)} />
-        <div className="bg-gray-800 rounded p-4 flex flex-col">
+        <div className="bg-gray-800 rounded p-4 flex flex-col space-y-2">
           <label className="text-xs text-gray-400 mb-1">Refresh Interval (s)</label>
           <input type="number" min={10} max={60} value={intervalSec} onChange={e=>setIntervalSec(Number(e.target.value))} className="bg-gray-700 rounded px-2 py-1 text-sm" />
+          <button onClick={exportCsv} className="text-xs bg-indigo-600 hover:bg-indigo-500 rounded px-2 py-1">Export CSV</button>
         </div>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
