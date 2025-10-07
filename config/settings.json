@@ -1,7 +1,6 @@
 {
-    "server_type": "public",
+    "server_type": "local",
     "custom_url": "http://127.0.0.1:8000",
     "use_cert": false,
-    "cert_path": "utils/cert.pem",
-    "theme_name": "Dark"
+    "cert_path": "utils/cert.pem"
 }
