@@ -4,6 +4,15 @@ from .routes import auth as auth_routes
 from .routes import stats as stats_routes
 from .core.config import get_settings
 
+"""Whispr Analytics Backend
+
+IMPORTANT: Run from repository root so the import path includes 'analytics_backend'.
+Example:
+    uvicorn analytics_backend.main:app --port 8001 --reload
+or
+    python run_analytics.py
+"""
+
 app = FastAPI(title="Whispr Analytics API", version="0.1.0")
 settings = get_settings()
 
