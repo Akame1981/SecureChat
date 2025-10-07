@@ -106,8 +106,11 @@ class KeysTab:
 
         try:
             priv, sign = load_key(old_pin)
+        except FileNotFoundError:
+            CTkDialog(self.frame, title="Error", label="Key file not found. Generate a new keypair.").result
+            return
         except ValueError:
-            CTkDialog(self.frame, title="Error", label="Incorrect PIN!").result
+            CTkDialog(self.frame, title="Error", label="Incorrect PIN or corrupted key file!").result
             return
 
         new_pin = CTkDialog(self.frame, title="New PIN", label="Enter new PIN:", show="*").result
@@ -126,8 +129,11 @@ class KeysTab:
         try:
             # verify PIN
             load_key(pin)
+        except FileNotFoundError:
+            CTkDialog(self.frame, title="Error", label="Key file not found. Cannot export.").result
+            return
         except ValueError:
-            CTkDialog(self.frame, title="Error", label="Incorrect PIN!").result
+            CTkDialog(self.frame, title="Error", label="Incorrect PIN or corrupted key file!").result
             return
 
         export_path = filedialog.asksaveasfilename(
@@ -168,7 +174,14 @@ class KeysTab:
             with zipfile.ZipFile(import_path, 'r') as zipf:
                 zipf.extractall(DATA_DIR)
             # verify PIN
-            load_key(pin)
+            try:
+                load_key(pin)
+            except FileNotFoundError:
+                CTkDialog(self.frame, title="Error", label="Key file not found after import.").result
+                return
+            except ValueError:
+                CTkDialog(self.frame, title="Error", label="Incorrect PIN for imported account!").result
+                return
             CTkDialog(self.frame, title="Import Success", label="Account imported successfully!").result
         except Exception as e:
             CTkDialog(self.frame, title="Error", label=f"Failed to import account:\n{str(e)}").result

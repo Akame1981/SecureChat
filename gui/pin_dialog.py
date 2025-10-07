@@ -1,6 +1,6 @@
 import customtkinter as ctk
 from tkinter import messagebox
-from utils.crypto import is_strong_pin
+from utils.crypto import is_strong_pin, load_key
 
 class PinDialog(ctk.CTkToplevel):
     def __init__(self, parent, title="Enter PIN", new_pin=False):
@@ -42,6 +42,16 @@ class PinDialog(ctk.CTkToplevel):
         self.entry.pack(pady=5, padx=30, fill="x")
         self.entry.focus()
 
+        # Inline error label for invalid PIN feedback (shows under the entry)
+        # Only show this for existing-PIN dialogs (not during new account creation)
+        if not self.new_pin:
+            self.error_label = ctk.CTkLabel(self, text="", font=("Segoe UI", 10), text_color="#e74c3c")
+            self.error_label.pack(pady=(6, 0))
+            # Clear error while the user edits the PIN
+            self.entry.bind("<KeyRelease>", lambda e: self.error_label.configure(text=""))
+        else:
+            self.error_label = None
+
         # Confirm PIN + strength bar (new PIN)
         if self.new_pin:
             self.entry.bind("<KeyRelease>", self.update_strength)
@@ -75,7 +85,9 @@ class PinDialog(ctk.CTkToplevel):
 
         # Buttons
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        btn_frame.pack(pady=15)
+        # Anchor buttons to the bottom so they're visible even when the dialog
+        # contains additional new-account fields above.
+        btn_frame.pack(side="bottom", pady=15)
 
         self.ok_btn = ctk.CTkButton(
             btn_frame, text="OK", width=100, height=42, corner_radius=12,
@@ -94,32 +106,63 @@ class PinDialog(ctk.CTkToplevel):
 
     # --- Animate strength bar smoothly 0-100% ---
     def animate_bar(self, target_width, color, text):
-        if hasattr(self, "_animating") and self._animating:
-            self._target_width = target_width
-            self._target_color = color
-            self._target_text = text
+        # Smooth time-based animation.
+        # Use a frame interval around 16ms (~60fps). Some systems can handle 8ms
+        # (~125fps) but 16ms is a good default for smooth visuals.
+        if not hasattr(self, "strength_bar") or not self.strength_bar:
             return
 
+        # Cancel any previously scheduled animation
+        try:
+            if getattr(self, "_anim_id", None):
+                self.after_cancel(self._anim_id)
+        except Exception:
+            pass
+
+        start_width = self.strength_bar.winfo_width() or 0
+        end_width = int(target_width)
+        delta = end_width - start_width
+
+        # Animation parameters
+        frame_ms = 16  # target ~60fps; set to 8 for even higher fps if desired
+        duration_ms = 180  # total duration of the animation in ms
+        steps = max(1, int(duration_ms / frame_ms))
+
         self._animating = True
-        self._target_width = target_width
-        self._target_color = color
-        self._target_text = text
+        self._anim_step = 0
 
         def step_animation():
-            current_width = self.strength_bar.winfo_width()
-            diff = self._target_width - current_width
-            step = diff * 0.2  # smooth easing, ~20% of remaining distance per frame
-
-            if abs(diff) < 1:  # finished
-                self.strength_bar.configure(width=int(self._target_width), fg_color=self._target_color)
-                self.strength_label.configure(text=self._target_text, text_color=self._target_color)
+            i = self._anim_step
+            t = i / steps
+            # ease-out cubic for a smooth finish
+            ease = 1 - (1 - t) ** 3
+            cur = start_width + delta * ease
+            try:
+                self.strength_bar.configure(width=int(cur), fg_color=color)
+                if getattr(self, "strength_label", None):
+                    self.strength_label.configure(text=text, text_color=color)
+            except Exception:
+                # widget may have been destroyed
                 self._animating = False
                 return
 
-            self.strength_bar.configure(width=int(current_width + step), fg_color=self._target_color)
-            self.strength_label.configure(text=self._target_text, text_color=self._target_color)
-            self.after(16, step_animation)  # ~60 FPS
+            if i >= steps:
+                # finalize
+                try:
+                    self.strength_bar.configure(width=end_width, fg_color=color)
+                    if getattr(self, "strength_label", None):
+                        self.strength_label.configure(text=text, text_color=color)
+                except Exception:
+                    pass
+                self._animating = False
+                self._anim_id = None
+                return
 
+            self._anim_step += 1
+            self._anim_id = self.after(frame_ms, step_animation)
+
+        # start
+        self._anim_step = 0
         step_animation()
 
 
@@ -158,8 +201,26 @@ class PinDialog(ctk.CTkToplevel):
     def on_ok(self):
         pin = self.entry.get().strip()
         if not pin:
-            messagebox.showwarning("Warning", "PIN cannot be empty!")
+            # For new account creation, show a modal warning. For existing-PIN
+            # flows, show the inline error label.
+            if self.new_pin:
+                messagebox.showwarning("Warning", "PIN cannot be empty!")
+            else:
+                if self.error_label:
+                    self.error_label.configure(text="PIN cannot be empty!")
             return
+
+        if not self.new_pin:
+            # Validate PIN by attempting to load keys. If load_key raises,
+            # show an inline error and keep the dialog open.
+            try:
+                load_key(pin)
+            except FileNotFoundError:
+                self.error_label.configure(text="Key file not found. Create or import a keypair.")
+                return
+            except ValueError:
+                self.error_label.configure(text="Incorrect PIN or corrupted key file!")
+                return
 
         if self.new_pin:
             confirm_pin = self.confirm_entry.get().strip()
