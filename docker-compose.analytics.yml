@@ -1,0 +1,22 @@
+version: '3.9'
+services:
+  analytics-backend:
+    build:
+      context: .
+      dockerfile: analytics_backend/Dockerfile
+    env_file:
+      - analytics_backend/.env
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./analytics_backend:/app/analytics_backend
+  analytics-frontend:
+    build:
+      context: analytics_frontend
+      dockerfile: Dockerfile
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8001
+    ports:
+      - "3001:3001"
+    depends_on:
+      - analytics-backend

@@ -7,3 +7,9 @@ redis
 customtkinter
 qrcode
 pillow
+psutil
+PyJWT
+passlib[bcrypt]
+SQLAlchemy
+python-dotenv
+python-multipart
