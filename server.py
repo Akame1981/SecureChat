@@ -153,6 +153,23 @@ def send_message(msg: Message):
         size_bytes = len(msg.message)
     register_message(size_bytes=size_bytes, sender=msg.from_, recipient=msg.to, ts=stored_msg["timestamp"])
 
+    # Fallback file logging for analytics when Redis not running (consumed by analytics backend)
+    if not REDIS_AVAILABLE:
+        try:
+            from pathlib import Path
+            import json
+            log_path = Path('analytics_events.log')
+            event = {
+                'ts': stored_msg["timestamp"],
+                'size': size_bytes,
+                'from': msg.from_,
+                'to': msg.to
+            }
+            with log_path.open('a', encoding='utf-8') as f:
+                f.write(json.dumps(event, separators=(',', ':')) + '\n')
+        except Exception:
+            pass
+
     return {"status": "ok", "analytics": ANALYTICS_ENABLED}
 
 
