@@ -60,15 +60,12 @@ class WhisprUILayout:
                                      hover_color=theme.get("button_send_hover", "#357ABD"))
         app.copy_btn.grid(row=0, column=1, padx=5, pady=10)
 
-        app.settings_btn = ctk.CTkButton(pub_frame, text="Settings", command=app.open_settings,
-                                         fg_color=theme.get("button_send", "#4a90e2"),
-                                         hover_color=theme.get("button_send_hover", "#357ABD"))
-        app.settings_btn.grid(row=0, column=2, padx=5, pady=10)
 
         # --- Public Key Tooltip ---
         def update_pub_label(event=None):
             pub_frame.update_idletasks()
-            frame_width = pub_frame.winfo_width() - app.copy_btn.winfo_width() - app.settings_btn.winfo_width() - 30
+            # Subtract the copy button width and some padding to calculate available space
+            frame_width = pub_frame.winfo_width() - app.copy_btn.winfo_width() - 30
             approx_char_width = 7
             max_chars = max(10, frame_width // approx_char_width)
             truncated = app.my_pub_hex
@@ -158,7 +155,8 @@ class WhisprUILayout:
         # --- Server Status ---
         app.server_status = ctk.CTkLabel(pub_frame, text="●", font=("Roboto", 16),
                                         text_color=theme.get("server_offline", "red"))
-        app.server_status.grid(row=0, column=3, padx=5)
+        # Moved to column 2 after removing the settings button
+        app.server_status.grid(row=0, column=2, padx=5)
 
         # Update server status color function
         def update_status_color(online):
