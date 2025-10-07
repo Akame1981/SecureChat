@@ -177,7 +177,8 @@ class Sidebar(ctk.CTkFrame):
         # Load settings icon
         try:
             # load smaller icon and prepare hover (darker) variant
-            base_img = Image.open(get_resource_path("gui/scr/images/settings_btn.png")).resize((28, 28), Image.Resampling.LANCZOS)
+            # NOTE: fixed path typo gui/scr -> gui/src
+            base_img = Image.open(get_resource_path("gui/src/images/settings_btn.png")).resize((28, 28), Image.Resampling.LANCZOS)
             # darker hover image
             hover_pil = ImageEnhance.Brightness(base_img).enhance(0.78)
             settings_ctk = ctk.CTkImage(light_image=base_img, dark_image=base_img, size=(28, 28))

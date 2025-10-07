@@ -90,9 +90,24 @@ class WhisprApp(ctk.CTk):
         if cfg_theme:
             self.theme_manager.set_theme_by_name(cfg_theme)
 
+        # Force a full appearance mode + color theme apply right away to avoid
+        # any brief mix of default/system + custom colors before widgets mount.
+        try:
+            self.theme_manager.apply()
+        except Exception:
+            pass
+
 
         self.title("🕵️ Whispr")
         self.geometry("600x600")
+
+        # Apply root background color from theme immediately so window does not flash default color
+        try:
+            bg = self.theme_manager.theme_colors.get(self.theme_manager.current_theme, {}).get("background")
+            if bg:
+                self.configure(fg_color=bg)
+        except Exception:
+            pass
 
 
         
@@ -137,6 +152,13 @@ class WhisprApp(ctk.CTk):
         """Run initialization steps that require a loaded keypair."""
         self.layout = WhisprUILayout(self)
         self.layout.create_widgets()
+        # Re-apply theme after widgets were created to propagate colors to all
+        # newly added components (some custom widgets read global appearance
+        # only at construction time).
+        try:
+            self.theme_manager.apply()
+        except Exception:
+            pass
         self.update_message_bubbles_theme()
 
         self.chat_manager = ChatManager(self)
