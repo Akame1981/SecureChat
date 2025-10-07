@@ -106,6 +106,30 @@ def send_message(msg: Message):
         r.ltrim(inbox_key, -MAX_MESSAGES_PER_RECIPIENT, -1)
         r.expire(inbox_key, MESSAGE_TTL)
 
+        # ---------- Cross-process analytics counters ----------
+        try:
+            # Day and hour keys in UTC
+            import datetime, math, json
+            dt_utc = datetime.datetime.utcfromtimestamp(now)
+            day_key = dt_utc.strftime('%Y%m%d')
+            hour_key = dt_utc.strftime('%Y%m%d%H')
+            size_bytes = len(base64.b64decode(msg.message)) if msg.message else 0
+            pipe = r.pipeline()
+            pipe.incr(f'metrics:messages:count:{day_key}')
+            if size_bytes:
+                pipe.incrby(f'metrics:messages:bytes:{day_key}', size_bytes)
+            pipe.incr(f'metrics:messages:day:{day_key}')  # duplicate daily counter (compat)
+            pipe.incr(f'metrics:messages:hour:{hour_key}')
+            pipe.sadd('metrics:users:all', msg.from_)
+            pipe.sadd(f'metrics:users:new:{day_key}', msg.from_)
+            # Active users: score = last seen timestamp
+            pipe.zadd('metrics:active_users', {msg.from_: now})
+            # Optional trim of old active users beyond 24h
+            pipe.zremrangebyscore('metrics:active_users', 0, now - 86400)
+            pipe.execute()
+        except Exception:
+            pass
+
     else:
         with store_lock:
             # Rate limit
