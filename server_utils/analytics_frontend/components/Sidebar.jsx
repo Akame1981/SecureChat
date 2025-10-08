@@ -6,6 +6,7 @@ const links = [
   { href: '/system', label: 'System' },
   { href: '/users', label: 'Users' },
   { href: '/messages', label: 'Messages' },
+  { href: '/attachments', label: 'Attachments' },
   { href: '/settings', label: 'Settings' },
 ]
 

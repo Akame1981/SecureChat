@@ -1,6 +1,6 @@
 import Layout from '../components/Layout'
 import { useEffect, useState } from 'react'
-import { fetchSystem, fetchUsers, fetchMessages } from '../lib/api'
+import { fetchSystem, fetchUsers, fetchMessages, fetchAttachments } from '../lib/api'
 import { getToken } from '../lib/auth'
 import { useRouter } from 'next/router'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts'
@@ -9,6 +9,7 @@ export default function Overview(){
   const [system, setSystem] = useState(null)
   const [users, setUsers] = useState(null)
   const [messages, setMessages] = useState(null)
+  const [attachments, setAttachments] = useState(null)
   const router = useRouter()
   const [intervalSec, setIntervalSec] = useState(15)
 
@@ -18,7 +19,8 @@ export default function Overview(){
       try {
         setSystem(await fetchSystem())
         setUsers(await fetchUsers())
-        setMessages(await fetchMessages())
+  setMessages(await fetchMessages())
+  setAttachments(await fetchAttachments())
       } catch(e){
         if(e.response && e.response.status === 401) router.push('/login')
       }
@@ -28,7 +30,7 @@ export default function Overview(){
     return ()=> clearInterval(id)
   }, [intervalSec])
 
-  if(!system || !users || !messages) return <div className="p-4 text-gray-400">Loading...</div>
+  if(!system || !users || !messages || !attachments) return <div className="p-4 text-gray-400">Loading...</div>
 
   const dayDistribution = messages.per_day.map(d => ({ name: d.day, value: d.messages }))
   const colors = ['#6366f1','#8b5cf6','#ec4899','#10b981','#f59e0b','#ef4444','#3b82f6']
@@ -57,7 +59,12 @@ export default function Overview(){
         <MetricCard title="Active Users" value={users.active_users} />
         <MetricCard title="Total Users" value={users.total_users} />
         <MetricCard title="Messages Today" value={messages.messages_today} />
-        <MetricCard title="Avg Msg Size" value={messages.avg_message_size.toFixed(1)} />
+  <MetricCard title="Avg Msg Size" value={messages.avg_message_size.toFixed(1)} />
+  {messages.total_mb !== undefined && <MetricCard title="Msg Total MB" value={messages.total_mb.toFixed(2)} />}
+  {messages.total_gb !== undefined && <MetricCard title="Msg Total GB" value={messages.total_gb.toFixed(3)} />}
+  <MetricCard title="Att Today" value={attachments.attachments_today} />
+  <MetricCard title="Avg Att Size" value={attachments.avg_attachment_size.toFixed(1)} />
+  {attachments.total_mb !== undefined && <MetricCard title="Att Total MB" value={attachments.total_mb.toFixed(2)} />}
         <div className="bg-gray-800 rounded p-4 flex flex-col space-y-2">
           <label className="text-xs text-gray-400 mb-1">Refresh Interval (s)</label>
           <input type="number" min={10} max={60} value={intervalSec} onChange={e=>setIntervalSec(Number(e.target.value))} className="bg-gray-700 rounded px-2 py-1 text-sm" />
