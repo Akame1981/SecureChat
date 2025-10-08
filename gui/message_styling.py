@@ -211,7 +211,10 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
         bubble_frame.sender_label.pack(anchor=side_anchor, padx=10, pady=(6, 0))
     else:
         # No avatar, compact placement for continuation messages
-        bubble_frame.pack(side=('right' if is_you else 'left'), padx=12 if is_you else 12, pady=0)
+        if align_both_left:
+            bubble_frame.pack(side='left', padx=12, pady=0)
+        else:
+            bubble_frame.pack(side=('right' if is_you else 'left'), padx=12 if is_you else 12, pady=0)
 
     # Message text
     # Selectable message text via CTkTextbox
@@ -237,11 +240,12 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
         # We'll disable editing by setting state='disabled' after inserting text
         # and provide a custom copy handler so Ctrl+C works reliably.
         msg_widget.bind('<Button-1>', lambda e: msg_widget.focus_set())
-        # Justify alignment: for right aligned we pad left
-        if is_you:
-            msg_widget.tag_configure('all', justify='right')
-        else:
+        # Justify alignment: when align_both_left is enabled, force left justification
+        if align_both_left:
             msg_widget.tag_configure('all', justify='left')
+        else:
+            # Right-align text for your messages, left for others
+            msg_widget.tag_configure('all', justify='right' if is_you else 'left')
         msg_widget.tag_add('all', '1.0', 'end')
         # Text color
         try:
@@ -283,11 +287,12 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
         bubble_frame._msg_is_textbox = True
     except Exception:
         # Fallback to simple label if textbox creation fails
+        # Fallback label if textbox creation fails; ensure justification respects align_both_left
         bubble_frame.msg_label = ctk.CTkLabel(
             bubble_frame,
             text=processed_text,
             wraplength=wrap_len,
-            justify="right" if is_you else "left",
+            justify=("left" if align_both_left else ("right" if is_you else "left")),
             text_color=text_color,
             font=("Roboto", 12),
         )
