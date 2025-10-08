@@ -8,6 +8,18 @@ from utils.attachments import load_attachment, AttachmentNotFound
 import requests, base64 as _b64
 from tkinter import filedialog, messagebox
 from gui.identicon import generate_identicon
+from PIL import Image
+import io
+
+
+def _human_size(n: int) -> str:
+    units = ["B", "KB", "MB", "GB", "TB"]
+    f = float(n)
+    for u in units:
+        if f < 1024 or u == units[-1]:
+            return f"{f:.1f} {u}"
+        f /= 1024
+    return f"{n} B"
 
 
 def _parse_bool(val, default=False):
@@ -220,6 +232,13 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
         else:
             bubble_frame.pack(side=('right' if is_you else 'left'), padx=12 if is_you else 12, pady=0)
 
+    # Quick image-attachment hint (extension-based) so we can adjust caption/text placement
+    is_image_attachment = False
+    if attachment_meta and isinstance(attachment_meta, dict) and attachment_meta.get('type', 'file') == 'file':
+        nm = attachment_meta.get('name', '')
+        if isinstance(nm, str) and nm.lower().split('.')[-1] in ('png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'):
+            is_image_attachment = True
+
     # Message text
     # Selectable message text via CTkTextbox
     try:
@@ -302,6 +321,136 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
             font=("Roboto", 12),
         )
         bubble_frame.msg_label.pack(anchor=side_anchor, padx=10, pady=(4 if not prev_same else 2, 4))
+
+    # If this appears to be an image attachment, replace the large placeholder text with a compact caption
+    try:
+        if is_image_attachment and isinstance(bubble_frame.msg_label, (ctk.CTkLabel, ctk.CTkTextbox)):
+            caption = None
+            try:
+                name = attachment_meta.get('name') if attachment_meta else None
+                size = attachment_meta.get('size') if attachment_meta else None
+                if name and size:
+                    caption = f"{name} ({_human_size(int(size))})"
+                elif name:
+                    caption = name
+            except Exception:
+                caption = None
+            if caption:
+                try:
+                    # For textbox, replace content; for label, set text and smaller font
+                    if getattr(bubble_frame, '_msg_is_textbox', False):
+                        try:
+                            bubble_frame.msg_label.configure(state='normal')
+                            bubble_frame.msg_label.delete('1.0', 'end')
+                            bubble_frame.msg_label.insert('1.0', caption)
+                            bubble_frame.msg_label.configure(state='disabled')
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            bubble_frame.msg_label.configure(text=caption, font=("Roboto", 10, "italic"))
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # --- Inline image rendering for image attachments ---
+    try:
+        img_meta = None
+        if attachment_meta and isinstance(attachment_meta, dict) and attachment_meta.get('type', 'file') == 'file':
+            img_name = attachment_meta.get('name', '')
+            # Quick extension-based detection
+            if isinstance(img_name, str) and img_name.lower().split('.')[-1] in ('png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'):
+                img_meta = attachment_meta
+        # If extension didn't match but blob present, attempt to open
+        if not img_meta and attachment_meta and (attachment_meta.get('file_b64') or attachment_meta.get('blob')):
+            try:
+                blob_b64 = attachment_meta.get('file_b64') or attachment_meta.get('blob')
+                raw = base64.b64decode(blob_b64)
+                # quick content sniff via PIL
+                im = Image.open(io.BytesIO(raw))
+                im.close()
+                img_meta = attachment_meta
+            except Exception:
+                img_meta = None
+
+        if img_meta:
+            # Load bytes (prefer local cache)
+            raw = None
+            att_id = img_meta.get('att_id')
+            if att_id:
+                try:
+                    raw = load_attachment(att_id, app.pin)
+                except AttachmentNotFound:
+                    raw = None
+            if raw is None:
+                # Try inline blob if present
+                blob_b64 = img_meta.get('file_b64') or img_meta.get('blob')
+                if blob_b64:
+                    try:
+                        raw = base64.b64decode(blob_b64)
+                    except Exception:
+                        raw = None
+                else:
+                    # Try lazy download from server if we have app context
+                    try:
+                        if app and att_id and hasattr(app, 'SERVER_URL') and hasattr(app, 'my_pub_hex'):
+                            r = requests.get(f"{app.SERVER_URL}/download/{att_id}", params={"recipient": app.my_pub_hex}, verify=getattr(app, 'SERVER_CERT', None), timeout=20)
+                            if r.ok:
+                                data = r.json()
+                                blob_b64 = data.get('blob')
+                                if blob_b64:
+                                    raw = base64.b64decode(blob_b64)
+                    except Exception:
+                        raw = None
+
+            if raw:
+                try:
+                    import io as _io
+                    bio = _io.BytesIO(raw)
+                    pil = Image.open(bio)
+                    # Create a thumbnail constrained by wrap length and a max dimension
+                    max_dim = min(_compute_wrap(parent), 360)
+                    pil.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+                    try:
+                        ctk_img = ctk.CTkImage(light_image=pil, dark_image=pil, size=pil.size)
+                    except Exception:
+                        # Fall back to converting to RGBA then build CTkImage
+                        pil = pil.convert('RGBA')
+                        ctk_img = ctk.CTkImage(light_image=pil, dark_image=pil, size=pil.size)
+
+                    img_label = ctk.CTkLabel(bubble_frame, image=ctk_img, text="", fg_color='transparent')
+                    img_label._ctk_image = ctk_img
+                    img_label._pil_image = pil
+                    img_label.pack(anchor=side_anchor, padx=10, pady=(2, 6))
+
+                    # Double-click or click to open/save
+                    def _open_full(event=None):
+                        try:
+                            # Save to temp file and open with default OS viewer
+                            import tempfile, webbrowser
+                            ext = img_meta.get('name', 'img')
+                            if '.' not in ext:
+                                ext = ext + '.png'
+                            tf = tempfile.NamedTemporaryFile(delete=False, suffix='.' + ext.split('.')[-1])
+                            tf.write(raw)
+                            tf.flush(); tf.close()
+                            webbrowser.open(tf.name)
+                        except Exception:
+                            try:
+                                messagebox.showinfo('Image', 'Unable to open image file')
+                            except Exception:
+                                pass
+
+                    img_label.bind('<Double-1>', _open_full)
+                    # expose in bubble_frame for later access
+                    bubble_frame._attachment_image = img_label
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
     # Timestamp / meta line
     time_str = _format_time(timestamp)
