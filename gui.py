@@ -39,6 +39,7 @@ from utils.crypto import (
     verify_signature,
 )
 from utils.network import fetch_messages, send_message
+from utils.ws_client import start_ws_client
 from utils.recipients import add_recipient, get_recipient_key, get_recipient_name, load_recipients
 from utils.chat_manager import ChatManager
 from utils.server_check import run_server_check_in_thread
@@ -170,6 +171,13 @@ class WhisprApp(ctk.CTk):
         # Start fetch loop
         self.stop_event = threading.Event()
         threading.Thread(target=self.chat_manager.fetch_loop, daemon=True).start()
+
+        # Start WebSocket client (real-time push). Runs alongside polling; polling will idle when ws_connected.
+        try:
+            self.ws_connected = False
+            start_ws_client(self)
+        except Exception as e:
+            print(f"[gui] failed to start websocket client: {e}")
 
         run_server_check_in_thread(self, interval=1.0)
 

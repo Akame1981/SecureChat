@@ -108,6 +108,10 @@ class ChatManager:
         Uses adaptive sleep to reduce unnecessary polling.
         """
         while not self.stop_event.is_set():
+            # If WebSocket is active, reduce polling frequency drastically
+            if getattr(self.app, 'ws_connected', False):
+                time.sleep(5)
+                continue
             try:
                 msgs = fetch_messages(
                     self.app,

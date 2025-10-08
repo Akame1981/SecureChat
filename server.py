@@ -1,12 +1,27 @@
 import base64
 import threading
 import time
+import asyncio
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from nacl.public import PrivateKey
 from nacl.signing import VerifyKey
 from pydantic import BaseModel
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()  # ✅ create app first
+
+# Then add middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # allow all origins for WS connections
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # -------------------------
 # Try Redis connection
@@ -28,7 +43,11 @@ except ImportError:
 # -------------------------
 # App and storage
 # -------------------------
-app = FastAPI()
+
+
+# Active WebSocket connections: recipient_key -> set[WebSocket]
+active_ws = {}
+active_ws_lock = threading.Lock()
 
 # Attempt to import analytics event collector to feed live stats
 try:
@@ -170,6 +189,24 @@ def send_message(msg: Message):
         except Exception:
             pass
 
+    # Push via WebSocket if recipient online
+    try:
+        with active_ws_lock:
+            conns = list(active_ws.get(msg.to, []))
+        if conns:
+            import json
+            payload = stored_msg  # already serializable
+            for ws in conns:
+                try:
+                    # send_json but we run in thread context; ensure await isn't required by using .send_text on raw JSON
+                    # FastAPI WebSocket is async, so schedule with loop via thread safe - simpler: run background task
+                    import asyncio
+                    asyncio.create_task(ws.send_json(payload))
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"WS push failed: {e}")
+
     return {"status": "ok", "analytics": ANALYTICS_ENABLED}
 
 
@@ -206,3 +243,64 @@ def get_inbox(recipient_key: str, since: Optional[float] = Query(0)):
 @app.get("/public-key")
 def get_server_public_key():
     return {"public_key": server_public.encode().hex(), "analytics": ANALYTICS_ENABLED}
+
+
+# -------------------------
+# WebSocket endpoint
+# -------------------------
+@app.websocket("/ws/{recipient_key}")
+async def websocket_endpoint(websocket: WebSocket, recipient_key: str):
+    await websocket.accept()
+    # Register
+    with active_ws_lock:
+        bucket = active_ws.get(recipient_key)
+        if not bucket:
+            bucket = set()
+            active_ws[recipient_key] = bucket
+        bucket.add(websocket)
+    try:
+        while True:
+            # We don't expect client-originated messages (could be ping). Just receive to detect disconnects.
+            try:
+                await websocket.receive_text()
+            except Exception:
+                # Could implement periodic ping; for now just continue.
+                await asyncio.sleep(5)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        with active_ws_lock:
+            bucket = active_ws.get(recipient_key, set())
+            if websocket in bucket:
+                bucket.remove(websocket)
+            if not bucket and recipient_key in active_ws:
+                active_ws.pop(recipient_key, None)
+
+
+@app.websocket("/ws")
+async def websocket_endpoint_query(websocket: WebSocket, recipient: str):
+    """Alternate endpoint form: /ws?recipient=PUBHEX for backward / proxy compatibility."""
+    await websocket.accept()
+    recipient_key = recipient
+    with active_ws_lock:
+        bucket = active_ws.get(recipient_key)
+        if not bucket:
+            bucket = set()
+            active_ws[recipient_key] = bucket
+        bucket.add(websocket)
+    try:
+        while True:
+            try:
+                await websocket.receive_text()
+            except Exception:
+                await asyncio.sleep(5)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        with active_ws_lock:
+            bucket = active_ws.get(recipient_key, set())
+            if websocket in bucket:
+                bucket.remove(websocket)
+            if not bucket and recipient_key in active_ws:
+                active_ws.pop(recipient_key, None)
+
