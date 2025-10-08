@@ -139,6 +139,54 @@ Key points:
 
 ---
 
+## ⚡ Real-time push (WebSockets)
+
+WebSocket support has been added to provide low‑latency, server‑pushed delivery of incoming messages. The server exposes two compatible endpoints:
+
+- Path form: `/ws/{recipient_pubhex}`
+- Query form: `/ws?recipient={recipient_pubhex}`
+
+Notes:
+
+- The client will attempt to start a WebSocket background thread if the `websocket-client` package is available. If not installed, the client falls back to periodic polling.
+- TLS is supported via `wss://` when you configure the client to use an `https://` server URL and provide a pinned certificate (`utils/cert.pem`) in settings.
+- The client reduces polling frequency automatically when a WebSocket connection is active.
+- WebSocket push sends the same envelope structure as the `/inbox` payload (fields: `from`, `enc_pub`, `message`, `signature`, `timestamp`). The client verifies signatures and decrypts messages locally before displaying or storing them.
+
+Server-side behavior:
+
+- When a message is accepted by `POST /send` the server will attempt to push the stored envelope to any active WebSocket connections for the recipient. Failures are ignored (best‑effort delivery).
+- The WebSocket endpoints accept simple pings from clients but are primarily used for server→client push. Disconnects and handshake failures are handled gracefully.
+
+## 📎 File sharing (Attachments)
+
+Attachments (file sharing) are implemented end‑to‑end encrypted and ephemeral. Key points:
+
+- Client behavior:
+  - GUI supports sending attachments via the Attach button and optional drag & drop. Attachments are encrypted client‑side and the GUI stores a local, encrypted copy in `data/attachments` (see `utils/attachments.py`).
+  - When sending, the client uploads the sealed ciphertext and metadata to the server using `POST /upload` and stores a placeholder message locally that points to the attachment (name, size, `att_id`).
+  - Downloading an attachment is done via `GET /download/{att_id}?recipient={your_pubhex}`; the client will request the ciphertext from the server, verify the recipient, then decrypt locally using the owner's PIN‑derived key.
+
+- Server behavior / API:
+  - `POST /upload` accepts an attachment envelope containing `{to, from_, enc_pub, blob, signature, name, size, sha256}` where `blob` is the base64 sealed ciphertext and `sha256` is a hex digest used as the attachment id (`att_id`).
+  - The server verifies the signature over the blob, enforces a size guard (default 10 MB), stores the ciphertext in an in‑memory attachment store (or Redis when configured), and returns `{"att_id": "<sha256>", "status": "ok"}`.
+  - `GET /download/{att_id}?recipient=<pubhex>` returns `{"att_id","blob","name","size","from","to"}` if the recipient matches and the attachment has not expired.
+  - Attachments are ephemeral and subject to the same TTL used for messages (default 60s) unless you configure a longer retention on the server side.
+
+- Security model:
+  - Attachments are sealed/encrypted by the sender using the recipient's public key (SealedBox) and signed by the sender. The server only stores ciphertext, size and metadata and cannot decrypt attachment contents.
+  - Attachment files stored on the client are encrypted with a key derived from the user's PIN (see `utils/attachments.py`) so local copies remain protected.
+
+- Analytics & limits:
+  - Attachment uploads are accounted for by the analytics collector (if enabled). The server records attachment counts and average sizes for reporting.
+  - The server rejects attachments larger than the configured limit (10 MB by default) and will return a `413 Attachment too large` response.
+
+Developer notes:
+
+- Attachment ids are deterministic SHA256 hex of the ciphertext. Sending the same file twice will reuse the same `att_id` on the server and client local store.
+- The client includes a placeholder message in chat history pointing to the attachment (`[Attachment] filename (size)`); selecting the placeholder starts a download + decrypt flow.
+
+
 ## ⚙️ Configuration & Files
 
 | File / Path | Purpose |
