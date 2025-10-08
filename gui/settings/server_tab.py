@@ -32,55 +32,66 @@ class ServerTab:
 
     def _build_ui(self):
         """Build all widgets for the Whispr Server tab."""
-
+        # Header
         ctk.CTkLabel(
             self.frame, text="Server Settings",
             font=("Roboto", 16, "bold"), text_color="white"
-        ).grid(row=0, column=0, pady=(10, 5), padx=10, sticky="w")
+        ).grid(row=0, column=0, pady=(10, 6), padx=10, sticky="w")
 
-        # --- Radio buttons for server type ---
-        ctk.CTkRadioButton(
-            self.frame, text="Public Server",
-            variable=self.server_var, value="public"
-        ).grid(row=1, column=0, sticky="w", padx=20, pady=5)
+        # Card container for better visual grouping
+        card = ctk.CTkFrame(self.frame, fg_color="#1e1e2f", corner_radius=8)
+        card.grid(row=1, column=0, padx=12, pady=(6, 12), sticky="ew")
+        card.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkRadioButton(
-            self.frame, text="Local Server",
-            variable=self.server_var, value="local"
-        ).grid(row=2, column=0, sticky="w", padx=20, pady=5)
+        # Radio buttons in a row
+        radio_row = ctk.CTkFrame(card, fg_color="transparent")
+        radio_row.grid(row=0, column=0, sticky="ew", padx=12, pady=(8,6))
+        radio_row.grid_columnconfigure(0, weight=1)
+        radio_row.grid_columnconfigure(1, weight=1)
 
-        # --- Custom server URL ---
-        ctk.CTkLabel(
-            self.frame, text="Custom Server URL:",
-            text_color="white"
-        ).grid(row=3, column=0, sticky="w", padx=20, pady=(10, 0))
+        ctk.CTkRadioButton(radio_row, text="Public Server", variable=self.server_var, value="public").grid(row=0, column=0, sticky="w")
+        ctk.CTkRadioButton(radio_row, text="Local / Custom Server", variable=self.server_var, value="local").grid(row=0, column=1, sticky="w")
 
-        self.custom_server_entry = ctk.CTkEntry(self.frame, width=300)
-        self.custom_server_entry.grid(row=4, column=0, sticky="w", padx=20, pady=5)
+        # Custom server URL
+        self.url_row = ctk.CTkFrame(card, fg_color="transparent")
+        self.url_row.grid(row=1, column=0, sticky="ew", padx=12, pady=(6,6))
+        self.url_row.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(self.url_row, text="Custom Server URL:", text_color="#b2b8d6").grid(row=0, column=0, sticky="w")
+        self.custom_server_entry = ctk.CTkEntry(self.url_row, width=420)
+        self.custom_server_entry.grid(row=1, column=0, sticky="ew", pady=6)
         self.custom_server_entry.insert(0, "http://127.0.0.1:8000")
 
-        # --- Certificate checkbox ---
-        self.cert_checkbox = ctk.CTkCheckBox(
-            self.frame, text="Use custom certificate", variable=self.use_cert_var
-        )
-        self.cert_checkbox.grid(row=5, column=0, sticky="w", padx=20, pady=5)
+        # Certificate controls inline
+        self.cert_row = ctk.CTkFrame(card, fg_color="transparent")
+        self.cert_row.grid(row=2, column=0, sticky="ew", padx=12, pady=(0,8))
+        self.cert_row.grid_columnconfigure(0, weight=1)
+        self.cert_row.grid_columnconfigure(1, weight=0)
 
-        # --- Certificate entry + browse button ---
-        self.cert_entry = ctk.CTkEntry(self.frame, width=300)
-        self.cert_entry.grid(row=6, column=0, sticky="w", padx=20, pady=5)
+        self.cert_checkbox = ctk.CTkCheckBox(self.cert_row, text="Use custom certificate", variable=self.use_cert_var)
+        self.cert_checkbox.grid(row=0, column=0, sticky="w")
+
+        self.cert_input_row = ctk.CTkFrame(card, fg_color="transparent")
+        self.cert_input_row.grid(row=3, column=0, sticky="ew", padx=12, pady=(0,8))
+        self.cert_input_row.grid_columnconfigure(0, weight=1)
+        self.cert_input_row.grid_columnconfigure(1, weight=0)
+
+        self.cert_entry = ctk.CTkEntry(self.cert_input_row)
+        self.cert_entry.grid(row=0, column=0, sticky="ew")
         self.cert_entry.insert(0, "utils/cert.pem")
 
-        self.browse_btn = ctk.CTkButton(
-            self.frame, text="Browse", command=self._browse_cert, fg_color="#4a90e2"
-        )
-        self.browse_btn.grid(row=6, column=1, sticky="w", padx=5)
+        self.browse_btn = ctk.CTkButton(self.cert_input_row, text="Browse", command=self._browse_cert, fg_color="#4a90e2", width=84)
+        self.browse_btn.grid(row=0, column=1, sticky="e", padx=(8,0))
 
-        # --- Save button ---
-        ctk.CTkButton(
-            self.frame, text="Save",
-            command=self._save_server_settings,
-            fg_color="#4a90e2"
-        ).grid(row=7, column=0, sticky="w", padx=20, pady=10)
+        # Action row: Save + Reset
+        action_row = ctk.CTkFrame(card, fg_color="transparent")
+        action_row.grid(row=4, column=0, sticky="e", padx=12, pady=(4,12))
+        ctk.CTkButton(action_row, text="Save", command=self._save_server_settings, fg_color="#4a90e2", width=120).grid(row=0, column=0, padx=(0,8))
+        ctk.CTkButton(action_row, text="Reset", command=self._load_settings, fg_color="#6c6f76", width=90).grid(row=0, column=1)
+
+        # Persistent status label (one place for messages)
+        self.status_label = ctk.CTkLabel(self.frame, text="", text_color="green")
+        self.status_label.grid(row=2, column=0, sticky="w", padx=20)
 
     def _update_cert_visibility(self):
         """Show/hide fields depending on server type + cert usage."""
@@ -98,6 +109,12 @@ class ServerTab:
             else:
                 self.cert_entry.grid_remove()
                 self.browse_btn.grid_remove()
+
+    def _set_status(self, text, color="green"):
+        try:
+            self.status_label.configure(text=text, text_color=color)
+        except Exception:
+            pass
 
     def _browse_cert(self):
         """Browse for a certificate file."""
@@ -118,29 +135,19 @@ class ServerTab:
             self.app.SERVER_CERT = "utils/cert.pem"
         else:
             if not url.startswith("http"):
-                ctk.CTkLabel(
-                    self.frame, text="Invalid URL!", text_color="red"
-                ).grid(row=8, column=0, padx=20)
+                self._set_status("Invalid URL!", color="red")
                 return
 
             self.app.SERVER_URL = url
             if self.use_cert_var.get():
                 cert_path = self.cert_entry.get().strip()
                 if not cert_path or not os.path.exists(cert_path):
-                    ctk.CTkLabel(
-                        self.frame, text="Certificate file not found!", text_color="red"
-                    ).grid(row=8, column=0, padx=20)
+                    self._set_status("Certificate file not found!", color="red")
                     return
                 self.app.SERVER_CERT = cert_path
             else:
                 self.app.SERVER_CERT = None
-
-        ctk.CTkLabel(
-            self.frame,
-            text=f"Server set to: {self.app.SERVER_URL}",
-            text_color="green"
-        ).grid(row=8, column=0, padx=20)
-
+        self._set_status(f"Server set to: {self.app.SERVER_URL}", color="green")
         self._save_settings_file()
 
     def _load_settings(self):
