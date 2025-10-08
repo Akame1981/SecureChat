@@ -95,7 +95,7 @@ def verify_signature(sender_hex, message_b64, signature_b64):
 # Send message
 # -------------------------
 @app.post("/send")
-def send_message(msg: Message):
+async def send_message(msg: Message):
     # Verify signature
     if not verify_signature(msg.from_, msg.message, msg.signature):
         raise HTTPException(status_code=400, detail="Invalid signature")
@@ -189,19 +189,15 @@ def send_message(msg: Message):
         except Exception:
             pass
 
-    # Push via WebSocket if recipient online
+    # Push via WebSocket if recipient online (await directly, endpoint is async)
     try:
         with active_ws_lock:
             conns = list(active_ws.get(msg.to, []))
         if conns:
-            import json
-            payload = stored_msg  # already serializable
+            payload = stored_msg
             for ws in conns:
                 try:
-                    # send_json but we run in thread context; ensure await isn't required by using .send_text on raw JSON
-                    # FastAPI WebSocket is async, so schedule with loop via thread safe - simpler: run background task
-                    import asyncio
-                    asyncio.create_task(ws.send_json(payload))
+                    await ws.send_json(payload)
                 except Exception:
                     pass
     except Exception as e:
