@@ -152,6 +152,16 @@ class WhisprApp(ctk.CTk):
             self._post_key_init()
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+        # Optional drag & drop for attachments (requires tkinterdnd2)
+        try:
+            from tkinterdnd2 import DND_FILES  # type: ignore
+            try:
+                self.drop_target_register(DND_FILES)
+                self.dnd_bind('<<Drop>>', self._on_file_drop)
+            except Exception as e:
+                print("Drag&Drop register failed", e)
+        except Exception:
+            pass
 
     def _post_key_init(self):
         """Run initialization steps that require a loaded keypair."""
@@ -290,7 +300,12 @@ class WhisprApp(ctk.CTk):
         if self.recipient_pub_hex:
             messages = load_messages(self.recipient_pub_hex, self.pin)
             for msg in messages:
-                        self.display_message(msg["sender"], msg["text"], timestamp=msg.get("timestamp"))
+                self.display_message(
+                    msg["sender"],
+                    msg["text"],
+                    timestamp=msg.get("timestamp"),
+                    attachment_meta=msg.get("_attachment")
+                )
 
 
 
@@ -302,7 +317,7 @@ class WhisprApp(ctk.CTk):
         self.notifier.show("Public key copied!", type_="success")
     # ---------------- Messages ----------------
 
-    def display_message(self, sender_pub, text, timestamp=None):
+    def display_message(self, sender_pub, text, timestamp=None, attachment_meta=None):
         create_message_bubble(
             self.messages_container,
             sender_pub,
@@ -310,8 +325,89 @@ class WhisprApp(ctk.CTk):
             self.my_pub_hex,
             self.pin,
             app=self,
-            timestamp=timestamp
+            timestamp=timestamp,
+            attachment_meta=attachment_meta
         )
+
+    # -------------- Drag & Drop --------------
+    def _on_file_drop(self, event):
+        """Handle OS file(s) dropped onto the window (if tkinterdnd2 present)."""
+        try:
+            data = event.data
+            if not data:
+                return
+            # Windows paths may be enclosed in { } when containing spaces
+            import shlex, time as _time, os
+            parts = []
+            if '{' in data or '}' in data:
+                # naive parse: split by } { patterns
+                cur = ''
+                brace = False
+                for ch in data:
+                    if ch == '{':
+                        brace = True
+                        cur = ''
+                        continue
+                    if ch == '}':
+                        brace = False
+                        parts.append(cur)
+                        cur = ''
+                        continue
+                    if brace:
+                        cur += ch
+                if cur:
+                    parts.append(cur)
+            else:
+                parts = data.split()
+            if not parts:
+                return
+            from utils.network import send_attachment
+            from utils.chat_storage import save_message
+            if not self.recipient_pub_hex:
+                try:
+                    self.notifier.show("Select a recipient first", type_='warning')
+                except Exception:
+                    pass
+                return
+            import threading
+            for path in parts:
+                if not os.path.isfile(path):
+                    continue
+                try:
+                    sz = os.path.getsize(path)
+                    if sz > 5*1024*1024:
+                        self.notifier.show(f"Skip {os.path.basename(path)} (>5MB)")
+                        continue
+                    with open(path,'rb') as f:
+                        blob = f.read()
+                    placeholder = f"[Attachment] {os.path.basename(path)} ({self.chat_manager._human_size(len(blob))})"
+                    ts = _time.time()
+                    import hashlib
+                    att_id = hashlib.sha256(blob).hexdigest()
+                    meta = {"name": os.path.basename(path), "size": len(blob), "att_id": att_id, "type": "file"}
+                    save_message(self.recipient_pub_hex, 'You', placeholder, self.pin, timestamp=ts, attachment=meta)
+                    self.display_message(self.my_pub_hex, placeholder, ts, attachment_meta=meta)
+
+                    def _bg_send(p=path, data=blob):
+                        ok = send_attachment(
+                            self,
+                            to_pub=self.recipient_pub_hex,
+                            signing_pub=self.signing_pub_hex,
+                            filename=os.path.basename(p),
+                            data=data,
+                            signing_key=self.signing_key,
+                            enc_pub=self.my_pub_hex
+                        )
+                        if not ok:
+                            try:
+                                self.notifier.show(f"Failed to send {os.path.basename(p)}", type_='error')
+                            except Exception:
+                                pass
+                    threading.Thread(target=_bg_send, daemon=True).start()
+                except Exception as e:
+                    print('Drop send error', e)
+        except Exception as e:
+            print('DragDrop handler error', e)
 
 
 

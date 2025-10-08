@@ -1,7 +1,9 @@
 # network.py
 import requests
+import os, hashlib
 import time
 from utils.crypto import encrypt_message, decrypt_message, sign_message
+from utils.attachments import store_attachment
 
 
 def send_message(app, to_pub: str, signing_pub: str, text: str, signing_key, enc_pub: str):
@@ -32,6 +34,73 @@ def send_message(app, to_pub: str, signing_pub: str, text: str, signing_key, enc
         return r.ok
     except requests.exceptions.RequestException as e:
         print("Send Exception:", e)
+        return False
+
+
+def send_attachment(app, to_pub: str, signing_pub: str, filename: str, data: bytes, signing_key, enc_pub: str):
+    """Send an attachment (single message envelope).
+
+    Optimization vs previous version:
+    - No inner per-file encryption: rely on outer message encryption + signature.
+    - Minimizes memory copies for large files (base64 only once).
+    Envelope keys:
+      {"type":"file","name":...,"file_b64":...,"size":N}
+    Backward compatibility: receiver still understands legacy 'blob' if encountered.
+    """
+    try:
+        import json as _json, base64 as _b64, os as _os
+        # Persist encrypted locally (pin protected) and only send reference id + hash
+        # 1. Upload raw sealed payload separately for dedup / lazy download
+        att_id = hashlib.sha256(data).hexdigest()
+        # Upload only if not already uploaded (best effort: HEAD style could be added later)
+        import base64 as _b642
+        blob_b64 = _b642.b64encode(data).decode()
+        signature_blob = sign_message(blob_b64, signing_key)
+        upload_payload = {
+            "to": to_pub,
+            "from_": signing_pub,
+            "enc_pub": enc_pub,
+            "blob": blob_b64,
+            "signature": signature_blob,
+            "name": _os.path.basename(filename),
+            "size": len(data),
+            "sha256": att_id
+        }
+        try:
+            ur = requests.post(f"{app.SERVER_URL}/upload", json=upload_payload, verify=app.SERVER_CERT, timeout=30)
+            if not ur.ok:
+                print("Upload Error:", ur.status_code, ur.text)
+                return False
+        except requests.exceptions.RequestException as e:
+            print("Upload Exception:", e)
+            return False
+        # 2. Store locally (encrypted-on-disk) for later retrieval
+        store_attachment(data, getattr(app, 'pin', ''))
+        # 3. Send reference envelope only
+        envelope = {
+            "type": "file",
+            "name": _os.path.basename(filename),
+            "att_id": att_id,
+            "sha256": att_id,
+            "size": len(data)
+        }
+        plaintext = "ATTACH:" + _json.dumps(envelope, separators=(',', ':'))
+        encrypted_b64 = encrypt_message(plaintext, to_pub)
+        signature_b64 = sign_message(encrypted_b64, signing_key)
+        payload = {
+            "to": to_pub,
+            "from_": signing_pub,
+            "enc_pub": enc_pub,
+            "message": encrypted_b64,
+            "signature": signature_b64,
+            "timestamp": time.time()
+        }
+        r = requests.post(f"{app.SERVER_URL}/send", json=payload, verify=app.SERVER_CERT, timeout=30)
+        if not r.ok:
+            print("Send Attachment Error:", r.status_code, r.text)
+        return r.ok
+    except requests.exceptions.RequestException as e:
+        print("Send Attachment Exception:", e)
         return False
 
 

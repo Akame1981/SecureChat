@@ -5,6 +5,10 @@ from datetime import datetime
 from gui.tooltip import ToolTip
 from gui.widgets.sidebar import Sidebar
 from PIL import Image, ImageEnhance, ImageDraw, ImageOps
+from tkinter import filedialog
+import os
+from utils.network import send_attachment
+from utils.crypto import encrypt_blob
 class WhisprUILayout:
     def __init__(self, app):
         """
@@ -115,7 +119,7 @@ class WhisprUILayout:
         app.input_box.bind("<Return>", on_enter_pressed)
 
 
-        # --- Load and prepare images ---
+    # --- Load and prepare images ---
         send_img = Image.open("gui/src/images/send_btn.png").resize((48, 48), Image.Resampling.LANCZOS)
 
         # Normal icon
@@ -140,10 +144,7 @@ class WhisprUILayout:
         send_btn.hover_image = send_hover_icon
 
         # --- Bind click ---
-        send_btn.bind("<Button-1>", lambda e: [
-            app.chat_manager.send(app.input_box.get().strip()),
-            app.input_box.delete(0, tk.END)
-        ])
+        send_btn.bind("<Button-1>", lambda e: [app.chat_manager.send(app.input_box.get().strip()), app.input_box.delete(0, tk.END)])
 
         # --- Bind hover effects ---
         def on_enter(e):
@@ -154,6 +155,81 @@ class WhisprUILayout:
 
         send_btn.bind("<Enter>", on_enter)
         send_btn.bind("<Leave>", on_leave)
+
+        # --- Attachment Button ---
+        try:
+            attach_img_path = "gui/src/images/attach_btn.png"
+            if os.path.exists(attach_img_path):
+                a_img = Image.open(attach_img_path).resize((40,40), Image.Resampling.LANCZOS)
+            else:
+                # fallback: reuse send image dimmed
+                a_img = ImageEnhance.Brightness(send_img).enhance(0.5)
+            attach_icon = CTkImage(light_image=a_img, dark_image=a_img, size=(40,40))
+            attach_btn = ctk.CTkLabel(input_frame, image=attach_icon, text="", fg_color="transparent")
+            attach_btn.image = attach_icon
+            attach_btn.pack(side="right", padx=(0,5), pady=5)
+
+            def do_attach(_=None):
+                if not app.recipient_pub_hex:
+                    try:
+                        app.notifier.show("Select a recipient first", type_="warning")
+                    except Exception:
+                        pass
+                    return
+                paths = filedialog.askopenfilenames(title="Select files to send")
+                for p in paths:
+                    if not p:
+                        continue
+                    try:
+                        sz = os.path.getsize(p)
+                        max_size = 5 * 1024 * 1024  # 5MB basic guard
+                        if sz > max_size:
+                            app.notifier.show(f"Skip {os.path.basename(p)} (>5MB)", type_="warning")
+                            continue
+                        with open(p, 'rb') as f:
+                            data = f.read()
+                        # Show placeholder immediately (non-blocking UX) then send in background
+                        import threading
+                        from utils.attachments import store_attachment
+                        human = app.chat_manager._human_size(len(data)) if hasattr(app, 'chat_manager') else f"{len(data)} bytes"
+                        placeholder = f"[Attachment] {os.path.basename(p)} ({human})"
+                        ts = __import__('time').time()
+                        from utils.chat_storage import save_message
+                        # Temporary client-side id (hash) for placeholder; network layer will persist
+                        import hashlib
+                        att_id = hashlib.sha256(data).hexdigest()
+                        meta = {"name": os.path.basename(p), "size": len(data), "att_id": att_id, "type": "file"}
+                        save_message(app.recipient_pub_hex, "You", placeholder, app.pin, timestamp=ts, attachment=meta)
+                        app.display_message(app.my_pub_hex, placeholder, ts, attachment_meta=meta)
+
+                        def _bg_send():
+                            ok = send_attachment(
+                                app,
+                                to_pub=app.recipient_pub_hex,
+                                signing_pub=app.signing_pub_hex,
+                                filename=os.path.basename(p),
+                                data=data,
+                                signing_key=app.signing_key,
+                                enc_pub=app.my_pub_hex
+                            )
+                            if not ok:
+                                try:
+                                    app.notifier.show(f"Failed to send {os.path.basename(p)}", type_="error")
+                                except Exception:
+                                    pass
+                        threading.Thread(target=_bg_send, daemon=True).start()
+                    except Exception as e:
+                        print("Attachment send error", e)
+                        try:
+                            app.notifier.show("Attachment error", type_="error")
+                        except Exception:
+                            pass
+
+            attach_btn.bind("<Button-1>", do_attach)
+            # Basic tooltip reuse
+            ToolTip(attach_btn, "Send attachment")
+        except Exception as e:
+            print("Attach button init failed", e)
 
 
 

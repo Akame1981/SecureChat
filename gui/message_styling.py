@@ -3,6 +3,10 @@ import customtkinter as ctk
 import tkinter as tk
 from datetime import datetime, date
 from utils.recipients import get_recipient_name
+import base64
+from utils.attachments import load_attachment, AttachmentNotFound
+import requests, base64 as _b64
+from tkinter import filedialog, messagebox
 from gui.identicon import generate_identicon
 
 
@@ -100,7 +104,7 @@ def _fade_in(widget: ctk.CTkFrame, start_color: str, end_color: str, steps: int 
         widget.after(i*delay, apply)
 
 
-def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, timestamp=None):
+def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, timestamp=None, attachment_meta=None):
     """Create a styled message bubble.
 
     Returns the inner bubble frame (for existing theme update logic). Adds:
@@ -399,6 +403,55 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
             print("Open profile placeholder for:", sender_pub)
 
     menu.add_command(label="Copy Message", command=do_copy_text)
+    # Attachment download option if placeholder
+    try:
+        if attachment_meta and isinstance(attachment_meta, dict) and attachment_meta.get('type', 'file') == 'file':
+            def do_save_attachment():
+                # Need original encrypted blob; not stored in bubble, must be fetched from chat cache entry if available
+                try:
+                    raw = None
+                    att_id = attachment_meta.get('att_id')
+                    if att_id:
+                        try:
+                            raw = load_attachment(att_id, app.pin)
+                        except AttachmentNotFound:
+                            # Try lazy fetch from server
+                            try:
+                                r = requests.get(f"{app.SERVER_URL}/download/{att_id}", params={"recipient": app.my_pub_hex}, verify=app.SERVER_CERT, timeout=20)
+                                if r.ok:
+                                    data = r.json()
+                                    blob_b64 = data.get('blob')
+                                    if not blob_b64:
+                                        messagebox.showerror("Attachment", "Server returned no data")
+                                        return
+                                    raw = _b64.b64decode(blob_b64)
+                                else:
+                                    messagebox.showerror("Attachment", f"Download failed: {r.status_code}")
+                                    return
+                            except Exception as de:
+                                messagebox.showerror("Attachment", f"Download error: {de}")
+                                return
+                    else:
+                        blob_b64 = attachment_meta.get('file_b64') or attachment_meta.get('blob')
+                        if not blob_b64:
+                            messagebox.showerror("Attachment", "Missing file data.")
+                            return
+                        raw = base64.b64decode(blob_b64)
+                    default_name = attachment_meta.get('name', 'file')
+                    path = filedialog.asksaveasfilename(defaultextension='', initialfile=default_name)
+                    if path:
+                        with open(path, 'wb') as f:
+                            f.write(raw)
+                        try:
+                            app.notifier.show(f"Saved {default_name}")
+                        except Exception:
+                            pass
+                except Exception as e:
+                    print("Attachment save failed", e)
+                    messagebox.showerror("Attachment", "Failed to save attachment")
+            menu.add_command(label="Save Attachment", command=do_save_attachment)
+    except Exception:
+        pass
     menu.add_command(label="Open User Profile", command=do_open_profile)
 
     def popup(event):
@@ -448,6 +501,7 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
         pass
 
     return bubble_frame
+    
 
 
 def recolor_message_bubble(bubble_frame, theme: dict):

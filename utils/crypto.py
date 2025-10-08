@@ -240,6 +240,25 @@ def decrypt_message(enc_b64: str, private_key: PrivateKey) -> str:
     except CryptoError:
         raise ValueError("Decryption failed. Data may be corrupted or key incorrect.")
 
+# --- Binary helpers (attachments) ---
+def encrypt_blob(data: bytes, recipient_hex: str) -> str:
+    """Encrypt arbitrary binary data for a recipient and return base64(ciphertext).
+
+    Uses the same SealedBox primitive as encrypt_message but accepts bytes.
+    """
+    recipient = PublicKey(bytes.fromhex(recipient_hex))
+    sealed = SealedBox(recipient).encrypt(data)
+    return base64.b64encode(sealed).decode()
+
+def decrypt_blob(enc_b64: str, private_key: PrivateKey) -> bytes:
+    """Decrypt base64(ciphertext) produced by encrypt_blob back to plaintext bytes."""
+    enc = base64.b64decode(enc_b64)
+    box = SealedBox(private_key)
+    try:
+        return box.decrypt(enc)
+    except CryptoError:
+        raise ValueError("Decryption failed. Data may be corrupted or key incorrect.")
+
 # -------------------------
 # --- Signing / Verification ---
 # -------------------------

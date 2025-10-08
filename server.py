@@ -78,6 +78,20 @@ class Message(BaseModel):
     signature: str
     timestamp: Optional[float] = None  # client timestamp
 
+class AttachmentUpload(BaseModel):
+    to: str
+    from_: str
+    enc_pub: str
+    blob: str  # sealed box ciphertext (base64)
+    signature: str  # signature over raw blob bytes
+    name: str
+    size: int
+    sha256: str  # hex sha256 of ciphertext or original (we choose ciphertext)
+
+# In-memory attachment store (TTL similar to messages, could be extended)
+attachments_store = {}
+attachments_lock = threading.Lock()
+
 
 # -------------------------
 # Helper: verify signature
@@ -204,6 +218,67 @@ async def send_message(msg: Message):
         print(f"WS push failed: {e}")
 
     return {"status": "ok", "analytics": ANALYTICS_ENABLED}
+
+
+# -------------------------
+# Upload attachment (metadata + sealed ciphertext)
+# -------------------------
+@app.post("/upload")
+def upload_attachment(att: AttachmentUpload):
+    # Verify signature over blob
+    if not verify_signature(att.from_, att.blob, att.signature):
+        raise HTTPException(status_code=400, detail="Invalid signature")
+    # Basic size guard (could enforce a higher limit separately)
+    if att.size > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Attachment too large")
+    import base64, hashlib, time as _time
+    try:
+        blob_bytes = base64.b64decode(att.blob)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid blob base64")
+    # Hash check consistency
+    calc_hash = hashlib.sha256(blob_bytes).hexdigest()
+    if calc_hash != att.sha256:
+        raise HTTPException(status_code=400, detail="sha256 mismatch")
+    now = _time.time()
+    with attachments_lock:
+        attachments_store[att.sha256] = {
+            "from": att.from_,
+            "to": att.to,
+            "enc_pub": att.enc_pub,
+            "blob": att.blob,
+            "name": att.name,
+            "size": att.size,
+            "ts": now,
+        }
+    return {"att_id": att.sha256, "status": "ok"}
+
+
+# -------------------------
+# Download attachment
+# -------------------------
+@app.get("/download/{att_id}")
+def download_attachment(att_id: str, recipient: str):
+    import time as _time
+    with attachments_lock:
+        entry = attachments_store.get(att_id)
+        # Optionally purge expired
+        if entry and _time.time() - entry.get("ts", 0) > MESSAGE_TTL:
+            attachments_store.pop(att_id, None)
+            entry = None
+    if not entry:
+        raise HTTPException(status_code=404, detail="Not found")
+    if entry.get("to") != recipient:
+        raise HTTPException(status_code=403, detail="Not authorized for this attachment")
+    # Return minimal metadata + ciphertext blob
+    return {
+        "att_id": att_id,
+        "blob": entry["blob"],
+        "name": entry["name"],
+        "size": entry["size"],
+        "from": entry["from"],
+        "to": entry["to"],
+    }
 
 
 # -------------------------
