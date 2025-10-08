@@ -44,6 +44,7 @@ from utils.ws_client import start_ws_client
 from utils.recipients import add_recipient, get_recipient_key, get_recipient_name, load_recipients
 from utils.chat_manager import ChatManager
 from utils.server_check import run_server_check_in_thread
+from utils.auto_updater import run_auto_update_check_in_thread, apply_pending_update, get_pending_update
 from utils.message_handler import handle_send
 from utils.key_manager import init_keypair
 from utils.app_settings import load_app_settings
@@ -105,7 +106,7 @@ class WhisprApp(ctk.CTk):
 
 
         self.title("🕵️ Whispr")
-        self.geometry("600x600")
+        self.geometry("1000x800")
 
         # Apply root background color from theme immediately so window does not flash default color
         try:
@@ -125,6 +126,45 @@ class WhisprApp(ctk.CTk):
         self.username = "Anonymous"
 
         self.notifier = NotificationManager(self)
+
+        # If an update was marked pending, attempt to apply it now (before
+        # starting background threads). If applied, prompt the user to
+        # restart so new code takes effect.
+        try:
+            pending_sha = get_pending_update()
+            if pending_sha:
+                applied = apply_pending_update()
+                if applied:
+                    try:
+                        self.notifier.show("Update applied. Restart recommended.", type_="info")
+                    except Exception:
+                        pass
+
+                    # Prompt user to restart now
+                    try:
+                        import tkinter as _tk
+                        from tkinter import messagebox as _mb
+                        restart = _mb.askyesno("Whispr Update", "An update was applied. Restart now to use the new version?")
+                        if restart:
+                            # Spawn new process and quit
+                            import subprocess, sys, os
+                            try:
+                                subprocess.Popen([sys.executable] + sys.argv, cwd=os.getcwd())
+                            except Exception:
+                                pass
+                            try:
+                                self.on_close()
+                            except Exception:
+                                pass
+                            try:
+                                sys.exit(0)
+                            except SystemExit:
+                                raise
+                    except Exception:
+                        # If prompting fails, just continue; notifier already showed a notice
+                        pass
+        except Exception:
+            pass
 
 
 
@@ -191,6 +231,11 @@ class WhisprApp(ctk.CTk):
             print(f"[gui] failed to start websocket client: {e}")
 
         run_server_check_in_thread(self, interval=1.0)
+        # Start auto-update checker (runs in background). Default: check every hour.
+        try:
+            run_auto_update_check_in_thread(self, owner="Akame1981", repo="Whispr", branch="main", interval=3600.0)
+        except Exception:
+            pass
 
     # locked screen UI moved to gui/locked_screen.show_locked_screen
 

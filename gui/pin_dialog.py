@@ -12,33 +12,24 @@ class PinDialog(ctk.CTkToplevel):
         self.new_pin = new_pin
         self.pin = None
         self.username = None
-
-        # Resolve theme values from parent/app if available
+        
         app_obj = getattr(parent, "app", parent)
         theme = {}
         if hasattr(app_obj, "theme_manager"):
             tm = app_obj.theme_manager
             theme = tm.theme_colors.get(tm.current_theme, {})
-        # keep theme on the instance for later use (update_strength)
         self._theme = theme
-
-        # --- Window Setup ---
         self.title(title)
         self.geometry("380x340" if new_pin else "380x200")
         self.resizable(False, False)
         win_bg = theme.get("background", "#1f1f2e")
         self.configure(fg_color=win_bg)
         self.grab_set()
-
-        # Title
         title_color = theme.get("text", "white")
-        # placeholder color may be used by small informational text below
         placeholder_color = theme.get("placeholder_text", "gray70")
         self.label = ctk.CTkLabel(self, text=title, font=("Segoe UI", 16, "bold"),
                                   text_color=title_color)
         self.label.pack(pady=(20, 0))
-
-        # Small informational text to remind users why the PIN matters
         info_color = theme.get("muted_text", placeholder_color)
         self.info_label = ctk.CTkLabel(
             self,
@@ -50,12 +41,11 @@ class PinDialog(ctk.CTkToplevel):
         )
         self.info_label.pack(pady=(0, 10), padx=20)
 
-        # Resolve entry colors (used for username and PIN fields)
         entry_bg = theme.get("input_bg", "#2a2a3f")
         entry_text = theme.get("input_text", "white")
         placeholder_color = theme.get("placeholder_text", "gray70")
 
-        # Username entry (optional)
+        
         if self.new_pin:
             self.username_entry = ctk.CTkEntry(
                 self, placeholder_text="Username (default: Anonymous)",
@@ -65,9 +55,8 @@ class PinDialog(ctk.CTkToplevel):
             self.username_entry.pack(pady=5, padx=30, fill="x")
         else:
             self.username_entry = None
-
-        # PIN entry placed in a horizontal container so we can attach
-        # a small image 'continue' button to its right for existing-PIN flows.
+        
+        
         entry_container = ctk.CTkFrame(self, fg_color="transparent")
         entry_container.pack(pady=5, padx=30, fill="x")
 
@@ -78,14 +67,10 @@ class PinDialog(ctk.CTkToplevel):
         )
         self.entry.pack(side="left", expand=True, fill="x")
         self.entry.focus()
-
-        # For existing-account dialogs (not creating a new one) add an image
-        # button to the right of the entry that acts like the OK button.
         if not self.new_pin:
             try:
                 cont_path = "gui/src/images/continue_btn.png"
                 if not os.path.exists(cont_path):
-                    # fallback to send button if continue icon missing
                     cont_path = "gui/src/images/send_btn.png"
                 cont_img = Image.open(cont_path).resize((36, 36), Image.Resampling.LANCZOS)
                 cont_icon = CTkImage(light_image=cont_img, dark_image=cont_img, size=(36, 36))
@@ -94,7 +79,7 @@ class PinDialog(ctk.CTkToplevel):
                 self.cont_btn.image = cont_icon
                 self.cont_btn.pack(side="right", padx=(6,0), pady=2)
 
-                # Hover effect (darker icon)
+                
                 enhancer = ImageEnhance.Brightness(cont_img)
                 dark_img = enhancer.enhance(0.75)
                 dark_icon = CTkImage(light_image=dark_img, dark_image=dark_img, size=(36,36))
@@ -116,21 +101,16 @@ class PinDialog(ctk.CTkToplevel):
                 self.cont_btn.bind("<Enter>", on_enter)
                 self.cont_btn.bind("<Leave>", on_leave)
             except Exception:
-                # If anything fails while loading the image, fall back to a normal button
                 self.cont_btn = ctk.CTkButton(entry_container, text="OK", width=60, command=self.on_ok)
                 self.cont_btn.pack(side="right", padx=(6,0), pady=2)
-
-        # Inline error label for invalid PIN feedback (shows under the entry)
-        # Only show this for existing-PIN dialogs (not during new account creation)
+        
+        
         if not self.new_pin:
             self.error_label = ctk.CTkLabel(self, text="", font=("Segoe UI", 10), text_color="#e74c3c")
             self.error_label.pack(pady=(6, 0))
-            # Clear error while the user edits the PIN
             self.entry.bind("<KeyRelease>", lambda e: self.error_label.configure(text=""))
         else:
             self.error_label = None
-
-        # Confirm PIN + strength bar (new PIN)
         if self.new_pin:
             self.entry.bind("<KeyRelease>", self.update_strength)
 
@@ -141,24 +121,19 @@ class PinDialog(ctk.CTkToplevel):
             )
             self.confirm_entry.pack(pady=5, padx=30, fill="x")
 
-            # Strength text above the bar
             self.strength_label = ctk.CTkLabel(
                 self, text="", font=("Segoe UI", 12, "bold"),
                 text_color=entry_text
             )
             self.strength_label.pack(pady=(10, 2))
 
-            # Small strength bar
             self.strength_frame = ctk.CTkFrame(self, fg_color=entry_bg, corner_radius=8, height=8)
             self.strength_frame.pack(padx=30, fill="x")
             self.strength_frame.pack_propagate(False)
 
-            # Inner colored bar
-            # initial bar color uses server_offline as a red fallback
             bar_color = theme.get("server_offline", "#e74c3c")
             self.strength_bar = ctk.CTkFrame(self.strength_frame, width=0, fg_color=bar_color, corner_radius=8)
             self.strength_bar.place(relheight=1, x=0, y=0)
-            # Create button for the new account flow
             create_color = theme.get("button_send", "#4a90e2")
             create_hover = theme.get("button_send_hover", "#357ABD")
             self.create_btn = ctk.CTkButton(
@@ -170,21 +145,13 @@ class PinDialog(ctk.CTkToplevel):
             self.confirm_entry = None
             self.strength_bar = None
             self.strength_label = None
-
-        # Keep return/escape bindings. Note: for new account creation the
-        # dialog doesn't show the image continue button (per requirement).
         self.bind("<Return>", lambda e: self.on_ok())
         self.bind("<Escape>", lambda e: self.on_cancel())
-
-    # --- Animate strength bar smoothly 0-100% ---
     def animate_bar(self, target_width, color, text):
-        # Smooth time-based animation.
-        # Use a frame interval around 16ms (~60fps). Some systems can handle 8ms
-        # (~125fps) but 16ms is a good default for smooth visuals.
         if not hasattr(self, "strength_bar") or not self.strength_bar:
             return
-
-        # Cancel any previously scheduled animation
+        
+        
         try:
             if getattr(self, "_anim_id", None):
                 self.after_cancel(self._anim_id)
@@ -195,9 +162,8 @@ class PinDialog(ctk.CTkToplevel):
         end_width = int(target_width)
         delta = end_width - start_width
 
-        # Animation parameters
-        frame_ms = 16  # target ~60fps; set to 8 for even higher fps if desired
-        duration_ms = 180  # total duration of the animation in ms
+        frame_ms = 16
+        duration_ms = 180
         steps = max(1, int(duration_ms / frame_ms))
 
         self._animating = True
@@ -206,7 +172,7 @@ class PinDialog(ctk.CTkToplevel):
         def step_animation():
             i = self._anim_step
             t = i / steps
-            # ease-out cubic for a smooth finish
+            
             ease = 1 - (1 - t) ** 3
             cur = start_width + delta * ease
             try:
@@ -214,12 +180,10 @@ class PinDialog(ctk.CTkToplevel):
                 if getattr(self, "strength_label", None):
                     self.strength_label.configure(text=text, text_color=color)
             except Exception:
-                # widget may have been destroyed
                 self._animating = False
                 return
 
             if i >= steps:
-                # finalize
                 try:
                     self.strength_bar.configure(width=end_width, fg_color=color)
                     if getattr(self, "strength_label", None):
@@ -251,14 +215,13 @@ class PinDialog(ctk.CTkToplevel):
             weak_color = self._theme.get("strength_weak", "#e74c3c")
             self.animate_bar(0, weak_color, "")
             return
-            return
 
         ok, reason = is_strong_pin(pin)
 
         if not ok:
             color = self._theme.get("strength_weak", "#e74c3c")
             width = max_width * 0.33
-            text = reason  # show reason only
+            text = reason
         elif len(pin) < 8:
             color = self._theme.get("strength_medium", "#f1c40f")
             width = max_width * 0.66
@@ -271,12 +234,9 @@ class PinDialog(ctk.CTkToplevel):
         self.animate_bar(width, color, text)
 
 
-    # --- OK ---
     def on_ok(self):
         pin = self.entry.get().strip()
         if not pin:
-            # For new account creation, show a modal warning. For existing-PIN
-            # flows, show the inline error label.
             if self.new_pin:
                 messagebox.showwarning("Warning", "PIN cannot be empty!")
             else:
@@ -285,8 +245,6 @@ class PinDialog(ctk.CTkToplevel):
             return
 
         if not self.new_pin:
-            # Validate PIN by attempting to load keys. If load_key raises,
-            # show an inline error and keep the dialog open.
             try:
                 load_key(pin)
             except FileNotFoundError:
@@ -315,7 +273,6 @@ class PinDialog(ctk.CTkToplevel):
         self.pin = pin
         self.destroy()
 
-    # --- Cancel ---
     def on_cancel(self):
         self.pin = None
         self.username = None
