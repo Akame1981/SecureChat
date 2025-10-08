@@ -19,9 +19,12 @@ uvicorn server_utils.analytics_backend.main:app --reload --port 8001
 - `GET /api/stats/system` (Bearer token)
 - `GET /api/stats/users` (Bearer token)
 - `GET /api/stats/messages` (Bearer token)
+- `GET /api/stats/attachments` (Bearer token)
 
 Health check: `GET /health`
 
 ## Notes
-- Replace stub metric functions in `services/metrics_service.py` with real aggregation from Whispr runtime/database.
+
+- Attachment analytics mirror message analytics (count, avg size, per-hour last 24h, per-day last 7d).
+- Replace stub metric functions in `services/metrics_service.py` with real aggregation from Whispr runtime/database if you later add persistence.
 - Ensure admin password hashed & stored securely in production.
