@@ -239,7 +239,8 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
         # Make the textbox read-only but selectable.
         # We'll disable editing by setting state='disabled' after inserting text
         # and provide a custom copy handler so Ctrl+C works reliably.
-        msg_widget.bind('<Button-1>', lambda e: msg_widget.focus_set())
+        # Some customtkinter versions may invoke the callback without an event object; make it optional
+        msg_widget.bind('<Button-1>', lambda _=None: msg_widget.focus_set())
         # Justify alignment: when align_both_left is enabled, force left justification
         if align_both_left:
             msg_widget.tag_configure('all', justify='left')
