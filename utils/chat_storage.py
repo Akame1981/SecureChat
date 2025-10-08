@@ -7,6 +7,7 @@ import shutil
 
 from nacl.secret import SecretBox
 from nacl.utils import random
+import msgpack
 
 from utils.crypto import MIN_PIN_LENGTH, derive_master_key, zero_bytes
 
@@ -31,26 +32,66 @@ def get_chat_file(pub_hex: str) -> str:
     return os.path.join(CHATS_DIR, f"{pub_hex}.bin")
 
 def encrypt_chat(data: list, pin: str) -> bytes:
+    """Serialize (msgpack) + encrypt chat list. Prepend salt and a format marker byte.
+
+    Format: [1-byte format marker][32-byte salt][SecretBox(payload)]
+    Markers:
+      0x01 = msgpack
+      0x00 = legacy (no marker, JSON) -> we keep support in decrypt_chat
+    """
     salt = random(SALT_SIZE)
     master_key = derive_master_key(pin, salt)
     try:
         box = SecretBox(bytes(master_key[:32]))
-        json_bytes = json.dumps(data).encode()
-        encrypted = box.encrypt(json_bytes)
-        return salt + encrypted
+        packed = msgpack.packb(data, use_bin_type=True)
+        encrypted = box.encrypt(packed)
+        return b"\x01" + salt + encrypted
     finally:
         zero_bytes(master_key)
 
 def decrypt_chat(enc_bytes: bytes, pin: str) -> list:
-    salt = enc_bytes[:SALT_SIZE]
-    ciphertext = enc_bytes[SALT_SIZE:]
-    master_key = derive_master_key(pin, salt)
-    try:
-        box = SecretBox(bytes(master_key[:32]))
-        decrypted = box.decrypt(ciphertext)
-        return json.loads(decrypted.decode())
-    finally:
-        zero_bytes(master_key)
+    """Decrypt and deserialize chat data.
+
+    Supports legacy JSON format (no leading marker, first 32 bytes are salt) and
+    new format with a 1-byte marker followed by salt.
+    """
+    if not enc_bytes:
+        return []
+    # Detect marker
+    first = enc_bytes[0]
+    if first in (0x00, 0x7b, 0x5b):  # legacy: starts directly with salt (0x00 marker we never used) or '{' '[' if unencrypted
+        # Legacy layout: [salt (32)][cipher]
+        salt = enc_bytes[:SALT_SIZE]
+        ciphertext = enc_bytes[SALT_SIZE:]
+        master_key = derive_master_key(pin, salt)
+        try:
+            box = SecretBox(bytes(master_key[:32]))
+            decrypted = box.decrypt(ciphertext)
+            # Try JSON then msgpack (defensive)
+            try:
+                return json.loads(decrypted.decode())
+            except Exception:
+                return msgpack.unpackb(decrypted, raw=False)
+        finally:
+            zero_bytes(master_key)
+    else:
+        # New layout: [marker][salt][cipher]
+        marker = first
+        salt = enc_bytes[1:1 + SALT_SIZE]
+        ciphertext = enc_bytes[1 + SALT_SIZE:]
+        master_key = derive_master_key(pin, salt)
+        try:
+            box = SecretBox(bytes(master_key[:32]))
+            decrypted = box.decrypt(ciphertext)
+            if marker == 0x01:
+                return msgpack.unpackb(decrypted, raw=False)
+            # Unknown marker: fallback attempts
+            try:
+                return json.loads(decrypted.decode())
+            except Exception:
+                return msgpack.unpackb(decrypted, raw=False)
+        finally:
+            zero_bytes(master_key)
 
 # -------------------------
 # Public functions
