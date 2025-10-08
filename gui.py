@@ -27,6 +27,7 @@ from gui.locked_screen import show_locked_screen
 
 # --- Utils modules ---
 from utils.chat_storage import load_messages, save_message
+from utils.attachment_envelope import parse_attachment_envelope
 from utils.crypto import (
     KEY_FILE,
     PrivateKey,
@@ -300,11 +301,19 @@ class WhisprApp(ctk.CTk):
         if self.recipient_pub_hex:
             messages = load_messages(self.recipient_pub_hex, self.pin)
             for msg in messages:
+                txt = msg.get("text","")
+                meta = msg.get("_attachment")
+                if (not meta) and isinstance(txt, str) and txt.startswith("ATTACH:"):
+                    placeholder, parsed = parse_attachment_envelope(txt)
+                    if placeholder and parsed:
+                        # Update in-memory only; avoid rewriting history immediately
+                        txt = placeholder
+                        meta = parsed
                 self.display_message(
                     msg["sender"],
-                    msg["text"],
+                    txt,
                     timestamp=msg.get("timestamp"),
-                    attachment_meta=msg.get("_attachment")
+                    attachment_meta=meta
                 )
 
 

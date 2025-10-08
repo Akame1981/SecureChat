@@ -13,6 +13,7 @@ from utils.chat_storage import (
 )
 from utils.crypto import decrypt_message, verify_signature, decrypt_blob
 from utils.network import fetch_messages, send_message
+from utils.attachment_envelope import parse_attachment_envelope
 from utils.outbox import flush_outbox, has_outbox
 from utils.recipients import get_recipient_name
 
@@ -145,18 +146,10 @@ class ChatManager:
                         msg_text = decrypted_raw
                         attachment_meta = None
                         if decrypted_raw.startswith("ATTACH:"):
-                            import json as _json
-                            try:
-                                meta = _json.loads(decrypted_raw[7:])
-                                if meta.get("type") == "file":
-                                    attachment_meta = meta
-                                    # For display, show a placeholder line; clicking could trigger save later
-                                    fn = meta.get("name", "file")
-                                    size = meta.get("size", 0)
-                                    human = self._human_size(size)
-                                    msg_text = f"[Attachment] {fn} ({human})"
-                            except Exception:
-                                pass
+                            placeholder, meta = parse_attachment_envelope(decrypted_raw)
+                            if placeholder and meta:
+                                msg_text = placeholder
+                                attachment_meta = meta
 
                         msg_dict = {
                             "sender": get_recipient_name(sender_pub, self.app.pin) or sender_pub,
