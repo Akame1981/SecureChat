@@ -13,6 +13,7 @@ from utils.chat_storage import (
 )
 from utils.crypto import decrypt_message, verify_signature
 from utils.network import fetch_messages, send_message
+from utils.outbox import flush_outbox, has_outbox
 from utils.recipients import get_recipient_name
 
 
@@ -149,7 +150,13 @@ class ChatManager:
             except Exception as e:
                 print("Fetch Error:", e)
 
-            time.sleep(1 if msgs else 2)
+            # Opportunistically flush any queued outbox messages every loop
+            try:
+                flush_outbox(self.app)
+            except Exception as fe:
+                print(f"[chat_manager] outbox flush error: {fe}")
+
+            time.sleep(1 if 'msgs' in locals() and msgs else 2)
 
     # ---------------- Sending messages ----------------
     def send_loop(self):
