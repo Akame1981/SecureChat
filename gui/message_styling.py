@@ -8,7 +8,7 @@ from utils.attachments import load_attachment, AttachmentNotFound
 import requests, base64 as _b64
 from tkinter import filedialog, messagebox
 from gui.identicon import generate_identicon
-from PIL import Image
+from PIL import Image, ImageTk
 import io
 
 
@@ -427,24 +427,149 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
                     img_label.pack(anchor=side_anchor, padx=10, pady=(2, 6))
 
                     # Double-click or click to open/save
-                    def _open_full(event=None):
+                    def _show_fullscreen(event=None):
                         try:
-                            # Save to temp file and open with default OS viewer
-                            import tempfile, webbrowser
-                            ext = img_meta.get('name', 'img')
-                            if '.' not in ext:
-                                ext = ext + '.png'
-                            tf = tempfile.NamedTemporaryFile(delete=False, suffix='.' + ext.split('.')[-1])
-                            tf.write(raw)
-                            tf.flush(); tf.close()
-                            webbrowser.open(tf.name)
+                            # In-app fullscreen viewer using a Toplevel
+                            top = tk.Toplevel(app)
+                            top.configure(bg='black')
+                            try:
+                                # Make truly fullscreen on most platforms
+                                top.attributes('-fullscreen', True)
+                            except Exception:
+                                # Fallback to maximized geometry
+                                w = app.winfo_screenwidth()
+                                h = app.winfo_screenheight()
+                                top.geometry(f"{w}x{h}+0+0")
+
+                            # Load full image from raw bytes and fit to screen
+                            import io as _io
+                            pil_full = Image.open(_io.BytesIO(raw))
+                            sw = top.winfo_screenwidth()
+                            sh = top.winfo_screenheight()
+                            # Compute fit size preserving aspect
+                            iw, ih = pil_full.size
+                            scale = min(sw / iw, sh / ih, 1.0)
+                            new_w = int(iw * scale)
+                            new_h = int(ih * scale)
+                            pil_resized = pil_full.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                            tk_img = ImageTk.PhotoImage(pil_resized)
+
+                            lbl = tk.Label(top, image=tk_img, bg='black')
+                            lbl.image = tk_img
+                            lbl.pack(expand=True)
+
+                            def _close(ev=None):
+                                try:
+                                    top.destroy()
+                                except Exception:
+                                    pass
+
+                            top.bind('<Button-1>', _close)
+                            top.bind('<Escape>', _close)
                         except Exception:
                             try:
-                                messagebox.showinfo('Image', 'Unable to open image file')
+                                messagebox.showinfo('Image', 'Unable to open image viewer')
                             except Exception:
                                 pass
 
-                    img_label.bind('<Double-1>', _open_full)
+                    img_label.bind('<Button-1>', _show_fullscreen)
+                    # Right-click should show same popup menu with image actions
+                    def _save_image():
+                        try:
+                            default_name = img_meta.get('name', 'image')
+                            path = filedialog.asksaveasfilename(defaultextension='', initialfile=default_name)
+                            if path:
+                                with open(path, 'wb') as f:
+                                    f.write(raw)
+                                try:
+                                    app.notifier.show(f"Saved {default_name}")
+                                except Exception:
+                                    pass
+                        except Exception as e:
+                            print('Save image failed', e)
+                            try:
+                                messagebox.showerror('Save Image', 'Failed to save image')
+                            except Exception:
+                                pass
+
+                    def _copy_image():
+                        try:
+                            # Try Windows clipboard via CF_DIB using ctypes if available
+                            if sys.platform.startswith('win'):
+                                try:
+                                    import ctypes
+                                    import tempfile
+                                    # Convert to DIB (BMP without 14-byte header)
+                                    buf = io.BytesIO()
+                                    pil_converted = Image.open(io.BytesIO(raw)).convert('RGB')
+                                    pil_converted.save(buf, format='BMP')
+                                    data = buf.getvalue()[14:]
+                                    buf.close()
+
+                                    CF_DIB = 8
+                                    user32 = ctypes.windll.user32
+                                    kernel32 = ctypes.windll.kernel32
+                                    user32.OpenClipboard(0)
+                                    user32.EmptyClipboard()
+                                    hGlobal = kernel32.GlobalAlloc(0x0002, len(data))
+                                    ptr = kernel32.GlobalLock(hGlobal)
+                                    ctypes.memmove(ptr, data, len(data))
+                                    kernel32.GlobalUnlock(hGlobal)
+                                    user32.SetClipboardData(CF_DIB, hGlobal)
+                                    user32.CloseClipboard()
+                                    try:
+                                        app.notifier.show('Image copied to clipboard')
+                                    except Exception:
+                                        pass
+                                    return
+                                except Exception as e:
+                                    print('Windows clipboard image copy failed', e)
+                                    # fall through to fallback
+
+                            # Fallback: write to temp file and copy file path to clipboard
+                            import tempfile
+                            tf = tempfile.NamedTemporaryFile(delete=False, suffix='.' + (img_meta.get('name','img').split('.')[-1]))
+                            tf.write(raw); tf.flush(); tf.close()
+                            try:
+                                app.clipboard_clear(); app.clipboard_append(tf.name)
+                                try:
+                                    app.notifier.show('Saved temp image and copied path to clipboard')
+                                except Exception:
+                                    pass
+                            except Exception:
+                                try:
+                                    messagebox.showinfo('Copy Image', f'Saved temp file: {tf.name}')
+                                except Exception:
+                                    pass
+                        except Exception as e:
+                            print('Copy image failed', e)
+                            try:
+                                messagebox.showerror('Copy Image', 'Failed to copy image')
+                            except Exception:
+                                pass
+
+                    # Create a dedicated context menu for the image to ensure clicks on
+                    # the image surface show the image actions regardless of overlaying widgets
+                    try:
+                        img_menu = tk.Menu(img_label, tearoff=0)
+                        try:
+                            img_menu.configure(bg=menu_bg, fg=menu_fg, activebackground=menu_active_bg, activeforeground=menu_active_fg)
+                        except Exception:
+                            pass
+                        img_menu.add_command(label='Save Image', command=_save_image)
+                        img_menu.add_command(label='Copy Image', command=_copy_image)
+
+                        def _img_popup(event):
+                            try:
+                                img_menu.tk_popup(event.x_root, event.y_root)
+                            finally:
+                                img_menu.grab_release()
+
+                        # Bind to right-click and middle-click for different platforms
+                        img_label.bind('<Button-3>', _img_popup)
+                        img_label.bind('<Button-2>', _img_popup)
+                    except Exception as e:
+                        print('Image menu setup failed', e)
                     # expose in bubble_frame for later access
                     bubble_frame._attachment_image = img_label
                 except Exception:
