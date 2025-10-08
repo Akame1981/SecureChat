@@ -14,6 +14,7 @@ api.interceptors.request.use(config => {
 export const fetchSystem = () => api.get('/api/stats/system').then(r=>r.data)
 export const fetchUsers = () => api.get('/api/stats/users').then(r=>r.data)
 export const fetchMessages = () => api.get('/api/stats/messages').then(r=>r.data)
+export const fetchAttachments = () => api.get('/api/stats/attachments').then(r=>r.data)
 export const login = (username, password) => {
   const fd = new URLSearchParams()
   fd.set('username', username)
