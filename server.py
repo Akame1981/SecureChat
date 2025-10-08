@@ -12,20 +12,16 @@ from pydantic import BaseModel
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI()  # ✅ create app first
+app = FastAPI()
 
-# Then add middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # allow all origins for WS connections
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# -------------------------
-# Try Redis connection
-# -------------------------
 try:
     import redis
     try:
@@ -40,24 +36,18 @@ except ImportError:
     REDIS_AVAILABLE = False
     print("⚠ Redis not installed. Using in-memory fallback.")
 
-# -------------------------
-# App and storage
-# -------------------------
 
-
-# Active WebSocket connections: recipient_key -> set[WebSocket]
 active_ws = {}
 active_ws_lock = threading.Lock()
 
-# Attempt to import analytics event collector to feed live stats
 try:
     from server_utils.analytics_backend.services.event_collector import register_message, register_attachment  # type: ignore
     ANALYTICS_ENABLED = True
 except Exception:
     ANALYTICS_ENABLED = False
-    def register_message(*args, **kwargs):  # fallback no-op
+    def register_message(*args, **kwargs):
         return None
-    def register_attachment(*args, **kwargs):  # fallback no-op
+    def register_attachment(*args, **kwargs):
         return None
 
 if not REDIS_AVAILABLE:
@@ -67,7 +57,7 @@ if not REDIS_AVAILABLE:
 
 MAX_MESSAGES_PER_RECIPIENT = 20
 MAX_MESSAGES_PER_SECOND = 10
-MESSAGE_TTL = 60  # seconds for ephemeral messages
+MESSAGE_TTL = 60
 
 server_private = PrivateKey.generate()
 server_public = server_private.public_key
@@ -78,26 +68,22 @@ class Message(BaseModel):
     enc_pub: str
     message: str
     signature: str
-    timestamp: Optional[float] = None  # client timestamp
+    timestamp: Optional[float] = None
 
 class AttachmentUpload(BaseModel):
     to: str
     from_: str
     enc_pub: str
-    blob: str  # sealed box ciphertext (base64)
-    signature: str  # signature over raw blob bytes
+    blob: str
+    signature: str
     name: str
     size: int
-    sha256: str  # hex sha256 of ciphertext or original (we choose ciphertext)
+    sha256: str
 
-# In-memory attachment store (TTL similar to messages, could be extended)
 attachments_store = {}
 attachments_lock = threading.Lock()
 
 
-# -------------------------
-# Helper: verify signature
-# -------------------------
 def verify_signature(sender_hex, message_b64, signature_b64):
     try:
         sender_verify_key = VerifyKey(bytes.fromhex(sender_hex))
@@ -107,12 +93,8 @@ def verify_signature(sender_hex, message_b64, signature_b64):
         return False
 
 
-# -------------------------
-# Send message
-# -------------------------
 @app.post("/send")
 async def send_message(msg: Message):
-    # Verify signature
     if not verify_signature(msg.from_, msg.message, msg.signature):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
@@ -126,7 +108,6 @@ async def send_message(msg: Message):
     }
 
     if REDIS_AVAILABLE:
-        # Rate limit per sender
         key = f"rate:{msg.from_}"
         r.zremrangebyscore(key, 0, now - 1)
         if r.zcard(key) >= MAX_MESSAGES_PER_SECOND:
@@ -134,16 +115,13 @@ async def send_message(msg: Message):
         r.zadd(key, {str(now): now})
         r.expire(key, 2)
 
-        # Store message in recipient inbox
         inbox_key = f"inbox:{msg.to}"
         encoded = base64.b64encode(str(stored_msg).encode()).decode()
         r.rpush(inbox_key, encoded)
         r.ltrim(inbox_key, -MAX_MESSAGES_PER_RECIPIENT, -1)
         r.expire(inbox_key, MESSAGE_TTL)
 
-        # ---------- Cross-process analytics counters ----------
         try:
-            # Day and hour keys in UTC
             import datetime, math, json
             dt_utc = datetime.datetime.utcfromtimestamp(now)
             day_key = dt_utc.strftime('%Y%m%d')
@@ -153,13 +131,11 @@ async def send_message(msg: Message):
             pipe.incr(f'metrics:messages:count:{day_key}')
             if size_bytes:
                 pipe.incrby(f'metrics:messages:bytes:{day_key}', size_bytes)
-            pipe.incr(f'metrics:messages:day:{day_key}')  # duplicate daily counter (compat)
+            pipe.incr(f'metrics:messages:day:{day_key}')
             pipe.incr(f'metrics:messages:hour:{hour_key}')
             pipe.sadd('metrics:users:all', msg.from_)
             pipe.sadd(f'metrics:users:new:{day_key}', msg.from_)
-            # Active users: score = last seen timestamp
             pipe.zadd('metrics:active_users', {msg.from_: now})
-            # Optional trim of old active users beyond 24h
             pipe.zremrangebyscore('metrics:active_users', 0, now - 86400)
             pipe.execute()
         except Exception:
@@ -167,7 +143,6 @@ async def send_message(msg: Message):
 
     else:
         with store_lock:
-            # Rate limit
             timestamps = rate_limit_store.get(msg.from_, [])
             timestamps = [t for t in timestamps if now - t < 1.0]
             if len(timestamps) >= MAX_MESSAGES_PER_SECOND:
@@ -175,20 +150,17 @@ async def send_message(msg: Message):
             timestamps.append(now)
             rate_limit_store[msg.from_] = timestamps
 
-            # Store message
             if msg.to not in messages_store:
                 messages_store[msg.to] = []
             messages_store[msg.to].append(stored_msg)
             messages_store[msg.to] = messages_store[msg.to][-MAX_MESSAGES_PER_RECIPIENT:]
 
-    # Feed analytics (size is base64 message length decoded approx)
     try:
         size_bytes = len(base64.b64decode(msg.message))
     except Exception:
         size_bytes = len(msg.message)
     register_message(size_bytes=size_bytes, sender=msg.from_, recipient=msg.to, ts=stored_msg["timestamp"])
 
-    # Fallback file logging for analytics when Redis not running (consumed by analytics backend)
     if not REDIS_AVAILABLE:
         try:
             from pathlib import Path
@@ -205,7 +177,6 @@ async def send_message(msg: Message):
         except Exception:
             pass
 
-    # Push via WebSocket if recipient online (await directly, endpoint is async)
     try:
         with active_ws_lock:
             conns = list(active_ws.get(msg.to, []))
@@ -222,15 +193,10 @@ async def send_message(msg: Message):
     return {"status": "ok", "analytics": ANALYTICS_ENABLED}
 
 
-# -------------------------
-# Upload attachment (metadata + sealed ciphertext)
-# -------------------------
 @app.post("/upload")
 def upload_attachment(att: AttachmentUpload):
-    # Verify signature over blob
     if not verify_signature(att.from_, att.blob, att.signature):
         raise HTTPException(status_code=400, detail="Invalid signature")
-    # Basic size guard (could enforce a higher limit separately)
     if att.size > 10 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Attachment too large")
     import base64, hashlib, time as _time
@@ -238,7 +204,6 @@ def upload_attachment(att: AttachmentUpload):
         blob_bytes = base64.b64decode(att.blob)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid blob base64")
-    # Hash check consistency
     calc_hash = hashlib.sha256(blob_bytes).hexdigest()
     if calc_hash != att.sha256:
         raise HTTPException(status_code=400, detail="sha256 mismatch")
@@ -254,9 +219,7 @@ def upload_attachment(att: AttachmentUpload):
             "ts": now,
         }
 
-    # Analytics: treat attachment as its own event stream
     try:
-        # size already provided (ciphertext size) use att.size
         register_attachment(size_bytes=att.size, sender=att.from_, recipient=att.to, ts=now)
         if REDIS_AVAILABLE:
             import datetime as _dt
@@ -271,7 +234,6 @@ def upload_attachment(att: AttachmentUpload):
             except Exception:
                 pass
         else:
-            # file log fallback
             try:
                 from pathlib import Path
                 import json as _json
@@ -292,15 +254,11 @@ def upload_attachment(att: AttachmentUpload):
     return {"att_id": att.sha256, "status": "ok"}
 
 
-# -------------------------
-# Download attachment
-# -------------------------
 @app.get("/download/{att_id}")
 def download_attachment(att_id: str, recipient: str):
     import time as _time
     with attachments_lock:
         entry = attachments_store.get(att_id)
-        # Optionally purge expired
         if entry and _time.time() - entry.get("ts", 0) > MESSAGE_TTL:
             attachments_store.pop(att_id, None)
             entry = None
@@ -308,7 +266,6 @@ def download_attachment(att_id: str, recipient: str):
         raise HTTPException(status_code=404, detail="Not found")
     if entry.get("to") != recipient:
         raise HTTPException(status_code=403, detail="Not authorized for this attachment")
-    # Return minimal metadata + ciphertext blob
     return {
         "att_id": att_id,
         "blob": entry["blob"],
@@ -319,9 +276,6 @@ def download_attachment(att_id: str, recipient: str):
     }
 
 
-# -------------------------
-# Fetch inbox with optional `since`
-# -------------------------
 @app.get("/inbox/{recipient_key}")
 def get_inbox(recipient_key: str, since: Optional[float] = Query(0)):
     msgs = []
@@ -341,26 +295,18 @@ def get_inbox(recipient_key: str, since: Optional[float] = Query(0)):
             msgs = [m for m in stored if m.get("timestamp", 0) > since]
             messages_store[recipient_key] = []
 
-    # Return messages sorted by timestamp
     msgs.sort(key=lambda x: x.get("timestamp", 0))
     return {"messages": msgs}
 
 
-# -------------------------
-# Server public key
-# -------------------------
 @app.get("/public-key")
 def get_server_public_key():
     return {"public_key": server_public.encode().hex(), "analytics": ANALYTICS_ENABLED}
 
 
-# -------------------------
-# WebSocket endpoint
-# -------------------------
 @app.websocket("/ws/{recipient_key}")
 async def websocket_endpoint(websocket: WebSocket, recipient_key: str):
     await websocket.accept()
-    # Register
     with active_ws_lock:
         bucket = active_ws.get(recipient_key)
         if not bucket:
@@ -369,11 +315,9 @@ async def websocket_endpoint(websocket: WebSocket, recipient_key: str):
         bucket.add(websocket)
     try:
         while True:
-            # We don't expect client-originated messages (could be ping). Just receive to detect disconnects.
             try:
                 await websocket.receive_text()
             except Exception:
-                # Could implement periodic ping; for now just continue.
                 await asyncio.sleep(5)
     except WebSocketDisconnect:
         pass
@@ -388,7 +332,6 @@ async def websocket_endpoint(websocket: WebSocket, recipient_key: str):
 
 @app.websocket("/ws")
 async def websocket_endpoint_query(websocket: WebSocket, recipient: str):
-    """Alternate endpoint form: /ws?recipient=PUBHEX for backward / proxy compatibility."""
     await websocket.accept()
     recipient_key = recipient
     with active_ws_lock:
