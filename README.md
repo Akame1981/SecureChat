@@ -294,7 +294,6 @@ Initial design favors simplicity (pull model). WebSocket push planned for lower 
 - UI & UX polish / accessibility
 - Offline message queue + retry
 - Group conversations (shared symmetric group keys)
-- File attachments (encrypted, size limits)
 - Voice / video (WebRTC + E2EE framing)
 - Multi-server selection & failover
 - Mobile and multi-device sync
@@ -337,33 +336,14 @@ Issues / discussions via **GitHub Issues**.
 
 This expands on the high-level roadmap above.
 
-### 🔄 In Progress
-
-- [ ] UI & UX Improvements (90% done)
-  - [x] Fix existing UI bugs
-  - [x] Improve overall user experience
-  - [x] Smooth animations and better layout responsiveness
-  - [ ] Final bug fixes and testing
-- [ ] Customization (90% done)
-  - [x] Add support for custom themes
-  - [x] Dark/light mode improvements
-  - [x] Optional user personalization (fonts, colors)
-  - [ ] Final testing and minor tweaks
 
 ### ⬜ Next Updates
 
-- [ ] Offline Messaging
-  - [ ] Queue messages when offline
-  - [ ] Automatically send messages once the user reconnects
-  - [ ] Notifications for pending messages
+
 - [ ] Group Chats
   - [ ] Create and manage group conversations
   - [ ] Add/remove participants securely
   - [ ] Support for group message encryption
-- [ ] File Sharing
-  - [ ] Secure file sending between users
-  - [ ] End-to-end encryption for attachments
-  - [ ] Limit file size and type for security
 - [ ] Voice/Video Calling
   - [ ] Secure calling between users
   - [ ] End-to-end encryption for calls
