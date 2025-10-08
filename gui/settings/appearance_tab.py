@@ -36,6 +36,10 @@ class AppearanceTab:
         self.save_button = ctk.CTkButton(btn_frame, text="Apply & Save", command=self.save_settings, width=140)
         self.save_button.grid(row=0, column=1, sticky="e", pady=12)
 
+        # Theme editor button
+        self.theme_editor_btn = ctk.CTkButton(btn_frame, text="Theme Editor", command=self.open_theme_editor, width=140, fg_color="#6c6f76")
+        self.theme_editor_btn.grid(row=0, column=0, sticky="w", pady=12)
+
         # Apply theme immediately
         self.apply_theme()
 
@@ -132,3 +136,20 @@ class AppearanceTab:
         # Apply the theme and notify the user
         self.apply_theme()
         self.app.notifier.show("Theme saved!", type_="success")
+
+    def open_theme_editor(self):
+        try:
+            from gui.settings.theme_editor import ThemeEditor
+            def _on_save():
+                # reload themes and reapply
+                self.themes = self.load_themes()
+                try:
+                    self.theme_menu.configure(values=list(self.themes.keys()))
+                    if self.current_theme in self.themes:
+                        self.theme_menu.set(self.current_theme)
+                except Exception:
+                    pass
+
+            ThemeEditor(self.parent, self.themes_file, on_save=_on_save, app=self.app)
+        except Exception:
+            pass
