@@ -1,4 +1,7 @@
 import customtkinter as ctk
+from customtkinter import CTkImage
+from PIL import Image, ImageEnhance
+import os
 from tkinter import messagebox
 from utils.crypto import is_strong_pin, load_key
 
@@ -21,7 +24,7 @@ class PinDialog(ctk.CTkToplevel):
 
         # --- Window Setup ---
         self.title(title)
-        self.geometry("380x320" if new_pin else "380x200")
+        self.geometry("380x340" if new_pin else "380x200")
         self.resizable(False, False)
         win_bg = theme.get("background", "#1f1f2e")
         self.configure(fg_color=win_bg)
@@ -29,9 +32,23 @@ class PinDialog(ctk.CTkToplevel):
 
         # Title
         title_color = theme.get("text", "white")
+        # placeholder color may be used by small informational text below
+        placeholder_color = theme.get("placeholder_text", "gray70")
         self.label = ctk.CTkLabel(self, text=title, font=("Segoe UI", 16, "bold"),
                                   text_color=title_color)
-        self.label.pack(pady=(20, 15))
+        self.label.pack(pady=(20, 0))
+
+        # Small informational text to remind users why the PIN matters
+        info_color = theme.get("muted_text", placeholder_color)
+        self.info_label = ctk.CTkLabel(
+            self,
+            text="Your PIN protects your encryption key. Keep it secure.",
+            font=("Segoe UI", 10),
+            text_color=info_color,
+            wraplength=320,
+            justify="center"
+        )
+        self.info_label.pack(pady=(0, 10), padx=20)
 
         # Resolve entry colors (used for username and PIN fields)
         entry_bg = theme.get("input_bg", "#2a2a3f")
@@ -49,14 +66,59 @@ class PinDialog(ctk.CTkToplevel):
         else:
             self.username_entry = None
 
-        # PIN entry
+        # PIN entry placed in a horizontal container so we can attach
+        # a small image 'continue' button to its right for existing-PIN flows.
+        entry_container = ctk.CTkFrame(self, fg_color="transparent")
+        entry_container.pack(pady=5, padx=30, fill="x")
+
         self.entry = ctk.CTkEntry(
-            self, show="*", placeholder_text="Enter PIN",
+            entry_container, show="*", placeholder_text="Enter PIN",
             height=40, corner_radius=12, fg_color=entry_bg, text_color=entry_text,
             placeholder_text_color=placeholder_color
         )
-        self.entry.pack(pady=5, padx=30, fill="x")
+        self.entry.pack(side="left", expand=True, fill="x")
         self.entry.focus()
+
+        # For existing-account dialogs (not creating a new one) add an image
+        # button to the right of the entry that acts like the OK button.
+        if not self.new_pin:
+            try:
+                cont_path = "gui/src/images/continue_btn.png"
+                if not os.path.exists(cont_path):
+                    # fallback to send button if continue icon missing
+                    cont_path = "gui/src/images/send_btn.png"
+                cont_img = Image.open(cont_path).resize((36, 36), Image.Resampling.LANCZOS)
+                cont_icon = CTkImage(light_image=cont_img, dark_image=cont_img, size=(36, 36))
+
+                self.cont_btn = ctk.CTkLabel(entry_container, image=cont_icon, text="", fg_color="transparent")
+                self.cont_btn.image = cont_icon
+                self.cont_btn.pack(side="right", padx=(6,0), pady=2)
+
+                # Hover effect (darker icon)
+                enhancer = ImageEnhance.Brightness(cont_img)
+                dark_img = enhancer.enhance(0.75)
+                dark_icon = CTkImage(light_image=dark_img, dark_image=dark_img, size=(36,36))
+                self.cont_btn.hover_image = dark_icon
+
+                def on_enter(e):
+                    try:
+                        self.cont_btn.configure(image=self.cont_btn.hover_image)
+                    except Exception:
+                        pass
+
+                def on_leave(e):
+                    try:
+                        self.cont_btn.configure(image=self.cont_btn.image)
+                    except Exception:
+                        pass
+
+                self.cont_btn.bind("<Button-1>", lambda e: self.on_ok())
+                self.cont_btn.bind("<Enter>", on_enter)
+                self.cont_btn.bind("<Leave>", on_leave)
+            except Exception:
+                # If anything fails while loading the image, fall back to a normal button
+                self.cont_btn = ctk.CTkButton(entry_container, text="OK", width=60, command=self.on_ok)
+                self.cont_btn.pack(side="right", padx=(6,0), pady=2)
 
         # Inline error label for invalid PIN feedback (shows under the entry)
         # Only show this for existing-PIN dialogs (not during new account creation)
@@ -96,35 +158,21 @@ class PinDialog(ctk.CTkToplevel):
             bar_color = theme.get("server_offline", "#e74c3c")
             self.strength_bar = ctk.CTkFrame(self.strength_frame, width=0, fg_color=bar_color, corner_radius=8)
             self.strength_bar.place(relheight=1, x=0, y=0)
+            # Create button for the new account flow
+            create_color = theme.get("button_send", "#4a90e2")
+            create_hover = theme.get("button_send_hover", "#357ABD")
+            self.create_btn = ctk.CTkButton(
+                self, text="Create", width=140, height=40, corner_radius=12,
+                fg_color=create_color, hover_color=create_hover, command=self.on_ok
+            )
+            self.create_btn.pack(pady=(12, 8))
         else:
             self.confirm_entry = None
             self.strength_bar = None
             self.strength_label = None
 
-        # Buttons
-        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        # Anchor buttons to the bottom so they're visible even when the dialog
-        # contains additional new-account fields above.
-        btn_frame.pack(side="bottom", pady=15)
-
-        ok_color = theme.get("button_send", "#4a90e2")
-        ok_hover = theme.get("button_send_hover", "#357ABD")
-
-        self.ok_btn = ctk.CTkButton(
-            btn_frame, text="OK", width=100, height=42, corner_radius=12,
-            fg_color=ok_color, hover_color=ok_hover, command=self.on_ok
-        )
-        self.ok_btn.pack(side="left", padx=10)
-
-        cancel_color = theme.get("cancel_button", "#d9534f")
-        cancel_hover = theme.get("cancel_button_hover", "#b03a2e")
-
-        self.cancel_btn = ctk.CTkButton(
-            btn_frame, text="Cancel", width=100, height=42, corner_radius=12,
-            fg_color=cancel_color, hover_color=cancel_hover, command=self.on_cancel
-        )
-        self.cancel_btn.pack(side="right", padx=10)
-
+        # Keep return/escape bindings. Note: for new account creation the
+        # dialog doesn't show the image continue button (per requirement).
         self.bind("<Return>", lambda e: self.on_ok())
         self.bind("<Escape>", lambda e: self.on_cancel())
 
