@@ -11,7 +11,7 @@ from utils.chat_storage import (
     save_message,
     is_segmented,
 )
-from utils.crypto import decrypt_message, verify_signature
+from utils.crypto import decrypt_message, verify_signature, decrypt_blob
 from utils.network import fetch_messages, send_message
 from utils.outbox import flush_outbox, has_outbox
 from utils.recipients import get_recipient_name
@@ -35,6 +35,20 @@ class ChatManager:
         # Start background threads
         threading.Thread(target=self.fetch_loop, daemon=True).start()
         threading.Thread(target=self.send_loop, daemon=True).start()
+
+    # --------------- Utility ---------------
+    @staticmethod
+    def _human_size(bytes_count: int) -> str:
+        try:
+            units = ["B", "KB", "MB", "GB", "TB"]
+            size = float(bytes_count)
+            for u in units:
+                if size < 1024 or u == units[-1]:
+                    return f"{size:.1f} {u}"
+                size /= 1024
+        except Exception:
+            return f"{bytes_count} B"
+        return f"{bytes_count} B"
 
     # ---------------- Cache helpers ----------------
     def get_messages(self, pub_hex: str):
@@ -127,27 +141,44 @@ class ChatManager:
                     timestamp = msg.get("timestamp", time.time())  # fallback
 
                     if signature and verify_signature(msg["from_sign"], encrypted_message, signature):
-                        decrypted = decrypt_message(encrypted_message, self.app.private_key)
+                        decrypted_raw = decrypt_message(encrypted_message, self.app.private_key)
+                        msg_text = decrypted_raw
+                        attachment_meta = None
+                        if decrypted_raw.startswith("ATTACH:"):
+                            import json as _json
+                            try:
+                                meta = _json.loads(decrypted_raw[7:])
+                                if meta.get("type") == "file":
+                                    attachment_meta = meta
+                                    # For display, show a placeholder line; clicking could trigger save later
+                                    fn = meta.get("name", "file")
+                                    size = meta.get("size", 0)
+                                    human = self._human_size(size)
+                                    msg_text = f"[Attachment] {fn} ({human})"
+                            except Exception:
+                                pass
 
-                        # Build message dict once
                         msg_dict = {
                             "sender": get_recipient_name(sender_pub, self.app.pin) or sender_pub,
-                            "text": decrypted,
-                            "timestamp": timestamp
+                            "text": msg_text,
+                            "timestamp": timestamp,
                         }
+                        if attachment_meta:
+                            msg_dict["_attachment"] = attachment_meta
                         # Save locally with timestamp (will decrypt if cache absent)
                         save_message(
                             sender_pub,
                             msg_dict["sender"],
                             msg_dict["text"],
                             self.app.pin,
-                            timestamp=timestamp
+                            timestamp=timestamp,
+                            attachment=attachment_meta
                         )
                         # Update cache and display (only if active chat matches; display_message already filters later if added)
                         self._append_cache(sender_pub, msg_dict)
                         # Display in GUI with timestamp (only if active conversation is this sender)
                         if self.app.recipient_pub_hex == sender_pub:
-                            self.app.after(0, self.app.display_message, sender_pub, decrypted, timestamp)
+                            self.app.after(0, self.app.display_message, sender_pub, msg_text, timestamp, attachment_meta)
 
                         self.last_fetch_ts = max(self.last_fetch_ts, timestamp)
 

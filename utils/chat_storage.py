@@ -151,7 +151,7 @@ def _atomic_write(path: str, data: bytes):
     os.replace(tmp, path)
 
 
-def save_message(pub_hex: str, sender: str, text: str, pin: str, timestamp: float = None):
+def save_message(pub_hex: str, sender: str, text: str, pin: str, timestamp: float = None, attachment: dict | None = None):
     """Save a message with optional timestamp.
 
     Hardening changes:
@@ -171,7 +171,10 @@ def save_message(pub_hex: str, sender: str, text: str, pin: str, timestamp: floa
             indices = _list_segment_indices(pub_hex)
             if not indices:
                 # first segment
-                _write_segment(pub_hex, 0, [{"sender": sender, "text": text, "timestamp": timestamp}], pin)
+                first_msg = {"sender": sender, "text": text, "timestamp": timestamp}
+                if attachment:
+                    first_msg["_attachment"] = attachment
+                _write_segment(pub_hex, 0, [first_msg], pin)
                 return
             last_idx = indices[-1]
             # load last segment only
@@ -183,10 +186,16 @@ def save_message(pub_hex: str, sender: str, text: str, pin: str, timestamp: floa
             except Exception as e:
                 print(f"[chat_storage] Failed to decrypt last segment {last_path}: {e}. Starting new segment.")
                 last_messages = []
-            last_messages.append({"sender": sender, "text": text, "timestamp": timestamp})
+            new_entry = {"sender": sender, "text": text, "timestamp": timestamp}
+            if attachment:
+                new_entry["_attachment"] = attachment
+            last_messages.append(new_entry)
             if len(last_messages) > SEGMENT_SIZE:
                 # roll to new segment with just this new message
-                _write_segment(pub_hex, last_idx + 1, [{"sender": sender, "text": text, "timestamp": timestamp}], pin)
+                roll_entry = {"sender": sender, "text": text, "timestamp": timestamp}
+                if attachment:
+                    roll_entry["_attachment"] = attachment
+                _write_segment(pub_hex, last_idx + 1, [roll_entry], pin)
             else:
                 _write_segment(pub_hex, last_idx, last_messages, pin)
             return
@@ -221,7 +230,10 @@ def save_message(pub_hex: str, sender: str, text: str, pin: str, timestamp: floa
                 'timestamp': time()
             }]
 
-        chat_data.append({'sender': sender, 'text': text, 'timestamp': timestamp})
+        entry = {'sender': sender, 'text': text, 'timestamp': timestamp}
+        if attachment:
+            entry['_attachment'] = attachment
+        chat_data.append(entry)
 
         # If threshold exceeded, migrate to segmented
         if len(chat_data) > SEGMENT_SIZE:
