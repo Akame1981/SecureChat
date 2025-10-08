@@ -8,6 +8,19 @@
     "sidebar_button_hover": "#3d7ddb",
     "bubble_you": "#7289da",
     "bubble_other": "#34344a",
+    "bubble_border_you": "#5b6fb3",
+    "bubble_border_other": "#2e3038",
+    "bubble_hover_you": "#7d8fe0",
+    "bubble_hover_other": "#3a3c45",
+    "bubble_you_text": "#ffffff",
+    "bubble_other_text": "#e6e6e6",
+    "timestamp_text": "#b6b6c2",
+    "menu_bg": "#22222a",
+    "menu_fg": "#ffffff",
+    "menu_active_bg": "#38384a",
+    "menu_active_fg": "#ffffff",
+    "bubble_transparent": true,
+    "bubble_align_both_left": true,
     "text": "#e6e6e6",
     "input_bg": "#2f2f44",
     "input_text": "#ffffff",
@@ -23,9 +36,20 @@
     "server_offline": "#ff5555",
     "pub_frame_bg": "#2f2f44",
     "pub_text": "#ffffff",
-    "font_main": ["Segoe UI", 12],
-    "font_title": ["Segoe UI", 16, "bold"],
-    "font_buttons": ["Segoe UI", 14, "bold"]
+    "font_main": [
+      "Segoe UI",
+      12
+    ],
+    "font_title": [
+      "Segoe UI",
+      16,
+      "bold"
+    ],
+    "font_buttons": [
+      "Segoe UI",
+      14,
+      "bold"
+    ]
   },
   "Light": {
     "mode": "Light",
@@ -36,6 +60,19 @@
     "sidebar_button_hover": "#135ba1",
     "bubble_you": "#d9eaff",
     "bubble_other": "#ffffff",
+    "bubble_border_you": "#c6dbff",
+    "bubble_border_other": "#e6e6e6",
+    "bubble_hover_you": "#bcd6ff",
+    "bubble_hover_other": "#f2f2f4",
+    "bubble_you_text": "#0b1a29",
+    "bubble_other_text": "#0b1a29",
+    "timestamp_text": "#6b7480",
+    "menu_bg": "#ffffff",
+    "menu_fg": "#0b1a29",
+    "menu_active_bg": "#f0f0f2",
+    "menu_active_fg": "#0b1a29",
+    "bubble_transparent": false,
+    "bubble_align_both_left": false,
     "text": "#0b1a29",
     "input_bg": "#ffffff",
     "input_text": "#0b1a29",
@@ -51,9 +88,20 @@
     "server_offline": "#d32f2f",
     "pub_frame_bg": "#fbfcfe",
     "pub_text": "#0b1a29",
-    "font_main": ["Segoe UI", 12],
-    "font_title": ["Segoe UI", 16, "bold"],
-    "font_buttons": ["Segoe UI", 14, "bold"]
+    "font_main": [
+      "Segoe UI",
+      12
+    ],
+    "font_title": [
+      "Segoe UI",
+      16,
+      "bold"
+    ],
+    "font_buttons": [
+      "Segoe UI",
+      14,
+      "bold"
+    ]
   },
   "Blue": {
     "mode": "Dark",
@@ -64,6 +112,19 @@
     "sidebar_button_hover": "#2f5599",
     "bubble_you": "#3a6ea5",
     "bubble_other": "#34344a",
+    "bubble_border_you": "#33608f",
+    "bubble_border_other": "#2e3038",
+    "bubble_hover_you": "#4a7fb8",
+    "bubble_hover_other": "#3a3c45",
+    "bubble_you_text": "#ffffff",
+    "bubble_other_text": "#e6e6e6",
+    "timestamp_text": "#b6b6c2",
+    "menu_bg": "#1f2430",
+    "menu_fg": "#ffffff",
+    "menu_active_bg": "#2f3440",
+    "menu_active_fg": "#ffffff",
+    "bubble_transparent": false,
+    "bubble_align_both_left": false,
     "text": "#e6e6e6",
     "input_bg": "#272b41",
     "input_text": "#ffffff",
@@ -79,8 +140,19 @@
     "server_offline": "#ff5555",
     "pub_frame_bg": "#272b41",
     "pub_text": "#ffffff",
-    "font_main": ["Tahoma", 12],
-    "font_title": ["Tahoma", 16, "bold"],
-    "font_buttons": ["Tahoma", 14, "bold"]
+    "font_main": [
+      "Tahoma",
+      12
+    ],
+    "font_title": [
+      "Tahoma",
+      16,
+      "bold"
+    ],
+    "font_buttons": [
+      "Tahoma",
+      14,
+      "bold"
+    ]
   }
 }

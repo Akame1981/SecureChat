@@ -70,4 +70,5 @@ class ThemeManager:
             "bubble_you": theme.get("bubble_you", "#7289da"),
             "bubble_other": theme.get("bubble_other", "#2f3136"),
             "text": theme.get("text", "white"),
+            "bubble_transparent": bool(theme.get("bubble_transparent", False)),
         }

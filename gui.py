@@ -20,6 +20,7 @@ from gui.widgets.notification import Notification, NotificationManager
 from gui.widgets.sidebar import Sidebar
 from gui.layout import WhisprUILayout
 from gui.message_styling import create_message_bubble
+from gui.message_styling import recolor_message_bubble
 from gui.profile_window import open_profile
 from gui.theme_manager import ThemeManager
 from gui.locked_screen import show_locked_screen
@@ -60,20 +61,17 @@ class WhisprApp(ctk.CTk):
     def update_message_bubbles_theme(self):
         if not hasattr(self, "messages_container") or not hasattr(self, "theme_manager"):
             return
-
-        colors = self.theme_manager.get_bubble_colors()
-        bubble_you_color = colors.get("bubble_you")
-        bubble_other_color = colors.get("bubble_other")
-        text_color = colors.get("text")
-
+        # Ask ThemeManager for the full theme dict and use the message_styling recolor helper
+        theme = self.theme_manager.theme_colors.get(self.theme_manager.current_theme, {})
         for bubble in self.messages_container.winfo_children():
-            if hasattr(bubble, "is_you") and hasattr(bubble, "sender_label") and hasattr(bubble, "msg_label"):
+            try:
+                # Use recolor helper when available for consistent behavior
+                recolor_message_bubble(bubble, theme)
+            except Exception:
+                # Fallback to minimal updates
                 try:
-                    bubble.configure(fg_color=bubble_you_color if bubble.is_you else bubble_other_color)
-                    bubble.sender_label.configure(text_color=text_color)
-                    bubble.msg_label.configure(text_color=text_color)
+                    bubble.configure(fg_color=theme.get('bubble_you' if getattr(bubble, 'is_you', False) else 'bubble_other'))
                 except Exception:
-                    # If widget API differs, skip
                     pass
 
 
@@ -303,6 +301,7 @@ class WhisprApp(ctk.CTk):
             text,
             self.my_pub_hex,
             self.pin,
+            app=self,
             timestamp=timestamp
         )
 
