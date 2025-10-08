@@ -58,3 +58,49 @@ class SettingsWindow(ctk.CTkToplevel):
             tab.grid_rowconfigure(0, weight=1)
             tab.grid_columnconfigure(0, weight=1)
 
+        # --- Footer with actions ---
+        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 12))
+        footer.grid_columnconfigure(0, weight=1)
+
+        self.save_all_btn = ctk.CTkButton(footer, text="Save All", width=120, command=self.save_all, fg_color="#4a90e2")
+        self.save_all_btn.grid(row=0, column=1, sticky="e", padx=(0, 8))
+
+        self.close_btn = ctk.CTkButton(footer, text="Close", width=80, command=self.destroy, fg_color="#d9534f")
+        self.close_btn.grid(row=0, column=2, sticky="e")
+
+        # Keyboard shortcuts: Ctrl+S to save, Escape to close
+        try:
+            self.bind_all("<Control-s>", lambda e: self.save_all())
+            self.bind_all("<Control-S>", lambda e: self.save_all())
+            self.bind_all("<Escape>", lambda e: self.destroy())
+        except Exception:
+            pass
+
+    def save_all(self):
+        """Call save operations on each tab where available and notify the user."""
+        # AppearanceTab: has save_settings
+        try:
+            if hasattr(self, "appearance_tab") and hasattr(self.appearance_tab, "save_settings"):
+                self.appearance_tab.save_settings()
+        except Exception:
+            pass
+
+        # ServerTab: expose its save method if present
+        try:
+            if hasattr(self, "server_tab"):
+                # prefer explicit save method
+                if hasattr(self.server_tab, "_save_server_settings"):
+                    self.server_tab._save_server_settings()
+                elif hasattr(self.server_tab, "save_settings"):
+                    self.server_tab.save_settings()
+        except Exception:
+            pass
+
+        # Notify user
+        try:
+            if hasattr(self.app, "notifier"):
+                self.app.notifier.show("Settings saved", type_="success")
+        except Exception:
+            pass
+
