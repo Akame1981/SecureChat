@@ -35,8 +35,12 @@ class ThemeEditor(ctk.CTkToplevel):
         self.current_name = next(iter(self.themes), None)
         self.original_snapshot = copy.deepcopy(self.themes)
 
-        # widget registry: key -> control(s)
+        # widget registries / state
         self.fields = {}
+        self.group_members = {}
+        self.group_collapsed = {}
+        self.theme_items = {}
+        self.search_var = ctk.StringVar(value='')
 
         self._build_layout()
         if self.current_name:
@@ -110,7 +114,8 @@ class ThemeEditor(ctk.CTkToplevel):
         toolbar = ctk.CTkFrame(self, fg_color="#1f1f2b")
         toolbar.grid(row=1, column=0, columnspan=3, sticky='ew')
         toolbar.grid_columnconfigure(0, weight=1)
-        ctk.CTkButton(toolbar, text="💾 Save", command=self._save_current_theme, fg_color="#4a90e2", width=100).grid(row=0, column=1, pady=6, padx=6)
+        self.save_btn = ctk.CTkButton(toolbar, text="💾 Save", command=self._save_current_theme, fg_color="#4a90e2", width=100)
+        self.save_btn.grid(row=0, column=1, pady=6, padx=6)
         ctk.CTkButton(toolbar, text="⏪ Revert", command=self._revert_changes, width=100, fg_color="#6c6f76").grid(row=0, column=2, pady=6, padx=6)
         ctk.CTkButton(toolbar, text="📦 Export", command=self._export_theme, width=100).grid(row=0, column=3, pady=6, padx=6)
         ctk.CTkButton(toolbar, text="📥 Import", command=self._import_theme, width=100).grid(row=0, column=4, pady=6, padx=6)
@@ -345,7 +350,9 @@ class ThemeEditor(ctk.CTkToplevel):
     def _populate_theme_list(self):
         for child in self.theme_listbox.winfo_children():
             child.destroy()
-        for name, data in self.themes.items():
+        self.theme_items.clear()
+        for name in sorted(self.themes.keys(), key=str.lower):
+            data = self.themes[name]
             swatch_bg = data.get('background', '#222')
             accent = data.get('bubble_you', data.get('sidebar_button', '#555'))
             item = ctk.CTkFrame(self.theme_listbox, fg_color="#333541", corner_radius=6)
@@ -363,12 +370,15 @@ class ThemeEditor(ctk.CTkToplevel):
             for w in (swatch, accent_box, lbl):
                 w.bind('<Button-1>', lambda e, n=name: self._select_theme(n))
                 w.bind('<Button-3>', lambda e, n=name: self._show_theme_context(n, e))
+            self.theme_items[name] = item
+        self._highlight_selected_theme()
 
     def _select_theme(self, name):
         self.current_name = name
         self._load_theme_into_fields(name)
         self._highlight_changes()
         self._update_preview()
+        self._highlight_selected_theme()
 
     # ---------- Field generation ----------
     def _group_for_key(self, key):
@@ -395,6 +405,16 @@ class ThemeEditor(ctk.CTkToplevel):
         for child in self.editor_container.winfo_children():
             child.destroy()
         self.fields.clear()
+        self.group_members.clear()
+        self.group_collapsed.clear()
+        # Search bar
+        search_row = ctk.CTkFrame(self.editor_container, fg_color="#262833")
+        search_row.grid(row=0, column=0, sticky='ew', padx=8, pady=(6,2))
+        search_row.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(search_row, text="Search", width=60).grid(row=0, column=0, padx=6, pady=6)
+        entry = ctk.CTkEntry(search_row, textvariable=self.search_var)
+        entry.grid(row=0, column=1, sticky='ew', padx=(0,6), pady=6)
+        entry.bind('<KeyRelease>', lambda e: self._apply_search_filter())
 
     def _load_theme_into_fields(self, name):
         if name not in self.themes:
@@ -406,18 +426,22 @@ class ThemeEditor(ctk.CTkToplevel):
         for k in sorted(data.keys()):
             grouped.setdefault(self._group_for_key(k), []).append(k)
 
-        row = 0
+        row = 1  # leave space for search row
         for group, keys in grouped.items():
-            header = ctk.CTkLabel(self.editor_container, text=group, font=("Roboto", 13, "bold"))
+            header = ctk.CTkLabel(self.editor_container, text=f"▼ {group}", font=("Roboto", 13, "bold"))
             header.grid(row=row, column=0, sticky='w', padx=8, pady=(12,4))
+            header.bind('<Button-1>', lambda e, g=group, h=header: self._toggle_group(g, h))
+            self.group_members[group] = []
+            self.group_collapsed[group] = False
             row += 1
             for key in keys:
                 val = data[key]
-                self._create_field(row, key, val)
+                self._create_field(row, key, val, group)
                 row += 1
         self._highlight_changes()
+        self._apply_search_filter()
 
-    def _create_field(self, row, key, value):
+    def _create_field(self, row, key, value, group=None):
         frame = ctk.CTkFrame(self.editor_container, fg_color="#292b36")
         frame.grid(row=row, column=0, sticky='ew', padx=8, pady=3)
         frame.grid_columnconfigure(2, weight=1)
@@ -485,6 +509,14 @@ class ThemeEditor(ctk.CTkToplevel):
         entry.grid(row=0, column=1, padx=6, pady=6, sticky='ew')
         bind_change(entry)
         self.fields[key] = (entry, None, meta)
+        # Per-field reset button
+        try:
+            reset_btn = ctk.CTkButton(frame, text='↺', width=30, fg_color="#444b5e", command=lambda k=key: self._reset_field(k))
+            reset_btn.grid(row=0, column=4, padx=4, pady=4)
+        except Exception:
+            pass
+        if group:
+            self.group_members.setdefault(group, []).append(frame)
 
     def _pick_color(self, entry_widget):
         try:
@@ -660,15 +692,35 @@ class ThemeEditor(ctk.CTkToplevel):
             return
         current_temp = self._collect_temp_theme()
         original = self.original_snapshot.get(self.current_name, self.themes.get(self.current_name, {}))
+        any_changed = False
         for key, (widget, var, meta) in self.fields.items():
             changed = key not in original or current_temp.get(key) != original.get(key)
+            any_changed = any_changed or changed
             color = '#394155' if changed else '#292b36'
             # container frame is parent
             try:
                 container = widget.master if not isinstance(widget, tuple) else widget[0].master
                 container.configure(fg_color=color)
+                if meta['type'] == 'color':
+                    val = widget.get().strip()
+                    if val and not HEX_RE.match(val):
+                        container.configure(border_width=1, border_color='#d9534f')
+                    else:
+                        container.configure(border_width=0)
             except Exception:
                 pass
+        # Unsaved indicator
+        try:
+            if any_changed:
+                self.save_btn.configure(text='💾 Save *')
+                if not self.title().endswith('*'):
+                    self.title(self.title().rstrip('* ') + ' *')
+            else:
+                self.save_btn.configure(text='💾 Save')
+                if self.title().endswith('*'):
+                    self.title(self.title().rstrip('* '))
+        except Exception:
+            pass
 
     # ---------- Context menu operations ----------
     def _show_theme_context(self, name, event):
@@ -718,4 +770,76 @@ class ThemeEditor(ctk.CTkToplevel):
         self._write_themes()
         if self.app and hasattr(self.app, 'notifier'):
             self.app.notifier.show('Theme renamed', type_='success')
+        self._populate_theme_list()
+        self._highlight_selected_theme()
+
+    # ---------- Field utilities / helpers ----------
+    def _reset_field(self, key):
+        if not self.current_name:
+            return
+        orig = self.original_snapshot.get(self.current_name, {}).get(key)
+        if orig is None and key in self.themes.get(self.current_name, {}):
+            orig = self.themes[self.current_name][key]
+        if orig is None:
+            return
+        widget, var, meta = self.fields.get(key, (None, None, {}))
+        t = meta.get('type')
+        try:
+            if t == 'bool':
+                var.set(bool(orig))
+            elif t == 'number':
+                widget.delete(0, ctk.END); widget.insert(0, str(orig))
+            elif t == 'font_list':
+                fam, size, style = widget
+                fam.delete(0, ctk.END); fam.insert(0, orig[0])
+                size.delete(0, ctk.END); size.insert(0, orig[1])
+                if len(orig) > 2:
+                    style.delete(0, ctk.END); style.insert(0, orig[2])
+            else:
+                widget.delete(0, ctk.END); widget.insert(0, str(orig))
+        except Exception:
+            pass
+        self._highlight_changes(); self._update_preview()
+
+    def _toggle_group(self, group, header_widget):
+        collapsed = self.group_collapsed.get(group, False)
+        new_state = not collapsed
+        self.group_collapsed[group] = new_state
+        for frame in self.group_members.get(group, []):
+            try:
+                if new_state:
+                    frame.grid_remove()
+                else:
+                    frame.grid()
+            except Exception:
+                pass
+        try:
+            header_widget.configure(text=("► " if new_state else "▼ ") + group)
+        except Exception:
+            pass
+
+    def _apply_search_filter(self):
+        query = self.search_var.get().strip().lower()
+        for key, (widget, var, meta) in self.fields.items():
+            container = widget.master if not isinstance(widget, tuple) else widget[0].master
+            try:
+                if (not query or query in key.lower()) and self._container_visible_in_group(container):
+                    container.grid()
+                else:
+                    container.grid_remove()
+            except Exception:
+                pass
+
+    def _container_visible_in_group(self, container):
+        for group, members in self.group_members.items():
+            if container in members:
+                return not self.group_collapsed.get(group, False)
+        return True
+
+    def _highlight_selected_theme(self):
+        for name, frame in self.theme_items.items():
+            try:
+                frame.configure(fg_color="#475068" if name == self.current_name else "#333541")
+            except Exception:
+                pass
 
