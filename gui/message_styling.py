@@ -6,6 +6,24 @@ from utils.recipients import get_recipient_name
 from gui.identicon import generate_identicon
 
 
+def _parse_bool(val, default=False):
+    """Parse various truthy/falsey representations into a boolean.
+
+    Accepts bool, strings like 'true'/'false' or numeric values.
+    """
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.strip().lower() in ("1", "true", "yes", "y")
+    try:
+        return bool(int(val))
+    except Exception:
+        try:
+            return bool(val)
+        except Exception:
+            return default
+
+
 def _format_time(ts: float | None) -> str:
     if not ts:
         return datetime.now().strftime('%H:%M')
@@ -19,10 +37,21 @@ def _format_time(ts: float | None) -> str:
 def _compute_wrap(parent, max_width=520, min_width=180, padding=140):
     try:
         parent.update_idletasks()
-        w = parent.winfo_width()
-        if not w or w <= 1:
+        # Prefer the toplevel window width (application width) so we can compute
+        # an 80% width for message text. Fall back to the parent width if needed.
+        try:
+            top = parent.winfo_toplevel()
+            app_w = top.winfo_width()
+        except Exception:
+            app_w = parent.winfo_width()
+
+        if not app_w or app_w <= 1:
+            # fallback default
             return 420
-        usable = max(min_width, min(max_width, w - padding))
+
+        # target is 80% of app width, then clamp between min_width and max_width
+        target = int(app_w * 0.8)
+        usable = max(min_width, min(max_width, target))
         return usable
     except Exception:
         return 420
@@ -85,8 +114,11 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
     display_sender = "You" if sender_pub == my_pub_hex else get_recipient_name(sender_pub, pin) or sender_pub
     is_you = display_sender == "You"
 
+    # Resolve theme: prefer ThemeManager on the app if present
     theme = {}
-    if app and hasattr(app, "theme_colors") and hasattr(app, "current_theme"):
+    if app is not None and hasattr(app, 'theme_manager') and hasattr(app.theme_manager, 'theme_colors'):
+        theme = app.theme_manager.theme_colors.get(app.theme_manager.current_theme, {})
+    elif app and hasattr(app, "theme_colors") and hasattr(app, "current_theme"):
         theme = app.theme_colors.get(app.current_theme, {})
 
     # Theme fallbacks
@@ -101,6 +133,10 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
     bubble_color = bubble_you if is_you else bubble_other
     border_color = bubble_border_you if is_you else bubble_border_other
     text_color = text_you if is_you else text_other
+    # Robust parsing for bubble_transparent; default to False
+    transparent_mode = _parse_bool(theme.get('bubble_transparent', False), default=False)
+    # Option to align both participants' bubbles to the left
+    align_both_left = _parse_bool(theme.get('bubble_align_both_left', False), default=False)
 
     # Parent may track last bubble for grouping
     prev_same = False
@@ -112,12 +148,14 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
     outer = ctk.CTkFrame(parent, fg_color="transparent")
     outer.pack(fill="x", pady=(1 if prev_same else 6, 1), padx=6)
 
-    side_anchor = "e" if is_you else "w"
+    # Decide side/anchor. If align_both_left is True, force left alignment for everyone.
+    side_anchor = "w" if align_both_left else ("e" if is_you else "w")
     row = ctk.CTkFrame(outer, fg_color="transparent")
     row.pack(fill='x')
+    # If transparent mode enabled, bubble initial background is transparent
     bubble_frame = ctk.CTkFrame(
         row,
-        fg_color=bubble_color,
+        fg_color=("transparent" if transparent_mode else bubble_color),
         corner_radius=16,
         border_width=1,
         border_color=border_color
@@ -150,14 +188,20 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
                 avatar_label._avatar_ctk_image = avatar_ctk
             except Exception:
                 pass
-        if is_you:
-            bubble_frame.pack(side='right', padx=(6, 4), pady=0)
-            if avatar_label:
-                avatar_label.pack(side='right', padx=(4, 6))
-        else:
+        # If both aligned left, put avatar then bubble on left for everyone
+        if align_both_left:
             if avatar_label:
                 avatar_label.pack(side='left', padx=(6, 4))
             bubble_frame.pack(side='left', padx=(4, 6), pady=0)
+        else:
+            if is_you:
+                bubble_frame.pack(side='right', padx=(6, 4), pady=0)
+                if avatar_label:
+                    avatar_label.pack(side='right', padx=(4, 6))
+            else:
+                if avatar_label:
+                    avatar_label.pack(side='left', padx=(6, 4))
+                bubble_frame.pack(side='left', padx=(4, 6), pady=0)
         bubble_frame.sender_label = ctk.CTkLabel(
             bubble_frame,
             text=display_sender,
@@ -278,16 +322,18 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
             pass
 
     # Hover highlight (slight lighten/darken)
-    base_col = bubble_color
+    base_col = "transparent" if transparent_mode else bubble_color
     hover_col = theme.get("bubble_hover_you" if is_you else "bubble_hover_other",
                           ("#6772f6" if is_you else "#32353b"))
 
     def on_enter(_):
+        # highlight on hover even in transparent mode
         bubble_frame.configure(fg_color=hover_col)
         _set_timestamp_visible(bubble_frame, True)
 
     def on_leave(_):
-        bubble_frame.configure(fg_color=base_col)
+        # revert to transparent or base color
+        bubble_frame.configure(fg_color=("transparent" if transparent_mode else base_col))
         # Show timestamp only if last of run
         _set_timestamp_visible(bubble_frame, bubble_frame._run_last)
 
@@ -379,9 +425,10 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
         "border_color": border_color,
     }
 
-    # Fade-in animation
-    back = theme.get('background', '#1e1f22') if isinstance(theme.get('background', '#1e1f22'), str) else '#1e1f22'
-    _fade_in(bubble_frame, _blend_hex(back, base_col, 0.15), base_col)
+    # Fade-in animation (skip if transparent to preserve background)
+    if not transparent_mode:
+        back = theme.get('background', '#1e1f22') if isinstance(theme.get('background', '#1e1f22'), str) else '#1e1f22'
+        _fade_in(bubble_frame, _blend_hex(back, base_col, 0.15), base_col)
 
     # Update parent last bubble tracking
     parent._last_bubble = bubble_frame
@@ -409,12 +456,17 @@ def recolor_message_bubble(bubble_frame, theme: dict):
     text_you = theme.get("bubble_you_text", theme.get("text", "#ffffff"))
     text_other = theme.get("bubble_other_text", theme.get("text", "#e5e5e5"))
     timestamp_color = theme.get("timestamp_text", "#a0a0a0")
-    base_col = bubble_you if is_you else bubble_other
+    transparent_mode = _parse_bool(theme.get('bubble_transparent', False), default=False)
+    base_col = "transparent" if transparent_mode else (bubble_you if is_you else bubble_other)
     border_color = bubble_border_you if is_you else bubble_border_other
     text_color = text_you if is_you else text_other
     hover_col = theme.get("bubble_hover_you" if is_you else "bubble_hover_other",
                           ("#6772f6" if is_you else "#32353b"))
-    bubble_frame.configure(fg_color=base_col, border_color=border_color)
+    # Respect transparent mode when setting fg_color
+    try:
+        bubble_frame.configure(fg_color=("transparent" if transparent_mode else base_col), border_color=border_color)
+    except Exception:
+        bubble_frame.configure(border_color=border_color)
     if hasattr(bubble_frame, 'sender_label'):
         try:
             bubble_frame.sender_label.configure(text_color=text_color)

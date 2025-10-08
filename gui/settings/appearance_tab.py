@@ -78,17 +78,18 @@ class AppearanceTab:
 
         # Update all existing message bubbles
         if hasattr(self.app, "messages_container"):
+            tb_flag = bool(theme.get('bubble_transparent', False))
             for bubble in self.app.messages_container.winfo_children():
-                if hasattr(bubble, "is_you") and bubble.is_you:
-                    try:
-                        bubble.configure(fg_color=theme.get("bubble_you", "#7289da"))
-                    except Exception:
-                        pass
-                else:
-                    try:
-                        bubble.configure(fg_color=theme.get("bubble_other", "#2f3136"))
-                    except Exception:
-                        pass
+                try:
+                    if tb_flag:
+                        bubble.configure(fg_color="transparent")
+                    else:
+                        if hasattr(bubble, "is_you") and bubble.is_you:
+                            bubble.configure(fg_color=theme.get("bubble_you", "#7289da"))
+                        else:
+                            bubble.configure(fg_color=theme.get("bubble_other", "#2f3136"))
+                except Exception:
+                    pass
 
         # Update message bubble widgets via app helper (uses ThemeManager when available)
         if hasattr(self.app, "update_message_bubbles_theme"):
@@ -96,6 +97,8 @@ class AppearanceTab:
                 self.app.update_message_bubbles_theme()
             except Exception:
                 pass
+
+        # No per-theme UI toggles here; theme flags (like bubble_transparent) are read from the theme directly
 
 
     # -------------------- Settings Handling --------------------
