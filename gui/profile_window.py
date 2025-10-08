@@ -133,13 +133,28 @@ def open_profile(
 
     ctk.CTkButton(btn_frame, text="Save QR", command=save_qr, width=100, fg_color="#4a90e2").pack(side="left", padx=5)
 
+    qr_copied_label = None
+
     def copy_qr(event=None):
+        nonlocal qr_copied_label
         output = io.BytesIO()
         pil_img.save(output, format="PNG")
         profile_win.clipboard_clear()
         profile_win.clipboard_append(output.getvalue())
         profile_win.update()
-        ctk.CTkLabel(qr_frame, text="QR code copied to clipboard", text_color="#4a90e2").pack(pady=2)
+        # Show the message only once; reuse existing label if present
+        try:
+            if qr_copied_label is None or not qr_copied_label.winfo_exists():
+                qr_copied_label = ctk.CTkLabel(qr_frame, text="QR code copied to clipboard", text_color="#4a90e2")
+                qr_copied_label.pack(pady=2)
+                # auto-remove after 1.5s
+                profile_win.after(1500, lambda: (qr_copied_label.destroy() if qr_copied_label and qr_copied_label.winfo_exists() else None))
+        except Exception:
+            # fallback: ensure at least a single label is created
+            try:
+                ctk.CTkLabel(qr_frame, text="QR code copied to clipboard", text_color="#4a90e2").pack(pady=2)
+            except Exception:
+                pass
 
     qr_label.bind("<Button-1>", copy_qr)
 

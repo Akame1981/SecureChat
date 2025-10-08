@@ -70,8 +70,9 @@ class Notification(ctk.CTkToplevel):
         label.grid(row=0, column=1, sticky="we", padx=(8, 4))
         label.bind("<Button-1>", self.copy_to_clipboard)
 
-        # Close button (small) on the right
-        close_btn = ctk.CTkButton(inner, text="✕", width=28, height=28, fg_color="transparent", hover_color="#ffffff20", command=self._close)
+        # Close button (small) on the right; compute a hover color from the bg
+        close_hover = _darken_hex(bg, 0.75)
+        close_btn = ctk.CTkButton(inner, text="✕", width=28, height=28, fg_color="transparent", hover_color=close_hover, command=self._close)
         close_btn.grid(row=0, column=2, sticky="e")
 
         # Progress bar at the bottom (use a darkened bg for contrast)

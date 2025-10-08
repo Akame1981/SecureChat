@@ -22,20 +22,23 @@ class KeysTab:
             text_color="white"
         ).grid(row=0, column=0, pady=(10, 10), padx=10)
 
-        # Buttons
+        # Buttons (primary actions)
         ctk.CTkButton(
             self.frame,
             text="Generate New Keypair",
             command=self.new_key,
             fg_color="#4a90e2"
-        ).grid(row=1, column=0, pady=5, padx=20, sticky="ew")
+        ).grid(row=1, column=0, pady=8, padx=20, sticky="ew")
 
         ctk.CTkButton(
             self.frame,
             text="Change Pincode",
             command=self.change_pin,
             fg_color="#4a90e2"
-        ).grid(row=2, column=0, pady=5, padx=20, sticky="ew")
+        ).grid(row=2, column=0, pady=8, padx=20, sticky="ew")
+
+        # Divider
+        ctk.CTkLabel(self.frame, text="", fg_color="#2a2a3f").grid(row=3, column=0, pady=(8, 0), sticky="ew", padx=10)
 
 
         ctk.CTkLabel(
@@ -47,7 +50,7 @@ class KeysTab:
             font=("Roboto", 11),
             text_color="orange",
             justify="left"
-        ).grid(row=3, column=0, pady=(10, 2), padx=20, sticky="w")
+        ).grid(row=4, column=0, pady=(10, 2), padx=20, sticky="w")
 
         # Export Account button
         ctk.CTkButton(
@@ -55,7 +58,7 @@ class KeysTab:
             text="Export Account",
             command=self.export_account,
             fg_color="#4a90e2"
-        ).grid(row=4, column=0, pady=5, padx=20, sticky="ew")
+        ).grid(row=5, column=0, pady=8, padx=20, sticky="ew")
 
 
         ctk.CTkLabel(
@@ -67,7 +70,7 @@ class KeysTab:
             font=("Roboto", 11),
             text_color="orange",
             justify="left"
-        ).grid(row=5, column=0, pady=(10, 2), padx=20, sticky="w")
+        ).grid(row=6, column=0, pady=(10, 2), padx=20, sticky="w")
 
         # Import Account button
         ctk.CTkButton(
@@ -75,7 +78,7 @@ class KeysTab:
             text="Import Account",
             command=self.import_account,
             fg_color="#4a90e2"
-        ).grid(row=6, column=0, pady=5, padx=20, sticky="ew")
+        ).grid(row=7, column=0, pady=8, padx=20, sticky="ew")
 
 
     # --- Existing methods ---

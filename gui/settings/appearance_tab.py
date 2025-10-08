@@ -26,8 +26,15 @@ class AppearanceTab:
         self.theme_menu.set(self.current_theme)
         self.theme_menu.pack(pady=5)
 
-        self.save_button = ctk.CTkButton(parent, text="Save", command=self.save_settings)
-        self.save_button.pack(pady=25)
+        # Short help text
+        ctk.CTkLabel(parent, text="Tip: You can preview a theme instantly. Click 'Apply & Save' to persist.", font=("Roboto", 10), text_color="#b2b8d6", fg_color="transparent").pack(pady=(6, 12))
+
+        # Right-aligned Apply & Save button
+        btn_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=12)
+        btn_frame.grid_columnconfigure(0, weight=1)
+        self.save_button = ctk.CTkButton(btn_frame, text="Apply & Save", command=self.save_settings, width=140)
+        self.save_button.grid(row=0, column=1, sticky="e", pady=12)
 
         # Apply theme immediately
         self.apply_theme()
