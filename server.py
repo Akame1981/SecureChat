@@ -51,11 +51,13 @@ active_ws_lock = threading.Lock()
 
 # Attempt to import analytics event collector to feed live stats
 try:
-    from server_utils.analytics_backend.services.event_collector import register_message  # type: ignore
+    from server_utils.analytics_backend.services.event_collector import register_message, register_attachment  # type: ignore
     ANALYTICS_ENABLED = True
 except Exception:
     ANALYTICS_ENABLED = False
     def register_message(*args, **kwargs):  # fallback no-op
+        return None
+    def register_attachment(*args, **kwargs):  # fallback no-op
         return None
 
 if not REDIS_AVAILABLE:
@@ -251,6 +253,42 @@ def upload_attachment(att: AttachmentUpload):
             "size": att.size,
             "ts": now,
         }
+
+    # Analytics: treat attachment as its own event stream
+    try:
+        # size already provided (ciphertext size) use att.size
+        register_attachment(size_bytes=att.size, sender=att.from_, recipient=att.to, ts=now)
+        if REDIS_AVAILABLE:
+            import datetime as _dt
+            day_key = _dt.datetime.utcfromtimestamp(now).strftime('%Y%m%d')
+            hour_key = _dt.datetime.utcfromtimestamp(now).strftime('%Y%m%d%H')
+            try:
+                pipe = r.pipeline()
+                pipe.incr(f'metrics:attachments:count:{day_key}')
+                pipe.incrby(f'metrics:attachments:bytes:{day_key}', att.size)
+                pipe.incr(f'metrics:attachments:hour:{hour_key}')
+                pipe.execute()
+            except Exception:
+                pass
+        else:
+            # file log fallback
+            try:
+                from pathlib import Path
+                import json as _json
+                log_path = Path('analytics_events.log')
+                event = {
+                    'ts': now,
+                    'size': att.size,
+                    'from': att.from_,
+                    'to': att.to,
+                    'type': 'attachment'
+                }
+                with log_path.open('a', encoding='utf-8') as f:
+                    f.write(_json.dumps(event, separators=(',', ':')) + '\n')
+            except Exception:
+                pass
+    except Exception:
+        pass
     return {"att_id": att.sha256, "status": "ok"}
 
 
