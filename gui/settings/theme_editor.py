@@ -1,0 +1,721 @@
+"""Advanced dynamic Theme Editor for Whispr.
+
+Features:
+ - Dynamic field generation for every key in the theme JSON.
+ - Grouping by key prefixes (sidebar_, bubble_, menu_, font_, server_, strength_, etc.).
+ - Supports: colors (#hex), booleans, numbers, strings, font arrays.
+ - Live preview panel that updates on change.
+ - Add / Delete / Duplicate themes.
+ - Export single theme / Import theme.
+ - Revert unsaved changes.
+ - Highlight changed fields.
+"""
+
+import json
+import os
+import re
+import copy
+import customtkinter as ctk
+from tkinter import colorchooser, filedialog, Menu
+
+HEX_RE = re.compile(r"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+
+
+class ThemeEditor(ctk.CTkToplevel):
+    def __init__(self, master, themes_file, on_save=None, app=None):
+        super().__init__(master)
+        self.title("Theme Editor")
+        self.geometry("1100x640")
+        self.minsize(960, 560)
+        self.themes_file = themes_file
+        self.on_save = on_save
+        self.app = app
+
+        self.themes = self._load_themes()
+        self.current_name = next(iter(self.themes), None)
+        self.original_snapshot = copy.deepcopy(self.themes)
+
+        # widget registry: key -> control(s)
+        self.fields = {}
+
+        self._build_layout()
+        if self.current_name:
+            self._load_theme_into_fields(self.current_name)
+        self._update_preview()
+
+    # ---------- Data IO ----------
+    def _load_themes(self):
+        if os.path.exists(self.themes_file):
+            try:
+                with open(self.themes_file, 'r') as f:
+                    return json.load(f)
+            except Exception:
+                return {}
+        return {}
+
+    def _write_themes(self):
+        try:
+            os.makedirs(os.path.dirname(self.themes_file), exist_ok=True)
+            with open(self.themes_file, 'w') as f:
+                json.dump(self.themes, f, indent=4)
+            if self.on_save:
+                try:
+                    self.on_save()
+                except Exception:
+                    pass
+            if self.app and hasattr(self.app, 'notifier'):
+                self.app.notifier.show('Themes saved', type_='success')
+            self.original_snapshot = copy.deepcopy(self.themes)
+        except Exception as e:
+            if self.app and hasattr(self.app, 'notifier'):
+                self.app.notifier.show(f'Save failed: {e}', type_='error')
+
+    # ---------- Layout ----------
+    def _build_layout(self):
+        self.grid_columnconfigure(2, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        # Sidebar (themes list and actions)
+        sidebar = ctk.CTkFrame(self, fg_color="#1f1f2b", corner_radius=0)
+        sidebar.grid(row=0, column=0, sticky='nsw')
+        sidebar.grid_rowconfigure(4, weight=1)
+        ctk.CTkLabel(sidebar, text="Themes", font=("Roboto", 14, "bold")).grid(row=0, column=0, padx=12, pady=(12,6), sticky='w')
+
+        self.theme_listbox = ctk.CTkScrollableFrame(sidebar, width=200, fg_color="transparent")
+        self.theme_listbox.grid(row=1, column=0, sticky='nsew', padx=8, pady=(0,8))
+        self._populate_theme_list()
+
+        action_bar = ctk.CTkFrame(sidebar, fg_color="transparent")
+        action_bar.grid(row=2, column=0, sticky='ew', padx=8, pady=(0,4))
+        ctk.CTkButton(action_bar, text="➕ Add", command=self._add_theme, width=58).grid(row=0, column=0, padx=(0,4))
+        ctk.CTkButton(action_bar, text="📝 Dup", command=self._duplicate_theme, width=58).grid(row=0, column=1, padx=4)
+        ctk.CTkButton(action_bar, text="🗑 Delete", command=self._delete_theme, fg_color="#d9534f", width=80).grid(row=0, column=2, padx=(4,0))
+
+        # Preview area
+        preview = ctk.CTkFrame(self, fg_color="#242433", corner_radius=8)
+        preview.grid(row=0, column=1, sticky='ns', padx=(8,8), pady=8)
+        preview.grid_rowconfigure(2, weight=1)
+        ctk.CTkLabel(preview, text="Live Preview", font=("Roboto", 13, "bold")).grid(row=0, column=0, pady=(10,4), padx=10, sticky='w')
+        self.preview_canvas = ctk.CTkFrame(preview, fg_color="#1e1e2f", corner_radius=6)
+        self.preview_canvas.grid(row=1, column=0, padx=10, pady=6, sticky='n')
+        self._build_preview_widgets()
+
+        # Editor area (scrollable)
+        editor_container = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        editor_container.grid(row=0, column=2, sticky='nsew', padx=(0,8), pady=8)
+        editor_container.grid_columnconfigure(0, weight=1)
+        self.editor_container = editor_container
+
+        # Bottom toolbar spans across columns 1 & 2
+        toolbar = ctk.CTkFrame(self, fg_color="#1f1f2b")
+        toolbar.grid(row=1, column=0, columnspan=3, sticky='ew')
+        toolbar.grid_columnconfigure(0, weight=1)
+        ctk.CTkButton(toolbar, text="💾 Save", command=self._save_current_theme, fg_color="#4a90e2", width=100).grid(row=0, column=1, pady=6, padx=6)
+        ctk.CTkButton(toolbar, text="⏪ Revert", command=self._revert_changes, width=100, fg_color="#6c6f76").grid(row=0, column=2, pady=6, padx=6)
+        ctk.CTkButton(toolbar, text="📦 Export", command=self._export_theme, width=100).grid(row=0, column=3, pady=6, padx=6)
+        ctk.CTkButton(toolbar, text="📥 Import", command=self._import_theme, width=100).grid(row=0, column=4, pady=6, padx=6)
+        self.preview_toggle = ctk.CTkSwitch(toolbar, text="Preview Mode", command=self._update_preview)
+        self.preview_toggle.grid(row=0, column=5, pady=6, padx=10)
+
+    # ---------- Preview ----------
+    def _build_preview_widgets(self):
+        # Resizable columns
+        self.preview_canvas.grid_columnconfigure(1, weight=1)
+        self.preview_canvas.grid_rowconfigure(0, weight=1)
+
+        # Sidebar mock
+        self.preview_sidebar = ctk.CTkFrame(self.preview_canvas, width=140, fg_color="#2a2a3a", corner_radius=8)
+        self.preview_sidebar.grid(row=0, column=0, sticky='ns', padx=(4,6), pady=6)
+        self.preview_sidebar.grid_propagate(False)
+        ctk.CTkLabel(self.preview_sidebar, text="Chats", font=("Segoe UI", 13, "bold")).pack(anchor='w', padx=8, pady=(8,4))
+        self.sidebar_btn_active = ctk.CTkButton(self.preview_sidebar, text="General", width=110, height=26)
+        self.sidebar_btn_idle = ctk.CTkButton(self.preview_sidebar, text="Support", width=110, height=26)
+        self.sidebar_btn_more = ctk.CTkButton(self.preview_sidebar, text="+ New", width=110, height=26)
+        for b in (self.sidebar_btn_active, self.sidebar_btn_idle, self.sidebar_btn_more):
+            b.pack(padx=8, pady=4)
+
+        # Main area container
+        self.preview_main = ctk.CTkFrame(self.preview_canvas, fg_color="#1e1e2f", corner_radius=8)
+        self.preview_main.grid(row=0, column=1, sticky='nsew', padx=(0,6), pady=6)
+        self.preview_main.grid_columnconfigure(0, weight=1)
+
+        # Chat area container (will hold realistic bubble mocks)
+        self.preview_chat = ctk.CTkFrame(self.preview_main, fg_color="transparent")
+        self.preview_chat.grid(row=0, column=0, sticky='ew', padx=10, pady=(8,4))
+        self.preview_chat.pack_propagate(False)
+        # We'll create two bubble frames representing you and other.
+        self.prev_timestamp = ctk.CTkLabel(self.preview_chat, text="12:34", font=("Segoe UI", 10))
+        self.prev_timestamp.pack(anchor='w', padx=8, pady=(0,4))
+
+        # Bubble containers for user and other
+        self.bubble_you_container = ctk.CTkFrame(self.preview_chat, fg_color="transparent")
+        self.bubble_other_container = ctk.CTkFrame(self.preview_chat, fg_color="transparent")
+        self.bubble_you_container.pack(fill='x', padx=2, pady=(2,2))
+        self.bubble_other_container.pack(fill='x', padx=2, pady=(2,6))
+
+        # Actual bubble frames
+        self.prev_you = ctk.CTkFrame(self.bubble_you_container, corner_radius=16, border_width=1)
+        self.prev_other = ctk.CTkFrame(self.bubble_other_container, corner_radius=16, border_width=1)
+        self.prev_you.pack(anchor='e', padx=8)
+        self.prev_other.pack(anchor='w', padx=8)
+        # Sender labels and message labels
+        self.prev_you_sender = ctk.CTkLabel(self.prev_you, text="You", font=("Roboto", 9, 'bold'))
+        self.prev_you_msg = ctk.CTkLabel(self.prev_you, text="Hello! This is a preview message.", wraplength=220, justify='right', font=("Roboto", 12))
+        self.prev_other_sender = ctk.CTkLabel(self.prev_other, text="Alice", font=("Roboto", 9, 'bold'))
+        self.prev_other_msg = ctk.CTkLabel(self.prev_other, text="Hi there! Theme editing rocks.", wraplength=220, justify='left', font=("Roboto", 12))
+        for w in (self.prev_you_sender, self.prev_you_msg):
+            w.pack(anchor='e', padx=10, pady=(6,2) if w is self.prev_you_sender else (0,6))
+        for w in (self.prev_other_sender, self.prev_other_msg):
+            w.pack(anchor='w', padx=10, pady=(6,2) if w is self.prev_other_sender else (0,6))
+
+        # Hover simulation labels (appear when we enter bubble to show hover colors)
+        def _make_hover(frame, base_getter):
+            meta = base_getter()  # Expect a dict with keys: key, hover_key, fallback, fallback_hover
+            def on_enter(_):
+                try:
+                    theme = self._collect_temp_theme()
+                    frame.configure(fg_color=theme.get(meta.get('hover_key'), meta.get('fallback_hover')))
+                except Exception:
+                    pass
+            def on_leave(_):
+                try:
+                    theme = self._collect_temp_theme()
+                    base_col = 'transparent' if self._is_transparent(theme) else theme.get(meta.get('key'), meta.get('fallback'))
+                    frame.configure(fg_color=base_col)
+                except Exception:
+                    pass
+            frame.bind('<Enter>', on_enter)
+            frame.bind('<Leave>', on_leave)
+        # Utility to detect transparent mode
+        self._is_transparent = lambda th: bool(th.get('bubble_transparent'))
+        # Provide metadata via lambdas
+        _make_hover(self.prev_you, lambda: {
+            'key': 'bubble_you', 'hover_key': 'bubble_hover_you', 'fallback': '#7289da', 'fallback_hover': '#7d8fe0'
+        })
+        _make_hover(self.prev_other, lambda: {
+            'key': 'bubble_other', 'hover_key': 'bubble_hover_other', 'fallback': '#2f3136', 'fallback_hover': '#3a3c45'
+        })
+
+        # Input area mock
+        self.preview_input_frame = ctk.CTkFrame(self.preview_main, corner_radius=6)
+        self.preview_input_frame.grid(row=1, column=0, sticky='ew', padx=10, pady=4)
+        self.preview_input_frame.grid_columnconfigure(0, weight=1)
+        self.preview_input = ctk.CTkLabel(self.preview_input_frame, text="Type a message...", anchor='w')
+        self.preview_input.grid(row=0, column=0, sticky='ew', padx=8, pady=6)
+        self.preview_send_btn = ctk.CTkButton(self.preview_input_frame, text="Send", width=70)
+        self.preview_send_btn.grid(row=0, column=1, padx=6, pady=6)
+
+        # Strength meter mock
+        self.strength_frame = ctk.CTkFrame(self.preview_main, fg_color="transparent")
+        self.strength_frame.grid(row=2, column=0, sticky='w', padx=10, pady=(4,2))
+        self.str_bar_weak = ctk.CTkFrame(self.strength_frame, width=30, height=8, corner_radius=4)
+        self.str_bar_med = ctk.CTkFrame(self.strength_frame, width=30, height=8, corner_radius=4)
+        self.str_bar_str = ctk.CTkFrame(self.strength_frame, width=30, height=8, corner_radius=4)
+        for i, bar in enumerate((self.str_bar_weak, self.str_bar_med, self.str_bar_str)):
+            bar.grid(row=0, column=i, padx=3, pady=2)
+
+        # Server status mock
+        self.server_status_frame = ctk.CTkFrame(self.preview_main, fg_color="transparent")
+        self.server_status_frame.grid(row=3, column=0, sticky='w', padx=10, pady=(2,6))
+        self.server_online_lbl = ctk.CTkLabel(self.server_status_frame, text="Server Online", corner_radius=4)
+        self.server_offline_lbl = ctk.CTkLabel(self.server_status_frame, text="Server Offline", corner_radius=4)
+        self.server_online_lbl.grid(row=0, column=0, padx=4, pady=2)
+        self.server_offline_lbl.grid(row=0, column=1, padx=4, pady=2)
+
+        # Public key panel mock
+        self.pub_panel = ctk.CTkFrame(self.preview_main, corner_radius=6)
+        self.pub_panel.grid(row=4, column=0, sticky='ew', padx=10, pady=(0,8))
+        self.pub_label = ctk.CTkLabel(self.pub_panel, text="Public Key", font=("Segoe UI", 12, "bold"))
+        self.pub_label.pack(anchor='w', padx=8, pady=(6,2))
+        self.pub_key_text = ctk.CTkLabel(self.pub_panel, text="ABCD-EFGH-IJKL", anchor='w')
+        self.pub_key_text.pack(fill='x', padx=8, pady=(0,8))
+
+    def _update_preview(self, *_):
+        if not self.current_name or self.current_name not in self.themes:
+            return
+        theme = self._collect_temp_theme()
+        # background / sidebar
+        bg = theme.get('background', '#1e1e2f')
+        sidebar_bg = theme.get('sidebar_bg', '#2a2a3a')
+        you = theme.get('bubble_you', '#7289da')
+        other = theme.get('bubble_other', '#2f3136')
+        try:
+            # Containers
+            self.preview_canvas.configure(fg_color=bg)
+            self.preview_main.configure(fg_color=bg)
+            self.preview_sidebar.configure(fg_color=sidebar_bg)
+
+            # Sidebar buttons
+            active_bg = theme.get('menu_active_bg', theme.get('sidebar_button_hover', '#3d7ddb'))
+            active_fg = theme.get('menu_active_fg', theme.get('sidebar_text', '#ffffff'))
+            idle_bg = theme.get('sidebar_button', '#5a9bf6')
+            idle_fg = theme.get('sidebar_text', '#f0f0f5')
+            self.sidebar_btn_active.configure(fg_color=active_bg, text_color=active_fg)
+            self.sidebar_btn_idle.configure(fg_color=idle_bg, text_color=idle_fg)
+            self.sidebar_btn_more.configure(fg_color=idle_bg, text_color=idle_fg)
+
+            # Bubbles, borders & timestamp
+            transparent = bool(theme.get('bubble_transparent', False))
+            bubble_you_border = theme.get('bubble_border_you', '#5b6fb3')
+            bubble_other_border = theme.get('bubble_border_other', '#2e3038')
+            self.prev_you.configure(fg_color=('transparent' if transparent else you),
+                                    border_color=bubble_you_border)
+            self.prev_other.configure(fg_color=('transparent' if transparent else other),
+                                      border_color=bubble_other_border)
+            self.prev_you_sender.configure(text_color=theme.get('bubble_you_text', '#ffffff'))
+            self.prev_you_msg.configure(text_color=theme.get('bubble_you_text', '#ffffff'))
+            self.prev_other_sender.configure(text_color=theme.get('bubble_other_text', '#e6e6e6'))
+            self.prev_other_msg.configure(text_color=theme.get('bubble_other_text', '#e6e6e6'))
+            self.prev_timestamp.configure(text_color=theme.get('timestamp_text', '#b6b6c2'))
+
+            # Alignment toggle if bubble_align_both_left set
+            align_both = bool(theme.get('bubble_align_both_left', False))
+            # Repack bubbles if alignment changed
+            for container, bubble, sender, msg, is_you in (
+                (self.bubble_you_container, self.prev_you, self.prev_you_sender, self.prev_you_msg, True),
+                (self.bubble_other_container, self.prev_other, self.prev_other_sender, self.prev_other_msg, False),
+            ):
+                # Clear existing pack side
+                try:
+                    bubble.pack_forget()
+                except Exception:
+                    pass
+                side = 'w' if (align_both or not is_you) else 'e'
+                bubble.pack(anchor=side, padx=8)
+                # Adjust justification of message labels
+                try:
+                    if is_you and not align_both:
+                        msg.configure(justify='right')
+                        sender.configure(anchor='e')
+                    else:
+                        msg.configure(justify='left')
+                        sender.configure(anchor='w')
+                except Exception:
+                    pass
+
+            # Input area
+            self.preview_input_frame.configure(fg_color=theme.get('input_bg', '#2f2f44'))
+            self.preview_input.configure(text_color=theme.get('placeholder_text', '#a8a8b3'))
+            self.preview_send_btn.configure(fg_color=theme.get('button_send', '#5a9bf6'),
+                                            hover_color=theme.get('button_send_hover', '#3d7ddb'),
+                                            text_color=theme.get('menu_fg', '#ffffff'))
+
+            # Strength bars
+            self.str_bar_weak.configure(fg_color=theme.get('strength_weak', '#e74c3c'))
+            self.str_bar_med.configure(fg_color=theme.get('strength_medium', '#f1c40f'))
+            self.str_bar_str.configure(fg_color=theme.get('strength_strong', '#2ecc71'))
+
+            # Server status
+            self.server_online_lbl.configure(fg_color=theme.get('server_online', '#00ff88'), text_color='#000000')
+            self.server_offline_lbl.configure(fg_color=theme.get('server_offline', '#ff5555'), text_color='#000000')
+
+            # Public key panel
+            self.pub_panel.configure(fg_color=theme.get('pub_frame_bg', '#2f2f44'))
+            self.pub_label.configure(text_color=theme.get('pub_text', '#ffffff'))
+            self.pub_key_text.configure(text_color=theme.get('pub_text', '#ffffff'))
+
+            # Fonts
+            def _font_or(default):
+                # Expect [family, size, *style]
+                f = theme.get(default)
+                if isinstance(f, list) and len(f) >= 2:
+                    fam = f[0]
+                    size = f[1]
+                    style = f[2] if len(f) > 2 else None
+                    return (fam, size, style) if style else (fam, size)
+                return None
+            main_font = _font_or('font_main')
+            title_font = _font_or('font_title')
+            btn_font = _font_or('font_buttons')
+            if main_font:
+                for w in (self.prev_you, self.prev_other, self.prev_timestamp, self.preview_input, self.pub_key_text):
+                    try: w.configure(font=main_font)
+                    except Exception: pass
+            if title_font:
+                try: self.pub_label.configure(font=title_font)
+                except Exception: pass
+            if btn_font:
+                for b in (self.sidebar_btn_active, self.sidebar_btn_idle, self.sidebar_btn_more, self.preview_send_btn):
+                    try: b.configure(font=btn_font)
+                    except Exception: pass
+        except Exception:
+            pass
+
+    # ---------- Theme list ----------
+    def _populate_theme_list(self):
+        for child in self.theme_listbox.winfo_children():
+            child.destroy()
+        for name, data in self.themes.items():
+            swatch_bg = data.get('background', '#222')
+            accent = data.get('bubble_you', data.get('sidebar_button', '#555'))
+            item = ctk.CTkFrame(self.theme_listbox, fg_color="#333541", corner_radius=6)
+            item.pack(fill='x', padx=4, pady=4)
+            item.bind('<Button-1>', lambda e, n=name: self._select_theme(n))
+            # Right-click context menu
+            item.bind('<Button-3>', lambda e, n=name: self._show_theme_context(n, e))
+            # swatches
+            swatch = ctk.CTkFrame(item, width=18, height=18, fg_color=swatch_bg, corner_radius=4)
+            swatch.grid(row=0, column=0, padx=6, pady=6)
+            accent_box = ctk.CTkFrame(item, width=18, height=18, fg_color=accent, corner_radius=4)
+            accent_box.grid(row=0, column=1, padx=(0,6), pady=6)
+            lbl = ctk.CTkLabel(item, text=name)
+            lbl.grid(row=0, column=2, sticky='w', padx=4)
+            for w in (swatch, accent_box, lbl):
+                w.bind('<Button-1>', lambda e, n=name: self._select_theme(n))
+                w.bind('<Button-3>', lambda e, n=name: self._show_theme_context(n, e))
+
+    def _select_theme(self, name):
+        self.current_name = name
+        self._load_theme_into_fields(name)
+        self._highlight_changes()
+        self._update_preview()
+
+    # ---------- Field generation ----------
+    def _group_for_key(self, key):
+        groups = {
+            'sidebar_': 'Sidebar',
+            'bubble_': 'Bubbles',
+            'menu_': 'Menu',
+            'strength_': 'Strength Meter',
+            'server_': 'Server Status',
+            'font_': 'Fonts',
+            'pub_': 'Public Key Panel',
+            'button_': 'Buttons',
+            'input_': 'Inputs',
+            'timestamp': 'Timestamps',
+        }
+        for prefix, g in groups.items():
+            if key.startswith(prefix):
+                return g
+        if key in ('mode', 'text', 'placeholder_text', 'bubble_transparent', 'bubble_align_both_left'):
+            return 'General'
+        return 'Other'
+
+    def _clear_fields(self):
+        for child in self.editor_container.winfo_children():
+            child.destroy()
+        self.fields.clear()
+
+    def _load_theme_into_fields(self, name):
+        if name not in self.themes:
+            return
+        self._clear_fields()
+        data = self.themes[name]
+        # group keys
+        grouped = {}
+        for k in sorted(data.keys()):
+            grouped.setdefault(self._group_for_key(k), []).append(k)
+
+        row = 0
+        for group, keys in grouped.items():
+            header = ctk.CTkLabel(self.editor_container, text=group, font=("Roboto", 13, "bold"))
+            header.grid(row=row, column=0, sticky='w', padx=8, pady=(12,4))
+            row += 1
+            for key in keys:
+                val = data[key]
+                self._create_field(row, key, val)
+                row += 1
+        self._highlight_changes()
+
+    def _create_field(self, row, key, value):
+        frame = ctk.CTkFrame(self.editor_container, fg_color="#292b36")
+        frame.grid(row=row, column=0, sticky='ew', padx=8, pady=3)
+        frame.grid_columnconfigure(2, weight=1)
+        label = ctk.CTkLabel(frame, text=key, text_color="#b2b8d6")
+        label.grid(row=0, column=0, sticky='w', padx=6, pady=6)
+
+        widget = None
+        meta = {'type': None}
+
+        def bind_change(w):
+            try:
+                w.bind('<KeyRelease>', lambda e: (self._highlight_changes(), self._update_preview()))
+            except Exception:
+                pass
+
+        # Determine type
+        if isinstance(value, bool):
+            meta['type'] = 'bool'
+            var = ctk.BooleanVar(value=value)
+            widget = ctk.CTkSwitch(frame, text='', variable=var, command=lambda: (self._highlight_changes(), self._update_preview()))
+            widget.grid(row=0, column=1, padx=6)
+            self.fields[key] = (widget, var, meta)
+            return
+        if isinstance(value, (int, float)):
+            meta['type'] = 'number'
+            widget = ctk.CTkEntry(frame)
+            widget.insert(0, str(value))
+            widget.grid(row=0, column=1, padx=6, pady=6, sticky='ew')
+            bind_change(widget)
+            self.fields[key] = (widget, None, meta)
+            return
+        if isinstance(value, list):  # font arrays
+            meta['type'] = 'font_list'
+            # expect [family, size, *style]
+            fam = value[0] if value else 'Segoe UI'
+            size = value[1] if len(value) > 1 else 12
+            style = value[2] if len(value) > 2 else ''
+            fam_entry = ctk.CTkEntry(frame, width=110)
+            fam_entry.insert(0, fam)
+            fam_entry.grid(row=0, column=1, padx=4, pady=6)
+            size_entry = ctk.CTkEntry(frame, width=50)
+            size_entry.insert(0, str(size))
+            size_entry.grid(row=0, column=2, padx=4, pady=6, sticky='w')
+            style_entry = ctk.CTkEntry(frame, width=70)
+            style_entry.insert(0, style)
+            style_entry.grid(row=0, column=3, padx=4, pady=6)
+            for w in (fam_entry, size_entry, style_entry):
+                bind_change(w)
+            self.fields[key] = ((fam_entry, size_entry, style_entry), None, meta)
+            return
+        if isinstance(value, str) and value.startswith('#'):
+            meta['type'] = 'color'
+            entry = ctk.CTkEntry(frame)
+            entry.insert(0, value)
+            entry.grid(row=0, column=1, padx=6, pady=6, sticky='ew')
+            btn = ctk.CTkButton(frame, text='🎨', width=34, command=lambda e=entry: self._pick_color(e))
+            btn.grid(row=0, column=2, padx=4, pady=6, sticky='e')
+            bind_change(entry)
+            self.fields[key] = (entry, None, meta)
+            return
+        # fallback string
+        meta['type'] = 'string'
+        entry = ctk.CTkEntry(frame)
+        entry.insert(0, str(value))
+        entry.grid(row=0, column=1, padx=6, pady=6, sticky='ew')
+        bind_change(entry)
+        self.fields[key] = (entry, None, meta)
+
+    def _pick_color(self, entry_widget):
+        try:
+            color = colorchooser.askcolor(initialcolor=entry_widget.get())[1]
+            if color:
+                entry_widget.delete(0, ctk.END)
+                entry_widget.insert(0, color)
+                self._highlight_changes()
+                self._update_preview()
+        except Exception:
+            pass
+
+    # ---------- Collection & Save ----------
+    def _collect_temp_theme(self):
+        if not self.current_name:
+            return {}
+        base = copy.deepcopy(self.themes.get(self.current_name, {}))
+        for key, (widget, var, meta) in self.fields.items():
+            t = meta['type']
+            if t == 'bool':
+                base[key] = bool(var.get())
+            elif t == 'number':
+                txt = widget.get().strip()
+                if txt.isdigit():
+                    base[key] = int(txt)
+                else:
+                    try:
+                        base[key] = float(txt)
+                    except ValueError:
+                        pass
+            elif t == 'font_list':
+                fam, size, style = widget
+                try:
+                    size_val = int(size.get().strip())
+                except ValueError:
+                    size_val = 12
+                parts = [fam.get().strip(), size_val]
+                st = style.get().strip()
+                if st:
+                    parts.append(st)
+                base[key] = parts
+            else:
+                # string or color
+                base[key] = widget.get().strip()
+        return base
+
+    def _save_current_theme(self):
+        if not self.current_name:
+            return
+        self.themes[self.current_name] = self._collect_temp_theme()
+        self._write_themes()
+        self._populate_theme_list()
+        self._highlight_changes()
+
+    def _revert_changes(self):
+        if not self.current_name:
+            return
+        # restore from original snapshot
+        orig_theme = self.original_snapshot.get(self.current_name, {})
+        self.themes[self.current_name] = copy.deepcopy(orig_theme)
+        self._load_theme_into_fields(self.current_name)
+        self._update_preview()
+
+    def _export_theme(self):
+        if not self.current_name:
+            return
+        path = filedialog.asksaveasfilename(defaultextension='.json', filetypes=[('JSON','*.json')], title='Export Theme')
+        if not path:
+            return
+        try:
+            with open(path, 'w') as f:
+                json.dump(self._collect_temp_theme(), f, indent=4)
+        except Exception:
+            pass
+
+    def _import_theme(self):
+        path = filedialog.askopenfilename(filetypes=[('JSON','*.json')], title='Import Theme')
+        if not path:
+            return
+        try:
+            with open(path, 'r') as f:
+                data = json.load(f)
+            # require dict at top-level
+            if isinstance(data, dict):
+                # generate unique name
+                base = data.get('name') or 'Imported'
+                idx = 1
+                new_name = base
+                while new_name in self.themes:
+                    idx += 1
+                    new_name = f"{base} {idx}"
+                self.themes[new_name] = data
+                self.current_name = new_name
+                self._populate_theme_list()
+                self._load_theme_into_fields(new_name)
+                self._update_preview()
+        except Exception:
+            pass
+
+    # ---------- Theme operations ----------
+    def _add_theme(self):
+        base_name = 'New Theme'
+        i = 1
+        name = base_name
+        while name in self.themes:
+            i += 1
+            name = f"{base_name} {i}"
+        # Determine a full template: prefer the built-in 'Dark' theme if present.
+        if 'Dark' in self.themes and isinstance(self.themes['Dark'], dict):
+            template = copy.deepcopy(self.themes['Dark'])
+        else:
+            # Fallback: merge keys from all existing themes to build a superset template
+            template = {}
+            for tdata in self.themes.values():
+                if isinstance(tdata, dict):
+                    for k, v in tdata.items():
+                        # only set if not already present to keep first encountered default
+                        if k not in template:
+                            template[k] = copy.deepcopy(v)
+            # Ensure some critical defaults if themes were sparse
+            template.setdefault('mode', 'Dark')
+            template.setdefault('background', '#1c1c28')
+            template.setdefault('sidebar_bg', '#252536')
+            template.setdefault('bubble_you', '#7289da')
+            template.setdefault('bubble_other', '#34344a')
+        self.themes[name] = template
+        self.current_name = name
+        # Add baseline to original snapshot so fields are not marked changed immediately
+        self.original_snapshot[name] = copy.deepcopy(template)
+        self._populate_theme_list()
+        self._load_theme_into_fields(name)
+        self._update_preview()
+
+    def _duplicate_theme(self):
+        if not self.current_name:
+            return
+        base = self.current_name
+        idx = 1
+        new_name = f"{base} Copy"
+        while new_name in self.themes:
+            idx += 1
+            new_name = f"{base} Copy {idx}"
+        self.themes[new_name] = copy.deepcopy(self.themes[base])
+        self.current_name = new_name
+        self._populate_theme_list()
+        self._load_theme_into_fields(new_name)
+        self._update_preview()
+
+    def _delete_theme(self):
+        if not self.current_name or len(self.themes) <= 1:
+            return
+        try:
+            # Remove from themes and snapshot
+            name = self.current_name
+            del self.themes[name]
+            if name in self.original_snapshot:
+                del self.original_snapshot[name]
+        except KeyError:
+            return
+        self.current_name = next(iter(self.themes), None)
+        self._populate_theme_list()
+        if self.current_name:
+            self._load_theme_into_fields(self.current_name)
+            self._update_preview()
+        # Persist deletion immediately
+        self._write_themes()
+        if self.app and hasattr(self.app, 'notifier'):
+            self.app.notifier.show('Theme deleted', type_='info')
+
+    # ---------- Change highlighting ----------
+    def _highlight_changes(self):
+        if not self.current_name:
+            return
+        current_temp = self._collect_temp_theme()
+        original = self.original_snapshot.get(self.current_name, self.themes.get(self.current_name, {}))
+        for key, (widget, var, meta) in self.fields.items():
+            changed = key not in original or current_temp.get(key) != original.get(key)
+            color = '#394155' if changed else '#292b36'
+            # container frame is parent
+            try:
+                container = widget.master if not isinstance(widget, tuple) else widget[0].master
+                container.configure(fg_color=color)
+            except Exception:
+                pass
+
+    # ---------- Context menu operations ----------
+    def _show_theme_context(self, name, event):
+        # Ensure selection before showing menu
+        self._select_theme(name)
+        menu = Menu(self, tearoff=0)
+        menu.add_command(label="Rename Theme", command=lambda n=name: self._rename_theme(n))
+        if len(self.themes) > 1:
+            menu.add_command(label="Delete Theme", command=self._delete_theme)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _rename_theme(self, name):
+        # Use CTkInputDialog if available; fallback to simpledialog if needed
+        new_name = None
+        try:
+            dlg = ctk.CTkInputDialog(text="Enter new theme name:", title="Rename Theme")
+            new_name = dlg.get_input()
+        except Exception:
+            # fallback minimal prompt
+            from tkinter import simpledialog
+            new_name = simpledialog.askstring("Rename Theme", "Enter new theme name:")
+        if not new_name:
+            return
+        new_name = new_name.strip()
+        if not new_name:
+            return
+        if new_name in self.themes and new_name != name:
+            # notify conflict
+            if self.app and hasattr(self.app, 'notifier'):
+                self.app.notifier.show('Name already exists', type_='warning')
+            return
+        if new_name == name:
+            return
+        # Rename in themes and original snapshot
+        self.themes[new_name] = self.themes.pop(name)
+        if name in self.original_snapshot:
+            self.original_snapshot[new_name] = self.original_snapshot.pop(name)
+        if self.current_name == name:
+            self.current_name = new_name
+        self._populate_theme_list()
+        self._load_theme_into_fields(self.current_name)
+        self._update_preview()
+        # Auto-save rename so themes.json reflects change
+        self._write_themes()
+        if self.app and hasattr(self.app, 'notifier'):
+            self.app.notifier.show('Theme renamed', type_='success')
+
