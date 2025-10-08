@@ -6,7 +6,10 @@ from datetime import datetime
 
 from utils.chat_storage import (
     load_messages,
+    load_recent_messages,
+    load_all_segments,
     save_message,
+    is_segmented,
 )
 from utils.crypto import decrypt_message, verify_signature
 from utils.network import fetch_messages, send_message
@@ -34,35 +37,58 @@ class ChatManager:
 
     # ---------------- Cache helpers ----------------
     def get_messages(self, pub_hex: str):
-        """Return cached messages, performing fast recent load first for large chats.
+        """Return cached messages, with fast partial load for segmented chats.
 
         Strategy:
-        - If already cached: return immediately.
-        - If already cached: return immediately.
-        - Otherwise: load full messages from storage and cache them.
+        - If cached: return.
+        - If segmented: load only recent segments (configurable) and spawn background
+          thread to backfill full history.
+        - Else legacy: full load.
         """
         if not pub_hex:
             return []
         with self._cache_lock:
             if pub_hex in self._chat_cache:
                 return self._chat_cache[pub_hex]
-        # Full load
+
+        if is_segmented(pub_hex):
+            recent = load_recent_messages(pub_hex, self.app.pin, recent_segments=2, max_messages=self.initial_message_limit)
+            with self._cache_lock:
+                self._chat_cache[pub_hex] = list(recent)
+            threading.Thread(target=self._backfill_full_history, args=(pub_hex,), daemon=True).start()
+            return recent
+
         msgs = load_messages(pub_hex, self.app.pin)
         with self._cache_lock:
             self._chat_cache[pub_hex] = msgs
         return msgs
 
     def _backfill_full_history(self, pub_hex: str):
-        """Load entire history (segmented) and merge with cache if user still active.
-
-        Avoid duplicating messages by comparing lengths (segments are appended only).
-        """
-        # Segmented backfill logic removed: storage currently provides full loads via load_messages.
-        return
+        try:
+            full = load_all_segments(pub_hex, self.app.pin)
+        except Exception as e:
+            print(f"[chat_manager] backfill failed for {pub_hex}: {e}")
+            return
+        with self._cache_lock:
+            current = self._chat_cache.get(pub_hex, [])
+            if len(full) > len(current):
+                self._chat_cache[pub_hex] = full
+        if self.app.recipient_pub_hex == pub_hex:
+            try:
+                self.app.after(0, self._rebuild_conversation_ui, pub_hex, full)
+            except Exception:
+                pass
 
     def _rebuild_conversation_ui(self, pub_hex: str, messages: list):
-        # This function was part of segmented backfill flow and is no-op with current storage API.
-        return
+        if self.app.recipient_pub_hex != pub_hex:
+            return
+        try:
+            for widget in self.app.messages_container.winfo_children():
+                widget.destroy()
+            for msg in messages:
+                self.app.display_message(msg.get('sender'), msg.get('text'), timestamp=msg.get('timestamp'))
+        except Exception as e:
+            print(f"[chat_manager] rebuild UI failed: {e}")
 
     def _append_cache(self, pub_hex: str, message: dict):
         if not pub_hex:
