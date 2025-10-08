@@ -15,3 +15,5 @@ SQLAlchemy
 python-dotenv
 python-multipart
 msgpack
+websocket-client
+websockets
