@@ -22,63 +22,56 @@ class KeysTab:
             text_color="white"
         ).grid(row=0, column=0, pady=(10, 10), padx=10)
 
-        # Buttons (primary actions)
-        ctk.CTkButton(
-            self.frame,
-            text="Generate New Keypair",
-            command=self.new_key,
-            fg_color="#4a90e2"
-        ).grid(row=1, column=0, pady=8, padx=20, sticky="ew")
+        # Scrollable content area so the tab scales on small windows
+        content = ctk.CTkScrollableFrame(self.frame, fg_color="transparent")
+        content.grid(row=1, column=0, sticky="nsew", padx=10, pady=(6,10))
+        content.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkButton(
-            self.frame,
-            text="Change Pincode",
-            command=self.change_pin,
-            fg_color="#4a90e2"
-        ).grid(row=2, column=0, pady=8, padx=20, sticky="ew")
+        # Primary actions card
+        top_card = ctk.CTkFrame(content, fg_color="#1e1e2f", corner_radius=8)
+        top_card.grid(row=0, column=0, padx=10, pady=(0, 12), sticky="ew")
+        top_card.grid_columnconfigure(0, weight=1)
 
-        # Divider
-        ctk.CTkLabel(self.frame, text="", fg_color="#2a2a3f").grid(row=3, column=0, pady=(8, 0), sticky="ew", padx=10)
+        ctk.CTkLabel(top_card, text="Account keys", font=("Roboto", 12, "bold"), text_color="#dbe4ff").grid(row=0, column=0, sticky="w", padx=12, pady=(8, 4))
+        ctk.CTkLabel(top_card, text="Generate or rotate your keypair and change the PIN used to encrypt them.", font=("Roboto", 10), text_color="#b2b8d6", justify="left").grid(row=1, column=0, sticky="w", padx=12, pady=(0, 8))
 
+        # Action buttons inside card
+        btn_frame = ctk.CTkFrame(top_card, fg_color="transparent")
+        btn_frame.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 12))
+        btn_frame.grid_columnconfigure(0, weight=1)
+        btn_frame.grid_columnconfigure(1, weight=1)
 
-        ctk.CTkLabel(
-            self.frame,
-            text=(
-                "⚠ Exporting your account will create a backup containing your encrypted keys and messages.\n"
-                "Keep this file safe. You will need your original PIN to import it."
-            ),
-            font=("Roboto", 11),
-            text_color="orange",
-            justify="left"
-        ).grid(row=4, column=0, pady=(10, 2), padx=20, sticky="w")
+        ctk.CTkButton(btn_frame, text="Generate New Keypair", command=self.new_key, fg_color="#4a90e2").grid(row=0, column=0, sticky="ew", padx=(0,8))
+        ctk.CTkButton(btn_frame, text="Change PIN", command=self.change_pin, fg_color="#4a90e2").grid(row=0, column=1, sticky="ew", padx=(8,0))
 
-        # Export Account button
-        ctk.CTkButton(
-            self.frame,
-            text="Export Account",
-            command=self.export_account,
-            fg_color="#4a90e2"
-        ).grid(row=5, column=0, pady=8, padx=20, sticky="ew")
+        # Public key display (read-only)
+        pub_frame = ctk.CTkFrame(content, fg_color="#1a1a26", corner_radius=6)
+        pub_frame.grid(row=1, column=0, padx=10, sticky="ew", pady=(0, 12))
+        pub_frame.grid_columnconfigure(0, weight=1)
 
+        ctk.CTkLabel(pub_frame, text="My Public Key", font=("Roboto", 11, "bold"), text_color="#dbe4ff").grid(row=0, column=0, sticky="w", padx=12, pady=(8,4))
+        pub_hex = getattr(self.app, "my_pub_hex", None) or "(not available)"
+        self.pub_label = ctk.CTkLabel(pub_frame, text=pub_hex, font=("Roboto", 10), text_color="#9fb0ff", wraplength=800, anchor="w", justify="left")
+        self.pub_label.grid(row=1, column=0, sticky="ew", padx=12, pady=(0,8))
 
-        ctk.CTkLabel(
-            self.frame,
-            text=(
-                "⚠ Importing an account will overwrite your existing keys and messages.\n"
-                "Make sure this is a valid backup. You will need the original PIN."
-            ),
-            font=("Roboto", 11),
-            text_color="orange",
-            justify="left"
-        ).grid(row=6, column=0, pady=(10, 2), padx=20, sticky="w")
+        copy_frame = ctk.CTkFrame(pub_frame, fg_color="transparent")
+        copy_frame.grid(row=2, column=0, sticky="e", padx=12, pady=(0,8))
+        ctk.CTkButton(copy_frame, text="Copy Public Key", command=self._copy_pub, width=160, fg_color="#4a90e2").grid(row=0, column=0)
 
-        # Import Account button
-        ctk.CTkButton(
-            self.frame,
-            text="Import Account",
-            command=self.import_account,
-            fg_color="#4a90e2"
-        ).grid(row=7, column=0, pady=8, padx=20, sticky="ew")
+        # Export / Import card
+        warn_card = ctk.CTkFrame(content, fg_color="#1e1e2f", corner_radius=8)
+        warn_card.grid(row=2, column=0, padx=10, pady=(0, 12), sticky="ew")
+        warn_card.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(warn_card, text="Backup / Restore", font=("Roboto", 12, "bold"), text_color="#dbe4ff").grid(row=0, column=0, sticky="w", padx=12, pady=(8,4))
+        ctk.CTkLabel(warn_card, text=("⚠ Exporting or importing your account will create or overwrite a backup containing your encrypted keys and messages.\nKeep the exported file safe and make sure you have the original PIN."), font=("Roboto", 10), text_color="orange", justify="left", wraplength=800).grid(row=1, column=0, sticky="w", padx=12, pady=(0,8))
+
+        exp_frame = ctk.CTkFrame(warn_card, fg_color="transparent")
+        exp_frame.grid(row=2, column=0, sticky="ew", padx=12, pady=(0,12))
+        exp_frame.grid_columnconfigure(0, weight=1)
+        exp_frame.grid_columnconfigure(1, weight=1)
+        ctk.CTkButton(exp_frame, text="Export Account", command=self.export_account, fg_color="#4a90e2").grid(row=0, column=0, sticky="ew", padx=(0,8))
+        ctk.CTkButton(exp_frame, text="Import Account", command=self.import_account, fg_color="#4a90e2").grid(row=0, column=1, sticky="ew", padx=(8,0))
 
 
     # --- Existing methods ---
@@ -188,3 +181,16 @@ class KeysTab:
             CTkDialog(self.frame, title="Import Success", label="Account imported successfully!").result
         except Exception as e:
             CTkDialog(self.frame, title="Error", label=f"Failed to import account:\n{str(e)}").result
+
+    def _copy_pub(self):
+        try:
+            pub = getattr(self.app, "my_pub_hex", None)
+            if not pub:
+                CTkDialog(self.frame, title="Info", label="Public key not available.").result
+                return
+            self.frame.clipboard_clear()
+            self.frame.clipboard_append(pub)
+            if hasattr(self.app, "notifier"):
+                self.app.notifier.show("Public key copied", type_="success")
+        except Exception:
+            pass
