@@ -14,3 +14,4 @@ passlib[bcrypt]
 SQLAlchemy
 python-dotenv
 python-multipart
+msgpack
