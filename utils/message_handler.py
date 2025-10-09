@@ -1,6 +1,3 @@
-from utils.chat_storage import save_message
-from utils.network import send_message
-from utils.outbox import append_outbox_message
 from time import time
 
 def handle_send(app):
@@ -27,25 +24,8 @@ def handle_send(app):
         app.notifier.show("Select a recipient first", type_="warning")
         return
 
-    # Send the message
-    if send_message(
-        app,
-        to_pub=app.recipient_pub_hex,
-        signing_pub=app.signing_pub_hex,
-        text=text,
-        signing_key=app.signing_key,
-        enc_pub=app.my_pub_hex
-    ):
-        # Display the message locally & persist
-        app.display_message(app.my_pub_hex, text)
-        save_message(app.recipient_pub_hex, "You", text, app.pin, timestamp=time())
-    else:
-        # Queue offline
-        append_outbox_message(app.recipient_pub_hex, text, app.pin)
-        try:
-            app.notifier.show("Offline: message queued", type_="warning")
-        except Exception:
-            pass
+    # Delegate to ChatManager for optimistic UI + background send
+    app.chat_manager.send(text)
 
     # Clear input box
     app.input_box.delete(0, "end")

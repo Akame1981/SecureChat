@@ -1,19 +1,7 @@
 """Offline outbox storage.
-
-Persist unsent messages (e.g. when server is unreachable) so they are not
-lost between sessions. Messages are retried opportunistically by the fetch
-loop. The outbox is encrypted with the user's PIN using the same
-encryption format as chat history (msgpack + SecretBox + salt marker).
-
-Entry format (list stored as a whole):
-  {
-    "to": <recipient pub hex>,
-    "text": <plaintext>,
-    "timestamp": <float original client ts>,
-    "attempts": <int resend attempts>
-  }
-
-We purposely do NOT store the signature / encrypted body. Those are derived
+            if ok:
+                sent_any = True
+                # Do not re-save or re-display; already handled optimistically on send.
 fresh on each attempt to avoid stale cryptographic material.
 """
 from __future__ import annotations

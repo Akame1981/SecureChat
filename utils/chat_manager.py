@@ -14,7 +14,7 @@ from utils.chat_storage import (
 from utils.crypto import decrypt_message, verify_signature, decrypt_blob
 from utils.network import fetch_messages, send_message
 from utils.attachment_envelope import parse_attachment_envelope
-from utils.outbox import flush_outbox, has_outbox
+from utils.outbox import flush_outbox, has_outbox, append_outbox_message
 from utils.recipients import get_recipient_name, ensure_recipient_exists
 
 
@@ -208,7 +208,8 @@ class ChatManager:
                 item = self.send_queue.get(timeout=1)
                 text = item["text"]
                 recipient_pub = item["to_pub"]
-                ts = time.time()
+                # Preserve the timestamp used for local render/save when available
+                ts = item.get("ts", time.time())
 
                 success = send_message(
                     self.app,
@@ -219,16 +220,22 @@ class ChatManager:
                     enc_pub=self.app.my_pub_hex
                 )
 
-                if success:
-                    msg_dict = {"sender": "You", "text": text, "timestamp": ts}
-                    # Save quickly (append) and update cache
-                    save_message(recipient_pub, "You", text, self.app.pin, timestamp=ts)
-                    self._append_cache(recipient_pub, msg_dict)
-                    # Display only if user still viewing this conversation
-                    if self.app.recipient_pub_hex == recipient_pub:
-                        self.app.after(0, self.app.display_message, self.app.my_pub_hex, text, ts)
-                else:
-                    self.app.notifier.show("Failed to send message", type_="error")
+                # We already saved and displayed optimistically in send();
+                # On failure, queue to outbox for retry.
+                if not success:
+                    try:
+                        append_outbox_message(recipient_pub, text, self.app.pin, timestamp=ts)
+                        # Optional gentle notice; avoid blocking UX
+                        try:
+                            self.app.notifier.show("Offline: message queued", type_="warning")
+                        except Exception:
+                            pass
+                    except Exception:
+                        # As a last resort, keep a minimal error toast
+                        try:
+                            self.app.notifier.show("Failed to send message", type_="error")
+                        except Exception:
+                            pass
 
             except queue.Empty:
                 continue
@@ -238,7 +245,29 @@ class ChatManager:
         if not self.app.recipient_pub_hex:
             self.app.notifier.show("Select a recipient first", type_="warning")
             return
-        self.send_queue.put({"text": text, "to_pub": self.app.recipient_pub_hex})
+        text = (text or "").strip()
+        if not text:
+            return
+        recipient_pub = self.app.recipient_pub_hex
+        ts = time.time()
+
+        # Optimistic local render and persistence
+        try:
+            save_message(recipient_pub, "You", text, self.app.pin, timestamp=ts)
+        except Exception as e:
+            print(f"[chat_manager] save_message failed: {e}")
+        try:
+            self._append_cache(recipient_pub, {"sender": "You", "text": text, "timestamp": ts})
+        except Exception:
+            pass
+        if self.app.recipient_pub_hex == recipient_pub:
+            try:
+                self.app.after(0, self.app.display_message, self.app.my_pub_hex, text, ts)
+            except Exception:
+                pass
+
+        # Enqueue background send (non-blocking)
+        self.send_queue.put({"text": text, "to_pub": recipient_pub, "ts": ts})
 
     # ---------------- Stop ChatManager ----------------
     def stop(self):
