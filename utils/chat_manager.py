@@ -214,9 +214,6 @@ class ChatManager:
             with self._cache_lock:
                 current = self._chat_cache.get(pub_hex, [])
                 new_list = list(older) + list(current)
-                # Enforce soft cache limit
-                if len(new_list) > self.cache_soft_limit:
-                    new_list = new_list[-self.cache_soft_limit:]
                 self._chat_cache[pub_hex] = new_list
                 self._oldest_ts[pub_hex] = new_list[0].get('timestamp', oldest)
             # Prepend in UI
@@ -225,6 +222,7 @@ class ChatManager:
                     self.app.after(0, self._prepend_messages_ui, pub_hex, older)
                 except Exception:
                     pass
+                # Do not trim immediately on prepend to avoid removing newly loaded items
 
         threading.Thread(target=_bg_fetch, daemon=True).start()
 

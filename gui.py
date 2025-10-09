@@ -352,6 +352,12 @@ class WhisprApp(ctk.CTk):
                 for msg in messages:
                     txt = msg.get("text", "")
                     meta = msg.get("_attachment")
+                    if not meta and msg.get("_attachment_json"):
+                        try:
+                            import json as _json
+                            meta = _json.loads(msg.get("_attachment_json")) if msg.get("_attachment_json") else None
+                        except Exception:
+                            meta = None
                     if (not meta) and isinstance(txt, str) and txt.startswith("ATTACH:"):
                         placeholder, parsed = parse_attachment_envelope(txt)
                         if placeholder and parsed:
