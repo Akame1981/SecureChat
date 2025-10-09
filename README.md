@@ -61,46 +61,7 @@ On first launch you will be asked to set a PIN (used to encrypt your private key
 
 > By default the client points to the public demo server over HTTPS. Run your own server for full control.
 
----
 
-## 🧪 Running Your Own Server (Basic)
-
-```bash
-uvicorn server:app --host 0.0.0.0 --port 8000 --reload
-```
-
-Then in the GUI Settings, switch to Custom Server and set `http://127.0.0.1:8000` (or your LAN IP). If you want TLS locally, place a certificate in `utils/cert.pem` and enable certificate use in settings.
-
-### Optional: Redis for Ephemeral Scaling
-
-When Redis is available (`localhost:6379`) the server:
-
-- Uses Redis lists per recipient (`inbox:<pub>`) with TTL.
-- Tracks rate limiting via sorted sets.
-- Aggregates lightweight daily/hourly analytics counters.
-
-If Redis is absent the server falls back to an in‑memory dictionary (per‑process) and a line‑delimited JSON analytics log.
-
----
-
-## � Optional Analytics Stack
-
-The project ships an experimental analytics backend and dashboard (Next.js + Tailwind) for real‑time message metrics (counts, bytes, users).
-
-Spin it up (requires Docker):
-
-```bash
-docker compose -f docker-compose.analytics.yml up --build
-```
-
-Services:
-
-- Backend: FastAPI microservice (port 8001)
-- Frontend: Next.js dashboard (port 3001)
-
-Environment variables for the backend live in `server_utils/analytics_backend/.env` (create if missing). If the analytics collector is unreachable the main server continues normally.
-
----
 
 ## 🧱 Architecture Overview
 
@@ -137,81 +98,7 @@ Key points:
 4. Server validates signature against `from_` then enqueues.
 5. Recipient fetches & decrypts with private key.
 
----
 
-## ⚡ Real-time push (WebSockets)
-
-WebSocket support has been added to provide low‑latency, server‑pushed delivery of incoming messages. The server exposes two compatible endpoints:
-
-- Path form: `/ws/{recipient_pubhex}`
-- Query form: `/ws?recipient={recipient_pubhex}`
-
-Notes:
-
-- The client will attempt to start a WebSocket background thread if the `websocket-client` package is available. If not installed, the client falls back to periodic polling.
-- TLS is supported via `wss://` when you configure the client to use an `https://` server URL and provide a pinned certificate (`utils/cert.pem`) in settings.
-- The client reduces polling frequency automatically when a WebSocket connection is active.
-- WebSocket push sends the same envelope structure as the `/inbox` payload (fields: `from`, `enc_pub`, `message`, `signature`, `timestamp`). The client verifies signatures and decrypts messages locally before displaying or storing them.
-
-Server-side behavior:
-
-- When a message is accepted by `POST /send` the server will attempt to push the stored envelope to any active WebSocket connections for the recipient. Failures are ignored (best‑effort delivery).
-- The WebSocket endpoints accept simple pings from clients but are primarily used for server→client push. Disconnects and handshake failures are handled gracefully.
-
-## 📎 File sharing (Attachments)
-
-Attachments (file sharing) are implemented end‑to‑end encrypted and ephemeral. Key points:
-
-- Client behavior:
-  - GUI supports sending attachments via the Attach button and optional drag & drop. Attachments are encrypted client‑side and the GUI stores a local, encrypted copy in `data/attachments` (see `utils/attachments.py`).
-  - When sending, the client uploads the sealed ciphertext and metadata to the server using `POST /upload` and stores a placeholder message locally that points to the attachment (name, size, `att_id`).
-  - Downloading an attachment is done via `GET /download/{att_id}?recipient={your_pubhex}`; the client will request the ciphertext from the server, verify the recipient, then decrypt locally using the owner's PIN‑derived key.
-
-- Server behavior / API:
-  - `POST /upload` accepts an attachment envelope containing `{to, from_, enc_pub, blob, signature, name, size, sha256}` where `blob` is the base64 sealed ciphertext and `sha256` is a hex digest used as the attachment id (`att_id`).
-  - The server verifies the signature over the blob, enforces a size guard (default 10 MB), stores the ciphertext in an in‑memory attachment store (or Redis when configured), and returns `{"att_id": "<sha256>", "status": "ok"}`.
-  - `GET /download/{att_id}?recipient=<pubhex>` returns `{"att_id","blob","name","size","from","to"}` if the recipient matches and the attachment has not expired.
-  - Attachments are ephemeral and subject to the same TTL used for messages (default 60s) unless you configure a longer retention on the server side.
-
-- Security model:
-  - Attachments are sealed/encrypted by the sender using the recipient's public key (SealedBox) and signed by the sender. The server only stores ciphertext, size and metadata and cannot decrypt attachment contents.
-  - Attachment files stored on the client are encrypted with a key derived from the user's PIN (see `utils/attachments.py`) so local copies remain protected.
-
-- Analytics & limits:
-  - Attachment uploads are accounted for by the analytics collector (if enabled). The server records attachment counts and average sizes for reporting.
-  - The server rejects attachments larger than the configured limit (10 MB by default) and will return a `413 Attachment too large` response.
-
-Developer notes:
-
-- Attachment ids are deterministic SHA256 hex of the ciphertext. Sending the same file twice will reuse the same `att_id` on the server and client local store.
-- The client includes a placeholder message in chat history pointing to the attachment (`[Attachment] filename (size)`); selecting the placeholder starts a download + decrypt flow.
-
-
-## ⚙️ Configuration & Files
-
-| File / Path | Purpose |
-|-------------|---------|
-| `data/keypair.bin` | Encrypted key + signing key + username blob (versioned format) |
-| `data/recipients.json` | Stored recipient public keys (may be encrypted by PIN) |
-| `config/settings.json` | Client runtime settings (server selection, theme) |
-| `config/themes.json` | Theme registry (colors, etc.) |
-| `config/weak_pins.json` | Blacklist of weak PINs (override internal copy) |
-| `utils/cert.pem` | Pinned server certificate (if using self‑signed) |
-| `analytics_events.log` | Fallback analytics event log (only when Redis absent) |
-
-`settings.json` keys (example):
-
-```jsonc
-{
-  "server_type": "public",          // or "custom"
-  "custom_url": "http://127.0.0.1:8000",
-  "use_cert": true,
-  "cert_path": "utils/cert.pem",
-  "theme_name": "Dark"              // optional active theme
-}
-```
-
----
 
 ## 🔐 Security Model (Summary)
 
@@ -223,7 +110,7 @@ Developer notes:
 - Metadata leakage: Server still sees sender & recipient public keys and rough timing. Traffic analysis is in scope.
 - Threats NOT mitigated (yet): MITM without pinned cert, compromised endpoint malware, replay detection, forward secrecy (static keypairs), multi-device conflict resolution.
 
-> This project has **not** undergone formal cryptographic review. Use at your own risk.
+> This project has **not** undergone formal cryptographic review.
 
 ---
 
@@ -237,24 +124,8 @@ Analytics Frontend: Next.js, React, Recharts, Tailwind
 
 ---
 
-## 🧩 Selected Code Internals
 
-| Module | Responsibility |
-|--------|----------------|
-| `server.py` | Relay endpoints: `/send`, `/inbox/{pub}`, `/public-key` |
-| `utils/crypto.py` | Key generation, storage, PIN strength, encrypt/decrypt, signing |
-| `utils/network.py` | Client HTTP send & inbox polling |
-| `gui/` | Tkinter UI components, theming, dialogs |
-| `server_utils/analytics_*` | Optional metrics collection & dashboard |
 
----
-
-## 🖥️ GUI Basics
-
-- Unlock screen appears if a key file exists.
-- New install → Set PIN → Keys generated → Welcome view.
-- Sidebar manages recipients; settings dialog manages server/theme/pin.
-- Copy your public key to share. Paste others' public keys to add them.
 
 ---
 
@@ -288,26 +159,10 @@ Add tools (not bundled by default):
 pip install ruff black mypy
 ```
 
----
-
-## � Packaging (PyInstaller Example)
-
-_Experimental guidance:_
-```bash
-pip install pyinstaller
-pyinstaller --onefile --name Whispr gui.py
-```
-Ensure runtime resources (themes, settings, weak PIN list) are copied or embedded. The helper `get_resource_path` in `utils/crypto.py` supports PyInstaller’s `_MEIPASS` layout.
-
----
-
 ## 🧷 Limitations & Future Hardening
 
-- No forward secrecy (static long-lived keypairs)
-- No perfect metadata obfuscation (timing & key correlation remain)
-- No multi-device sync / conflict resolution
-- No message retraction or edit support
-- Replay protection minimal (timestamp presence only)
+
+
 - Limited unit tests (community contribution welcome)
 
 ---
@@ -332,69 +187,7 @@ Not yet. Export/import planned.
 **Why Redis?**  
 Provides multi-process safe queues, TTL expiration, distributed rate limiting, and shared analytics counters.
 
-## ⚡ Real-time push (WebSockets)
 
-WebSocket support has been added to provide low‑latency, server‑pushed delivery of incoming messages. The server exposes two compatible endpoints:
-
-- Path form: `/ws/{recipient_pubhex}`
-- Query form: `/ws?recipient={recipient_pubhex}`
-
-Notes:
-
-- The client will attempt to start a WebSocket background thread if the `websocket-client` package is available. If not installed, the client falls back to periodic polling.
-- TLS is supported via `wss://` when you configure the client to use an `https://` server URL and provide a pinned certificate (`utils/cert.pem`) in settings.
-- The client reduces polling frequency automatically when a WebSocket connection is active.
-- WebSocket push sends the same envelope structure as the `/inbox` payload (fields: `from`, `enc_pub`, `message`, `signature`, `timestamp`). The client verifies signatures and decrypts messages locally before displaying or storing them.
-
-Server-side behavior:
-
-- When a message is accepted by `POST /send` the server will attempt to push the stored envelope to any active WebSocket connections for the recipient. Failures are ignored (best‑effort delivery).
-- The WebSocket endpoints accept simple pings from clients but are primarily used for server→client push. Disconnects and handshake failures are handled gracefully.
-## 📎 File sharing (Attachments)
-
-Attachments (file sharing) are implemented end‑to‑end encrypted and ephemeral. Key points:
-
-- Client behavior:
-  - GUI supports sending attachments via the Attach button and optional drag & drop. Attachments are encrypted client‑side and the GUI stores a local, encrypted copy in `data/attachments` (see `utils/attachments.py`).
-  - When sending, the client uploads the sealed ciphertext and metadata to the server using `POST /upload` and stores a placeholder message locally that points to the attachment (name, size, `att_id`).
-  - Downloading an attachment is done via `GET /download/{att_id}?recipient={your_pubhex}`; the client will request the ciphertext from the server, verify the recipient, then decrypt locally using the owner's PIN‑derived key.
-
-- Server behavior / API:
-  - `POST /upload` accepts an attachment envelope containing `{to, from_, enc_pub, blob, signature, name, size, sha256}` where `blob` is the base64 sealed ciphertext and `sha256` is a hex digest used as the attachment id (`att_id`).
-  - The server verifies the signature over the blob, enforces a size guard (default 10 MB), stores the ciphertext in an in‑memory attachment store (or Redis when configured), and returns `{"att_id": "<sha256>", "status": "ok"}`.
-  - `GET /download/{att_id}?recipient=<pubhex>` returns `{"att_id","blob","name","size","from","to"}` if the recipient matches and the attachment has not expired.
-  - Attachments are ephemeral and subject to the same TTL used for messages (default 60s) unless you configure a longer retention on the server side.
-
-- Security model:
-  - Attachments are sealed/encrypted by the sender using the recipient's public key (SealedBox) and signed by the sender. The server only stores ciphertext, size and metadata and cannot decrypt attachment contents.
-  - Attachment files stored on the client are encrypted with a key derived from the user's PIN (see `utils/attachments.py`) so local copies remain protected.
-
-- Analytics & limits:
-  - Attachment uploads are accounted for by the analytics collector (if enabled). The server records attachment counts and average sizes for reporting.
-  - The server rejects attachments larger than the configured limit (10 MB by default) and will return a `413 Attachment too large` response.
-
-Developer notes:
-
-- Attachment ids are deterministic SHA256 hex of the ciphertext. Sending the same file twice will reuse the same `att_id` on the server and client local store.
-- The client includes a placeholder message in chat history pointing to the attachment (`[Attachment] filename (size)`); selecting the placeholder starts a download + decrypt flow.
-
-
----
-
-## 🗺️ Roadmap (High-Level)
-
-- UI & UX polish / accessibility
-- Offline message queue + retry
-- Group conversations (shared symmetric group keys)
-- Voice / video (WebRTC + E2EE framing)
-- Multi-server selection & failover
-- Mobile and multi-device sync
-- Forward secrecy & key rotation
-- Message deletion / editing protocol
-
-Detailed task list below (original checklist retained).
-
----
 
 ## 🤝 Contributing
 
@@ -424,31 +217,6 @@ Issues / discussions via **GitHub Issues**.
 
 ---
 
-## Detailed Roadmap Checklist
 
-This expands on the high-level roadmap above.
-
-
-### ⬜ Next Updates
-
-
-- [ ] Group Chats
-  - [ ] Create and manage group conversations
-  - [ ] Add/remove participants securely
-  - [ ] Support for group message encryption
-- [ ] Voice/Video Calling
-  - [ ] Secure calling between users
-  - [ ] End-to-end encryption for calls
-  - [ ] Call notifications
-- [ ] Servers & Network
-  - [ ] Add support for multiple servers
-  - [ ] Server selection in settings
-  - [ ] Improve server reliability and connection feedback
-
-### 🌟 Future Vision
-
-- [ ] Integration with mobile apps
-- [ ] Multi-device sync
-- [ ] Advanced chat features (reactions, message edits/deletes)
 
 **Stay tuned!** More secure and user-friendly features are on the way. 🚀
