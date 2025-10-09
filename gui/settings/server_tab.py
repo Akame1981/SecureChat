@@ -83,15 +83,55 @@ class ServerTab:
         self.browse_btn = ctk.CTkButton(self.cert_input_row, text="Browse", command=self._browse_cert, fg_color="#4a90e2", width=84)
         self.browse_btn.grid(row=0, column=1, sticky="e", padx=(8,0))
 
+        # Server limits section
+        limits_frame = ctk.CTkFrame(card, fg_color="transparent")
+        limits_frame.grid(row=4, column=0, sticky="ew", padx=12, pady=(6,8))
+        limits_frame.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(limits_frame, text="Server Limits (for local server)", text_color="#b2b8d6").grid(row=0, column=0, sticky="w", pady=(0,6))
+
+        self.max_per_recipient_var = tk.IntVar(value=20)
+        self.max_per_second_var = tk.IntVar(value=10)
+        self.msg_ttl_var = tk.IntVar(value=60)
+        self.att_size_var = tk.IntVar(value=10 * 1024 * 1024)
+
+        # Row 1
+        row1 = ctk.CTkFrame(limits_frame, fg_color="transparent")
+        row1.grid(row=1, column=0, sticky="ew")
+        ctk.CTkLabel(row1, text="Max messages / recipient:", text_color="#b2b8d6").grid(row=0, column=0, sticky="w")
+        self.max_per_recipient_entry = ctk.CTkEntry(row1, width=120, textvariable=self.max_per_recipient_var)
+        self.max_per_recipient_entry.grid(row=0, column=1, sticky="e", padx=(8,0))
+
+        # Row 2
+        row2 = ctk.CTkFrame(limits_frame, fg_color="transparent")
+        row2.grid(row=2, column=0, sticky="ew", pady=(6,0))
+        ctk.CTkLabel(row2, text="Max messages / second:", text_color="#b2b8d6").grid(row=0, column=0, sticky="w")
+        self.max_per_second_entry = ctk.CTkEntry(row2, width=120, textvariable=self.max_per_second_var)
+        self.max_per_second_entry.grid(row=0, column=1, sticky="e", padx=(8,0))
+
+        # Row 3
+        row3 = ctk.CTkFrame(limits_frame, fg_color="transparent")
+        row3.grid(row=3, column=0, sticky="ew", pady=(6,0))
+        ctk.CTkLabel(row3, text="Message TTL (seconds):", text_color="#b2b8d6").grid(row=0, column=0, sticky="w")
+        self.msg_ttl_entry = ctk.CTkEntry(row3, width=120, textvariable=self.msg_ttl_var)
+        self.msg_ttl_entry.grid(row=0, column=1, sticky="e", padx=(8,0))
+
+        # Row 4
+        row4 = ctk.CTkFrame(limits_frame, fg_color="transparent")
+        row4.grid(row=4, column=0, sticky="ew", pady=(6,0))
+        ctk.CTkLabel(row4, text="Attachment max size (bytes):", text_color="#b2b8d6").grid(row=0, column=0, sticky="w")
+        self.att_size_entry = ctk.CTkEntry(row4, width=180, textvariable=self.att_size_var)
+        self.att_size_entry.grid(row=0, column=1, sticky="e", padx=(8,0))
+
         # Action row: Save + Reset
         action_row = ctk.CTkFrame(card, fg_color="transparent")
-        action_row.grid(row=4, column=0, sticky="e", padx=12, pady=(4,12))
+        action_row.grid(row=5, column=0, sticky="e", padx=12, pady=(4,12))
         ctk.CTkButton(action_row, text="Save", command=self._save_server_settings, fg_color="#4a90e2", width=120).grid(row=0, column=0, padx=(0,8))
         ctk.CTkButton(action_row, text="Reset", command=self._load_settings, fg_color="#6c6f76", width=90).grid(row=0, column=1)
 
         # Persistent status label (one place for messages)
         self.status_label = ctk.CTkLabel(self.frame, text="", text_color="green")
-        self.status_label.grid(row=2, column=0, sticky="w", padx=20)
+        self.status_label.grid(row=6, column=0, sticky="w", padx=20)
 
     def _update_cert_visibility(self):
         """Show/hide fields depending on server type + cert usage."""
@@ -164,6 +204,11 @@ class ServerTab:
                 self.use_cert_var.set(data.get("use_cert", True))
                 self.cert_entry.delete(0, tk.END)
                 self.cert_entry.insert(0, data.get("cert_path", "utils/cert.pem"))
+                # Load server-side limits if present
+                self.max_per_recipient_var.set(data.get("max_messages_per_recipient", 20))
+                self.max_per_second_var.set(data.get("max_messages_per_second", 10))
+                self.msg_ttl_var.set(data.get("message_ttl_seconds", 60))
+                self.att_size_var.set(data.get("attachment_max_size_bytes", 10 * 1024 * 1024))
             except Exception as e:
                 print("Failed to load settings:", e)
 
@@ -174,6 +219,11 @@ class ServerTab:
             "custom_url": self.custom_server_entry.get().strip(),
             "use_cert": self.use_cert_var.get(),
             "cert_path": self.cert_entry.get().strip(),
+            # include server-side limits so users can tune local server behavior file
+            "max_messages_per_recipient": int(self.max_per_recipient_var.get()),
+            "max_messages_per_second": int(self.max_per_second_var.get()),
+            "message_ttl_seconds": int(self.msg_ttl_var.get()),
+            "attachment_max_size_bytes": int(self.att_size_var.get()),
         }
 
         os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)

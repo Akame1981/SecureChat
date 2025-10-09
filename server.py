@@ -2,6 +2,8 @@ import base64
 import threading
 import time
 import asyncio
+import json
+import os
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -55,9 +57,29 @@ if not REDIS_AVAILABLE:
     rate_limit_store = {}
     store_lock = threading.Lock()
 
-MAX_MESSAGES_PER_RECIPIENT = 20
-MAX_MESSAGES_PER_SECOND = 10
-MESSAGE_TTL = 60
+# Load server-side configurable limits from server_utils/config/settings.json
+DEFAULTS = {
+    "max_messages_per_recipient": 20,
+    "max_messages_per_second": 10,
+    "message_ttl_seconds": 60,
+    "attachment_max_size_bytes": 10 * 1024 * 1024,
+}
+
+config_path = os.path.join(os.path.dirname(__file__), "server_utils", "config", "settings.json")
+if not os.path.exists(config_path):
+    # fallback to repository relative path
+    config_path = os.path.join(os.path.dirname(__file__), "..", "server_utils", "config", "settings.json")
+
+try:
+    with open(config_path, "r", encoding="utf-8") as cf:
+        cfg = json.load(cf)
+except Exception:
+    cfg = {}
+
+MAX_MESSAGES_PER_RECIPIENT = int(cfg.get("max_messages_per_recipient", DEFAULTS["max_messages_per_recipient"]))
+MAX_MESSAGES_PER_SECOND = int(cfg.get("max_messages_per_second", DEFAULTS["max_messages_per_second"]))
+MESSAGE_TTL = int(cfg.get("message_ttl_seconds", DEFAULTS["message_ttl_seconds"]))
+ATTACHMENT_MAX_SIZE = int(cfg.get("attachment_max_size_bytes", DEFAULTS["attachment_max_size_bytes"]))
 
 server_private = PrivateKey.generate()
 server_public = server_private.public_key
@@ -197,7 +219,7 @@ async def send_message(msg: Message):
 def upload_attachment(att: AttachmentUpload):
     if not verify_signature(att.from_, att.blob, att.signature):
         raise HTTPException(status_code=400, detail="Invalid signature")
-    if att.size > 10 * 1024 * 1024:
+    if att.size > ATTACHMENT_MAX_SIZE:
         raise HTTPException(status_code=413, detail="Attachment too large")
     import base64, hashlib, time as _time
     try:
