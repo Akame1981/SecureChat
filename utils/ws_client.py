@@ -20,7 +20,7 @@ except ImportError:  # graceful fallback
 
 from utils.crypto import decrypt_message, verify_signature
 from utils.chat_storage import save_message
-from utils.recipients import get_recipient_name
+from utils.recipients import get_recipient_name, ensure_recipient_exists
 
 
 def _candidate_ws_urls(http_url: str, recipient_key: str):
@@ -99,7 +99,18 @@ def start_ws_client(app):
             except Exception:
                 return
 
-            name = get_recipient_name(sender_enc, app.pin) or sender_enc
+            # Ensure chat exists for unknown sender
+            name = get_recipient_name(sender_enc, app.pin)
+            if not name:
+                try:
+                    name = ensure_recipient_exists(sender_enc, app.pin)
+                    if hasattr(app, 'sidebar') and hasattr(app.sidebar, 'update_list'):
+                        try:
+                            app.after(0, app.sidebar.update_list)
+                        except Exception:
+                            pass
+                except Exception:
+                    name = sender_enc
             save_message(sender_enc, name, plaintext, app.pin, timestamp=ts)
             if hasattr(app, 'chat_manager'):
                 try:

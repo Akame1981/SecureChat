@@ -15,7 +15,7 @@ from utils.crypto import decrypt_message, verify_signature, decrypt_blob
 from utils.network import fetch_messages, send_message
 from utils.attachment_envelope import parse_attachment_envelope
 from utils.outbox import flush_outbox, has_outbox
-from utils.recipients import get_recipient_name
+from utils.recipients import get_recipient_name, ensure_recipient_exists
 
 
 class ChatManager:
@@ -151,8 +151,20 @@ class ChatManager:
                                 msg_text = placeholder
                                 attachment_meta = meta
 
+                        # Ensure unknown senders create a chat entry
+                        sender_name = get_recipient_name(sender_pub, self.app.pin)
+                        if not sender_name:
+                            try:
+                                sender_name = ensure_recipient_exists(sender_pub, self.app.pin)
+                                # Prompt sidebar to refresh so the new chat appears
+                                if hasattr(self.app, 'sidebar') and hasattr(self.app.sidebar, 'update_list'):
+                                    # Refresh list without altering current selection
+                                    self.app.after(0, self.app.sidebar.update_list)
+                            except Exception as _:
+                                sender_name = sender_pub
+
                         msg_dict = {
-                            "sender": get_recipient_name(sender_pub, self.app.pin) or sender_pub,
+                            "sender": sender_name or sender_pub,
                             "text": msg_text,
                             "timestamp": timestamp,
                         }
