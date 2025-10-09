@@ -16,7 +16,8 @@ import os
 import re
 import copy
 import customtkinter as ctk
-from tkinter import colorchooser, filedialog, Menu
+from tkinter import filedialog, Menu
+from .color_picker import CustomColorPicker
 
 HEX_RE = re.compile(r"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 
@@ -132,12 +133,8 @@ class ThemeEditor(ctk.CTkToplevel):
         self.preview_sidebar = ctk.CTkFrame(self.preview_canvas, width=140, fg_color="#2a2a3a", corner_radius=8)
         self.preview_sidebar.grid(row=0, column=0, sticky='ns', padx=(4,6), pady=6)
         self.preview_sidebar.grid_propagate(False)
-        ctk.CTkLabel(self.preview_sidebar, text="Chats", font=("Segoe UI", 13, "bold")).pack(anchor='w', padx=8, pady=(8,4))
-        self.sidebar_btn_active = ctk.CTkButton(self.preview_sidebar, text="General", width=110, height=26)
-        self.sidebar_btn_idle = ctk.CTkButton(self.preview_sidebar, text="Support", width=110, height=26)
-        self.sidebar_btn_more = ctk.CTkButton(self.preview_sidebar, text="+ New", width=110, height=26)
-        for b in (self.sidebar_btn_active, self.sidebar_btn_idle, self.sidebar_btn_more):
-            b.pack(padx=8, pady=4)
+        ctk.CTkLabel(self.preview_sidebar, text="Recipients", font=("Segoe UI", 13, "bold")).pack(anchor='w', padx=8, pady=(8,4))
+
 
         # Main area container
         self.preview_main = ctk.CTkFrame(self.preview_canvas, fg_color="#1e1e2f", corner_radius=8)
@@ -210,30 +207,9 @@ class ThemeEditor(ctk.CTkToplevel):
         self.preview_send_btn = ctk.CTkButton(self.preview_input_frame, text="Send", width=70)
         self.preview_send_btn.grid(row=0, column=1, padx=6, pady=6)
 
-        # Strength meter mock
-        self.strength_frame = ctk.CTkFrame(self.preview_main, fg_color="transparent")
-        self.strength_frame.grid(row=2, column=0, sticky='w', padx=10, pady=(4,2))
-        self.str_bar_weak = ctk.CTkFrame(self.strength_frame, width=30, height=8, corner_radius=4)
-        self.str_bar_med = ctk.CTkFrame(self.strength_frame, width=30, height=8, corner_radius=4)
-        self.str_bar_str = ctk.CTkFrame(self.strength_frame, width=30, height=8, corner_radius=4)
-        for i, bar in enumerate((self.str_bar_weak, self.str_bar_med, self.str_bar_str)):
-            bar.grid(row=0, column=i, padx=3, pady=2)
 
-        # Server status mock
-        self.server_status_frame = ctk.CTkFrame(self.preview_main, fg_color="transparent")
-        self.server_status_frame.grid(row=3, column=0, sticky='w', padx=10, pady=(2,6))
-        self.server_online_lbl = ctk.CTkLabel(self.server_status_frame, text="Server Online", corner_radius=4)
-        self.server_offline_lbl = ctk.CTkLabel(self.server_status_frame, text="Server Offline", corner_radius=4)
-        self.server_online_lbl.grid(row=0, column=0, padx=4, pady=2)
-        self.server_offline_lbl.grid(row=0, column=1, padx=4, pady=2)
 
-        # Public key panel mock
-        self.pub_panel = ctk.CTkFrame(self.preview_main, corner_radius=6)
-        self.pub_panel.grid(row=4, column=0, sticky='ew', padx=10, pady=(0,8))
-        self.pub_label = ctk.CTkLabel(self.pub_panel, text="Public Key", font=("Segoe UI", 12, "bold"))
-        self.pub_label.pack(anchor='w', padx=8, pady=(6,2))
-        self.pub_key_text = ctk.CTkLabel(self.pub_panel, text="ABCD-EFGH-IJKL", anchor='w')
-        self.pub_key_text.pack(fill='x', padx=8, pady=(0,8))
+
 
     def _update_preview(self, *_):
         if not self.current_name or self.current_name not in self.themes:
@@ -402,6 +378,15 @@ class ThemeEditor(ctk.CTkToplevel):
         return 'Other'
 
     def _clear_fields(self):
+        # Ensure editor container exists (some callers may run before layout completes)
+        if not hasattr(self, 'editor_container') or self.editor_container is None:
+            try:
+                self.editor_container = ctk.CTkScrollableFrame(self, fg_color="transparent")
+                self.editor_container.grid(row=0, column=2, sticky='nsew', padx=(0,8), pady=8)
+                self.editor_container.grid_columnconfigure(0, weight=1)
+            except Exception:
+                # As a final fallback, create a simple frame to avoid attribute errors
+                self.editor_container = ctk.CTkFrame(self, fg_color="transparent")
         for child in self.editor_container.winfo_children():
             child.destroy()
         self.fields.clear()
@@ -519,8 +504,15 @@ class ThemeEditor(ctk.CTkToplevel):
             self.group_members.setdefault(group, []).append(frame)
 
     def _pick_color(self, entry_widget):
+        # Open the custom modal color picker and update the entry when the
+        # user confirms a color. This keeps the UI consistent across OSes.
         try:
-            color = colorchooser.askcolor(initialcolor=entry_widget.get())[1]
+            picker = CustomColorPicker(self, initial=entry_widget.get())
+            # wait for the modal to close; picker.chosen will be set to a hex
+            # string or None.
+            picker.grab_set()
+            self.wait_window(picker)
+            color = getattr(picker, 'chosen', None)
             if color:
                 entry_widget.delete(0, ctk.END)
                 entry_widget.insert(0, color)
