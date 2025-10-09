@@ -342,24 +342,27 @@ class WhisprApp(ctk.CTk):
         for widget in self.messages_container.winfo_children():
             widget.destroy()
 
-        # Load messages for this recipient
+        # Load messages non-blocking using ChatManager batched renderer
         if self.recipient_pub_hex:
-            messages = load_messages(self.recipient_pub_hex, self.pin)
-            for msg in messages:
-                txt = msg.get("text","")
-                meta = msg.get("_attachment")
-                if (not meta) and isinstance(txt, str) and txt.startswith("ATTACH:"):
-                    placeholder, parsed = parse_attachment_envelope(txt)
-                    if placeholder and parsed:
-                        # Update in-memory only; avoid rewriting history immediately
-                        txt = placeholder
-                        meta = parsed
-                self.display_message(
-                    msg["sender"],
-                    txt,
-                    timestamp=msg.get("timestamp"),
-                    attachment_meta=meta
-                )
+            if hasattr(self, 'chat_manager'):
+                self.chat_manager.show_initial_messages(self.recipient_pub_hex)
+            else:
+                # Fallback: synchronous (rare path if chat_manager missing)
+                messages = load_messages(self.recipient_pub_hex, self.pin)
+                for msg in messages:
+                    txt = msg.get("text", "")
+                    meta = msg.get("_attachment")
+                    if (not meta) and isinstance(txt, str) and txt.startswith("ATTACH:"):
+                        placeholder, parsed = parse_attachment_envelope(txt)
+                        if placeholder and parsed:
+                            txt = placeholder
+                            meta = parsed
+                    self.display_message(
+                        msg.get("sender"),
+                        txt,
+                        timestamp=msg.get("timestamp"),
+                        attachment_meta=meta,
+                    )
 
 
 
