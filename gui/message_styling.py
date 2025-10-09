@@ -10,6 +10,15 @@ from tkinter import filedialog, messagebox
 from gui.identicon import generate_identicon
 from PIL import Image, ImageTk
 import io
+import hashlib
+from collections import OrderedDict
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+# Thread pool for background image/attachment work
+_IMAGE_EXECUTOR = ThreadPoolExecutor(max_workers=3)
+# Lock to protect the image cache
+_image_cache_lock = threading.Lock()
 
 
 def _human_size(n: int) -> str:
@@ -52,9 +61,9 @@ def _format_time(ts: float | None) -> str:
 
 def _compute_wrap(parent, max_width=520, min_width=180, padding=140):
     try:
+        # Use cached value when the application width hasn't changed to avoid
+        # recalculating wrap length for every bubble creation.
         parent.update_idletasks()
-        # Prefer the toplevel window width (application width) so we can compute
-        # an 80% width for message text. Fall back to the parent width if needed.
         try:
             top = parent.winfo_toplevel()
             app_w = top.winfo_width()
@@ -62,12 +71,18 @@ def _compute_wrap(parent, max_width=520, min_width=180, padding=140):
             app_w = parent.winfo_width()
 
         if not app_w or app_w <= 1:
-            # fallback default
             return 420
 
-        # target is 80% of app width, then clamp between min_width and max_width
+        cache = getattr(parent, '_wrap_cache', None)
+        if cache and cache[0] == app_w:
+            return cache[1]
+
         target = int(app_w * 0.8)
         usable = max(min_width, min(max_width, target))
+        try:
+            parent._wrap_cache = (app_w, usable)
+        except Exception:
+            pass
         return usable
     except Exception:
         return 420
@@ -105,15 +120,18 @@ def _blend_hex(c1: str, c2: str, t: float) -> str:
 
 
 def _fade_in(widget: ctk.CTkFrame, start_color: str, end_color: str, steps: int = 6, delay: int = 22):
-    # Simple color gradient fade.
-    for i in range(steps+1):
-        def apply(i=i):
-            c = _blend_hex(start_color, end_color, i/steps)
-            try:
-                widget.configure(fg_color=c)
-            except Exception:
-                pass
-        widget.after(i*delay, apply)
+    # For performance we avoid running a multi-step fade. Set the final
+    # color immediately to preserve appearance without the animation cost.
+    try:
+        widget.configure(fg_color=end_color)
+    except Exception:
+        pass
+
+
+# Simple in-memory cache for decoded PIL images to avoid repeated decoding
+# keyed by attachment id or blob hash. Keeps a small bounded cache.
+_image_cache: "OrderedDict[str, object]" = OrderedDict()
+_IMAGE_CACHE_MAX = 32
 
 
 def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, timestamp=None, attachment_meta=None):
@@ -234,87 +252,54 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
             is_image_attachment = True
 
     # Message text
-    # Selectable message text via CTkTextbox
+    # Use a lightweight label instead of a Text/Textbox for performance while
+    # keeping the same look. Copying is provided via Ctrl+C and the context menu.
     try:
-        msg_widget = ctk.CTkTextbox(
-            bubble_frame,
-            width=wrap_len,
-            height=1,
-            wrap='word',
-            fg_color='transparent',
-            font=("Roboto", 12),
-            activate_scrollbars=False,
-            border_width=0
-        )
-        msg_widget.insert('1.0', processed_text)
-        # Adjust height to content
-        msg_widget.update_idletasks()
-        lines = int(msg_widget.index('end-1c').split('.')[0]) or 1
-        if lines > 30:
-            lines = 30  # safety cap
-        msg_widget.configure(height=lines)
-        # Make the textbox read-only but selectable.
-        # We'll disable editing by setting state='disabled' after inserting text
-        # and provide a custom copy handler so Ctrl+C works reliably.
-        # Some customtkinter versions may invoke the callback without an event object; make it optional
-        msg_widget.bind('<Button-1>', lambda _=None: msg_widget.focus_set())
-        # Justify alignment: when align_both_left is enabled, force left justification
-        if align_both_left:
-            msg_widget.tag_configure('all', justify='left')
-        else:
-            # Right-align text for your messages, left for others
-            msg_widget.tag_configure('all', justify='right' if is_you else 'left')
-        msg_widget.tag_add('all', '1.0', 'end')
-        # Text color
-        try:
-            msg_widget.configure(text_color=text_color)
-        except Exception:
-            pass
-        # Prevent edits while keeping selection active
-        try:
-            msg_widget.configure(state='disabled')
-        except Exception:
-            pass
-
-        # Copy handler: copies selection if present, otherwise whole text
-        def _copy_selection(event=None):
-            try:
-                # temporarily enable to read selection content
-                msg_widget.configure(state='normal')
-                try:
-                    sel = msg_widget.get('sel.first', 'sel.last')
-                except Exception:
-                    sel = msg_widget.get('1.0', 'end-1c')
-                msg_widget.configure(state='disabled')
-                bubble_frame.clipboard_clear()
-                bubble_frame.clipboard_append(sel)
-            except Exception:
-                try:
-                    # fallback: full text
-                    txt = msg_widget.get('1.0', 'end-1c')
-                    bubble_frame.clipboard_clear()
-                    bubble_frame.clipboard_append(txt)
-                except Exception:
-                    pass
-            return 'break'
-
-        msg_widget.bind('<Control-c>', _copy_selection)
-        msg_widget.bind('<Control-C>', _copy_selection)
-        msg_widget.pack(anchor=side_anchor, padx=10, pady=(4 if not prev_same else 2, 4))
-        bubble_frame.msg_label = msg_widget  # maintain attribute name for compatibility
-        bubble_frame._msg_is_textbox = True
-    except Exception:
-        # Fallback to simple label if textbox creation fails
-        # Fallback label if textbox creation fails; ensure justification respects align_both_left
-        bubble_frame.msg_label = ctk.CTkLabel(
+        msg_widget = ctk.CTkLabel(
             bubble_frame,
             text=processed_text,
             wraplength=wrap_len,
             justify=("left" if align_both_left else ("right" if is_you else "left")),
             text_color=text_color,
             font=("Roboto", 12),
+            fg_color='transparent'
         )
-        bubble_frame.msg_label.pack(anchor=side_anchor, padx=10, pady=(4 if not prev_same else 2, 4))
+        # Make clicks focus the label so key bindings like Ctrl+C work
+        msg_widget.bind('<Button-1>', lambda e=None: msg_widget.focus_set())
+
+        def _copy_label_text(event=None):
+            try:
+                txt = processed_text
+                bubble_frame.clipboard_clear()
+                bubble_frame.clipboard_append(txt)
+            except Exception:
+                pass
+            return 'break'
+
+        msg_widget.bind('<Control-c>', _copy_label_text)
+        msg_widget.bind('<Control-C>', _copy_label_text)
+        msg_widget.pack(anchor=side_anchor, padx=10, pady=(4 if not prev_same else 2, 4))
+        bubble_frame.msg_label = msg_widget  # maintain attribute name for compatibility
+        bubble_frame._msg_is_textbox = False
+    except Exception:
+        # Extremely defensive fallback to a native tkinter Label if CTkLabel fails
+        lbl = tk.Label(
+            bubble_frame,
+            text=processed_text,
+            wraplength=wrap_len,
+            justify=("left" if align_both_left else ("right" if is_you else "left")),
+            fg='white' if is_you else text_other,
+            font=("Roboto", 12),
+            bg='SystemButtonFace'
+        )
+        try:
+            lbl.bind('<Button-1>', lambda e=None: lbl.focus_set())
+            lbl.bind('<Control-c>', lambda e=None: (bubble_frame.clipboard_clear(), bubble_frame.clipboard_append(processed_text), 'break'))
+        except Exception:
+            pass
+        lbl.pack(anchor=side_anchor, padx=10, pady=(4 if not prev_same else 2, 4))
+        bubble_frame.msg_label = lbl
+        bubble_frame._msg_is_textbox = False
 
     # If this appears to be an image attachment, replace the large placeholder text with a compact caption
     try:
@@ -401,171 +386,213 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
                         raw = None
 
             if raw:
+                # Offload heavy work (decoding, PIL open, thumbnailing) to background
+                # thread and update UI when ready.
+                def _process_image(raw_bytes, img_meta_local, cache_key_local, wrap_len_local, bubble_frame_local, side_anchor_local):
+                    import io as _io
+                    pil_obj = None
+                    # Try cache first (protected by lock)
+                    try:
+                        with _image_cache_lock:
+                            if cache_key_local in _image_cache:
+                                pil_obj = _image_cache[cache_key_local]
+                    except Exception:
+                        pil_obj = None
+
+                    try:
+                        if pil_obj is None:
+                            bio = _io.BytesIO(raw_bytes)
+                            pil_obj = Image.open(bio)
+                    except Exception:
+                        pil_obj = None
+
+                    if pil_obj is None:
+                        return None
+
+                    # Create thumbnail copy
+                    try:
+                        pil_copy = pil_obj.copy()
+                    except Exception:
+                        pil_copy = pil_obj
+                    max_dim = min(wrap_len_local, 360)
+                    try:
+                        pil_copy.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+                    except Exception:
+                        pass
+
+                    # Cache the original pil_obj if not already cached
+                    try:
+                        with _image_cache_lock:
+                            if cache_key_local not in _image_cache and pil_obj is not None:
+                                _image_cache[cache_key_local] = pil_obj
+                                try:
+                                    _image_cache.move_to_end(cache_key_local)
+                                except Exception:
+                                    pass
+                                while len(_image_cache) > _IMAGE_CACHE_MAX:
+                                    try:
+                                        _image_cache.popitem(last=False)
+                                    except Exception:
+                                        break
+                    except Exception:
+                        pass
+
+                    return (pil_obj, pil_copy)
+
                 try:
                     import io as _io
-                    bio = _io.BytesIO(raw)
-                    pil = Image.open(bio)
-                    # Create a thumbnail constrained by wrap length and a max dimension
-                    max_dim = min(_compute_wrap(parent), 360)
-                    pil.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
-                    try:
-                        ctk_img = ctk.CTkImage(light_image=pil, dark_image=pil, size=pil.size)
-                    except Exception:
-                        # Fall back to converting to RGBA then build CTkImage
-                        pil = pil.convert('RGBA')
-                        ctk_img = ctk.CTkImage(light_image=pil, dark_image=pil, size=pil.size)
+                    # Cache key: prefer att_id, otherwise hash of raw
+                    cache_key = None
+                    if img_meta.get('att_id'):
+                        cache_key = f"id:{img_meta.get('att_id')}"
+                    else:
+                        h = hashlib.sha256(raw).hexdigest()
+                        cache_key = f"raw:{h}"
 
-                    img_label = ctk.CTkLabel(bubble_frame, image=ctk_img, text="", fg_color='transparent')
-                    img_label._ctk_image = ctk_img
-                    img_label._pil_image = pil
-                    img_label.pack(anchor=side_anchor, padx=10, pady=(2, 6))
+                    # Submit background job
+                    future = _IMAGE_EXECUTOR.submit(_process_image, raw, img_meta, cache_key, wrap_len, bubble_frame, side_anchor)
 
-                    # Double-click or click to open/save
-                    def _show_fullscreen(event=None):
+                    # Callback to run on main thread when ready
+                    def _on_image_ready(fut):
                         try:
-                            # In-app fullscreen viewer using a Toplevel
-                            top = tk.Toplevel(app)
-                            top.configure(bg='black')
+                            res = fut.result()
+                            if not res:
+                                return
+                            pil_orig, pil_thumb = res
                             try:
-                                # Make truly fullscreen on most platforms
-                                top.attributes('-fullscreen', True)
+                                ctk_img = ctk.CTkImage(light_image=pil_thumb, dark_image=pil_thumb, size=pil_thumb.size)
                             except Exception:
-                                # Fallback to maximized geometry
-                                w = app.winfo_screenwidth()
-                                h = app.winfo_screenheight()
-                                top.geometry(f"{w}x{h}+0+0")
-
-                            # Load full image from raw bytes and fit to screen
-                            import io as _io
-                            pil_full = Image.open(_io.BytesIO(raw))
-                            sw = top.winfo_screenwidth()
-                            sh = top.winfo_screenheight()
-                            # Compute fit size preserving aspect
-                            iw, ih = pil_full.size
-                            scale = min(sw / iw, sh / ih, 1.0)
-                            new_w = int(iw * scale)
-                            new_h = int(ih * scale)
-                            pil_resized = pil_full.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                            tk_img = ImageTk.PhotoImage(pil_resized)
-
-                            lbl = tk.Label(top, image=tk_img, bg='black')
-                            lbl.image = tk_img
-                            lbl.pack(expand=True)
-
-                            def _close(ev=None):
                                 try:
-                                    top.destroy()
+                                    pil_conv = pil_thumb.convert('RGBA') if hasattr(pil_thumb, 'convert') else pil_thumb
+                                    ctk_img = ctk.CTkImage(light_image=pil_conv, dark_image=pil_conv, size=pil_conv.size)
                                 except Exception:
-                                    pass
-
-                            top.bind('<Button-1>', _close)
-                            top.bind('<Escape>', _close)
-                        except Exception:
-                            try:
-                                messagebox.showinfo('Image', 'Unable to open image viewer')
-                            except Exception:
-                                pass
-
-                    img_label.bind('<Button-1>', _show_fullscreen)
-                    # Right-click should show same popup menu with image actions
-                    def _save_image():
-                        try:
-                            default_name = img_meta.get('name', 'image')
-                            path = filedialog.asksaveasfilename(defaultextension='', initialfile=default_name)
-                            if path:
-                                with open(path, 'wb') as f:
-                                    f.write(raw)
-                                try:
-                                    app.notifier.show(f"Saved {default_name}")
-                                except Exception:
-                                    pass
-                        except Exception as e:
-                            print('Save image failed', e)
-                            try:
-                                messagebox.showerror('Save Image', 'Failed to save image')
-                            except Exception:
-                                pass
-
-                    def _copy_image():
-                        try:
-                            # Try Windows clipboard via CF_DIB using ctypes if available
-                            if sys.platform.startswith('win'):
-                                try:
-                                    import ctypes
-                                    import tempfile
-                                    # Convert to DIB (BMP without 14-byte header)
-                                    buf = io.BytesIO()
-                                    pil_converted = Image.open(io.BytesIO(raw)).convert('RGB')
-                                    pil_converted.save(buf, format='BMP')
-                                    data = buf.getvalue()[14:]
-                                    buf.close()
-
-                                    CF_DIB = 8
-                                    user32 = ctypes.windll.user32
-                                    kernel32 = ctypes.windll.kernel32
-                                    user32.OpenClipboard(0)
-                                    user32.EmptyClipboard()
-                                    hGlobal = kernel32.GlobalAlloc(0x0002, len(data))
-                                    ptr = kernel32.GlobalLock(hGlobal)
-                                    ctypes.memmove(ptr, data, len(data))
-                                    kernel32.GlobalUnlock(hGlobal)
-                                    user32.SetClipboardData(CF_DIB, hGlobal)
-                                    user32.CloseClipboard()
-                                    try:
-                                        app.notifier.show('Image copied to clipboard')
-                                    except Exception:
-                                        pass
                                     return
-                                except Exception as e:
-                                    print('Windows clipboard image copy failed', e)
-                                    # fall through to fallback
 
-                            # Fallback: write to temp file and copy file path to clipboard
-                            import tempfile
-                            tf = tempfile.NamedTemporaryFile(delete=False, suffix='.' + (img_meta.get('name','img').split('.')[-1]))
-                            tf.write(raw); tf.flush(); tf.close()
-                            try:
-                                app.clipboard_clear(); app.clipboard_append(tf.name)
+                            # Ensure UI update happens on main thread
+                            def _create_ui():
                                 try:
-                                    app.notifier.show('Saved temp image and copied path to clipboard')
+                                    img_label = ctk.CTkLabel(bubble_frame, image=ctk_img, text="", fg_color='transparent')
+                                    img_label._ctk_image = ctk_img
+                                    img_label._pil_image = pil_orig
+                                    img_label.pack(anchor=side_anchor, padx=10, pady=(2, 6))
+
+                                    # Attach fullscreen/save/copy handlers (keep original logic)
+                                    def _show_fullscreen(event=None):
+                                        try:
+                                            top = tk.Toplevel(app)
+                                            top.configure(bg='black')
+                                            try:
+                                                top.attributes('-fullscreen', True)
+                                            except Exception:
+                                                w = app.winfo_screenwidth(); h = app.winfo_screenheight(); top.geometry(f"{w}x{h}+0+0")
+                                            import io as _io
+                                            pil_full = Image.open(_io.BytesIO(raw))
+                                            sw = top.winfo_screenwidth(); sh = top.winfo_screenheight()
+                                            iw, ih = pil_full.size
+                                            scale = min(sw / iw, sh / ih, 1.0)
+                                            new_w = int(iw * scale); new_h = int(ih * scale)
+                                            pil_resized = pil_full.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                                            tk_img_full = ImageTk.PhotoImage(pil_resized)
+                                            lbl = tk.Label(top, image=tk_img_full, bg='black')
+                                            lbl.image = tk_img_full; lbl.pack(expand=True)
+                                            def _close(ev=None):
+                                                try: top.destroy()
+                                                except Exception: pass
+                                            top.bind('<Button-1>', _close); top.bind('<Escape>', _close)
+                                        except Exception:
+                                            try: messagebox.showinfo('Image', 'Unable to open image viewer')
+                                            except Exception: pass
+
+                                    img_label.bind('<Button-1>', _show_fullscreen)
+
+                                    def _save_image():
+                                        try:
+                                            default_name = img_meta.get('name', 'image')
+                                            path = filedialog.asksaveasfilename(defaultextension='', initialfile=default_name)
+                                            if path:
+                                                with open(path, 'wb') as f:
+                                                    f.write(raw)
+                                                try:
+                                                    app.notifier.show(f"Saved {default_name}")
+                                                except Exception:
+                                                    pass
+                                        except Exception as e:
+                                            print('Save image failed', e)
+                                            try:
+                                                messagebox.showerror('Save Image', 'Failed to save image')
+                                            except Exception:
+                                                pass
+
+                                    def _copy_image():
+                                        try:
+                                            if sys.platform.startswith('win'):
+                                                try:
+                                                    import ctypes, tempfile
+                                                    buf = io.BytesIO(); pil_converted = Image.open(io.BytesIO(raw)).convert('RGB'); pil_converted.save(buf, format='BMP'); data = buf.getvalue()[14:]; buf.close()
+                                                    CF_DIB = 8; user32 = ctypes.windll.user32; kernel32 = ctypes.windll.kernel32
+                                                    user32.OpenClipboard(0); user32.EmptyClipboard(); hGlobal = kernel32.GlobalAlloc(0x0002, len(data)); ptr = kernel32.GlobalLock(hGlobal); ctypes.memmove(ptr, data, len(data)); kernel32.GlobalUnlock(hGlobal); user32.SetClipboardData(CF_DIB, hGlobal); user32.CloseClipboard()
+                                                    try: app.notifier.show('Image copied to clipboard')
+                                                    except Exception: pass
+                                                    return
+                                                except Exception as e:
+                                                    print('Windows clipboard image copy failed', e)
+                                            import tempfile
+                                            tf = tempfile.NamedTemporaryFile(delete=False, suffix='.' + (img_meta.get('name','img').split('.')[-1]))
+                                            tf.write(raw)
+                                            tf.flush()
+                                            tf.close()
+                                            try:
+                                                app.clipboard_clear()
+                                                app.clipboard_append(tf.name)
+                                            except Exception:
+                                                try:
+                                                    messagebox.showinfo('Copy Image', f'Saved temp file: {tf.name}')
+                                                except Exception:
+                                                    pass
+                                        except Exception as e:
+                                            print('Copy image failed', e)
+                                            try:
+                                                messagebox.showerror('Copy Image', 'Failed to copy image')
+                                            except Exception:
+                                                pass
+
+                                    # Context menu
+                                    try:
+                                        img_menu = tk.Menu(img_label, tearoff=0)
+                                        try: img_menu.configure(bg=menu_bg, fg=menu_fg, activebackground=menu_active_bg, activeforeground=menu_active_fg)
+                                        except Exception: pass
+                                        img_menu.add_command(label='Save Image', command=_save_image)
+                                        img_menu.add_command(label='Copy Image', command=_copy_image)
+                                        def _img_popup(event):
+                                            try: img_menu.tk_popup(event.x_root, event.y_root)
+                                            finally: img_menu.grab_release()
+                                        img_label.bind('<Button-3>', _img_popup)
+                                        img_label.bind('<Button-2>', _img_popup)
+                                    except Exception as e:
+                                        print('Image menu setup failed', e)
+
+                                    bubble_frame._attachment_image = img_label
                                 except Exception:
                                     pass
+
+                            try:
+                                parent.after(1, _create_ui)
                             except Exception:
+                                # If parent isn't available, try bubble_frame
                                 try:
-                                    messagebox.showinfo('Copy Image', f'Saved temp file: {tf.name}')
+                                    bubble_frame.after(1, _create_ui)
                                 except Exception:
                                     pass
-                        except Exception as e:
-                            print('Copy image failed', e)
-                            try:
-                                messagebox.showerror('Copy Image', 'Failed to copy image')
-                            except Exception:
-                                pass
 
-                    # Create a dedicated context menu for the image to ensure clicks on
-                    # the image surface show the image actions regardless of overlaying widgets
-                    try:
-                        img_menu = tk.Menu(img_label, tearoff=0)
-                        try:
-                            img_menu.configure(bg=menu_bg, fg=menu_fg, activebackground=menu_active_bg, activeforeground=menu_active_fg)
                         except Exception:
                             pass
-                        img_menu.add_command(label='Save Image', command=_save_image)
-                        img_menu.add_command(label='Copy Image', command=_copy_image)
 
-                        def _img_popup(event):
-                            try:
-                                img_menu.tk_popup(event.x_root, event.y_root)
-                            finally:
-                                img_menu.grab_release()
-
-                        # Bind to right-click and middle-click for different platforms
-                        img_label.bind('<Button-3>', _img_popup)
-                        img_label.bind('<Button-2>', _img_popup)
-                    except Exception as e:
-                        print('Image menu setup failed', e)
-                    # expose in bubble_frame for later access
-                    bubble_frame._attachment_image = img_label
+                    # add done-callback to future
+                    try:
+                        future.add_done_callback(_on_image_ready)
+                    except Exception:
+                        # Fallback: poll result in background
+                        pass
                 except Exception:
                     pass
     except Exception:
@@ -802,11 +829,21 @@ def recolor_message_bubble(bubble_frame, theme: dict):
             pass
     # Recolor message widget (textbox or label)
     try:
-        if getattr(bubble_frame, '_msg_is_textbox', False):
+        # CTk widgets use `text_color`, native tk.Label uses `fg`.
+        try:
             bubble_frame.msg_label.configure(text_color=text_color)
-        else:
-            bubble_frame.msg_label.configure(text_color=text_color)
-        bubble_frame.time_label.configure(text_color=timestamp_color)
+        except Exception:
+            try:
+                bubble_frame.msg_label.configure(fg=text_color)
+            except Exception:
+                pass
+        try:
+            bubble_frame.time_label.configure(text_color=timestamp_color)
+        except Exception:
+            try:
+                bubble_frame.time_label.configure(fg=timestamp_color)
+            except Exception:
+                pass
     except Exception:
         pass
     bubble_frame._theme_roles = {
