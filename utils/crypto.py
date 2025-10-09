@@ -13,6 +13,12 @@ from nacl.public import PrivateKey, PublicKey, SealedBox
 from nacl.secret import SecretBox
 from nacl.signing import SigningKey, VerifyKey
 from nacl.utils import random
+try:
+    from nacl.bindings import sodium_memzero
+    _HAS_SODIUM_MEMZERO = True
+except Exception:
+    sodium_memzero = None
+    _HAS_SODIUM_MEMZERO = False
 
 
 
@@ -70,6 +76,16 @@ def zero_bytes(data):
       function can zero them in-place. If an immutable `bytes` is passed we
       convert and zero the temporary copy (best-effort).
     """
+    # If libsodium's sodium_memzero is available, prefer it for better guarantees.
+    if _HAS_SODIUM_MEMZERO:
+        try:
+            # sodium_memzero accepts a writable buffer
+            sodium_memzero(data)
+            return
+        except Exception:
+            # Fall back to Python-level zeroing
+            pass
+
     if isinstance(data, bytearray):
         for i in range(len(data)):
             data[i] = 0
