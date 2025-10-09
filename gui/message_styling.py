@@ -166,6 +166,17 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
 
     # Decide side/anchor. If align_both_left is True, force left alignment for everyone.
     side_anchor = "w" if align_both_left else ("e" if is_you else "w")
+    # Compute packing side and padding so first messages and follow-ups align
+    if align_both_left:
+        _pack_side = 'left'
+        _pack_pad = (4, 6)
+    else:
+        if is_you:
+            _pack_side = 'right'
+            _pack_pad = (6, 4)
+        else:
+            _pack_side = 'left'
+            _pack_pad = (4, 6)
     row = ctk.CTkFrame(outer, fg_color="transparent")
     row.pack(fill='x')
     # If transparent mode enabled, bubble initial background is transparent
@@ -188,13 +199,7 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
     # Top sender label (bold)
     if not prev_same:
         # Pack bubble frame into the row first (keeps previous left/right alignment)
-        if align_both_left:
-            bubble_frame.pack(side='left', padx=(4, 6), pady=0)
-        else:
-            if is_you:
-                bubble_frame.pack(side='right', padx=(6, 4), pady=0)
-            else:
-                bubble_frame.pack(side='left', padx=(4, 6), pady=0)
+        bubble_frame.pack(side=_pack_side, padx=_pack_pad, pady=0)
 
         # Create a small sender row inside the bubble (no avatar)
         try:
@@ -218,10 +223,8 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
             bubble_frame.sender_label.pack(anchor=side_anchor, padx=10, pady=(6, 0))
     else:
         # No avatar, compact placement for continuation messages
-        if align_both_left:
-            bubble_frame.pack(side='left', padx=12, pady=0)
-        else:
-            bubble_frame.pack(side=('right' if is_you else 'left'), padx=12 if is_you else 12, pady=0)
+        # Use the same packing side and padding as the initial message so runs align
+        bubble_frame.pack(side=_pack_side, padx=_pack_pad, pady=0)
 
     # Quick image-attachment hint (extension-based) so we can adjust caption/text placement
     is_image_attachment = False
