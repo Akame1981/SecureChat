@@ -501,7 +501,100 @@ class WhisprApp(ctk.CTk):
 
 
     def open_settings(self):
-        SettingsWindow(self, self)
+        """Open settings as an in-place panel inside the main window.
+
+        Falls back to the existing SettingsWindow Toplevel if the layout isn't ready.
+        """
+        try:
+            from gui.settings.window import SettingsPanel
+        except Exception:
+            # fallback: open legacy toplevel window
+            try:
+                SettingsWindow(self, self)
+            except Exception:
+                pass
+            return
+
+        # If chat_frame or main_frame not ready, open legacy toplevel
+        parent = getattr(self, 'chat_frame', getattr(self, 'main_frame', None))
+        if parent is None:
+            try:
+                SettingsWindow(self, self)
+            except Exception:
+                pass
+            return
+
+        # If already open, ignore
+        if hasattr(self, 'settings_panel') and getattr(self, 'settings_panel'):
+            return
+
+        # Hide primary chat widgets so settings can occupy the area
+        self._settings_hidden = {}
+        try:
+            for name in ('pub_frame', 'messages_container', 'input_frame'):
+                w = getattr(self, name, None)
+                if w and hasattr(w, 'pack_forget'):
+                    self._settings_hidden[name] = w
+                    try:
+                        w.pack_forget()
+                    except Exception:
+                        try:
+                            w.grid_forget()
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        # Create and pack panel
+        try:
+            self.settings_panel = SettingsPanel(parent, self)
+            self.settings_panel.pack(fill='both', expand=True)
+        except Exception:
+            # On failure, try legacy window and restore hidden widgets
+            try:
+                SettingsWindow(self, self)
+            except Exception:
+                pass
+            finally:
+                try:
+                    for w in getattr(self, '_settings_hidden', {}).values():
+                        try:
+                            w.pack(fill='x')
+                        except Exception:
+                            try:
+                                w.grid()
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+    def on_settings_panel_closed(self):
+        """Restore UI after in-place settings panel is closed."""
+        try:
+            # clear reference
+            if hasattr(self, 'settings_panel'):
+                self.settings_panel = None
+        except Exception:
+            pass
+
+        # restore hidden widgets in a best-effort order
+        try:
+            for name in ('pub_frame', 'messages_container', 'input_frame'):
+                w = None
+                if hasattr(self, '_settings_hidden') and name in self._settings_hidden:
+                    w = self._settings_hidden.get(name)
+                elif hasattr(self, name):
+                    w = getattr(self, name)
+                if w:
+                    try:
+                        w.pack(fill='x' if name != 'messages_container' else 'both', expand=(name == 'messages_container'))
+                    except Exception:
+                        try:
+                            w.grid()
+                        except Exception:
+                            pass
+        except Exception:
+            pass
 
 
     # ---------------- Recipients ----------------
