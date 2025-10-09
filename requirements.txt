@@ -17,3 +17,4 @@ python-multipart
 msgpack
 websocket-client
 websockets
+sqlcipher3-wheels
