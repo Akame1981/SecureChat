@@ -12,6 +12,7 @@ venv/
 env/
 .venv/
 
+
 ############################################################
 # Sensitive / Runtime Data
 ############################################################
@@ -23,6 +24,7 @@ key.pem
 analytics_events.log
 .env
 server_utils/analytics_backend/.env
+updates/
 
 ############################################################
 # Node / Frontend Artifacts
