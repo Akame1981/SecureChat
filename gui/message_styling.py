@@ -301,6 +301,30 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
         bubble_frame.msg_label = lbl
         bubble_frame._msg_is_textbox = False
 
+    # If this message references an attachment ID but doesn't include inline data,
+    # it's likely going to be fetched/decoded asynchronously. In that case hide
+    # the label text so the bubble shows only the background color instead of
+    # any loading/caption text. The real content (image/caption) will be added
+    # when the background loader completes.
+    try:
+        if attachment_meta and isinstance(attachment_meta, dict):
+            att_id = attachment_meta.get('att_id')
+            has_inline = bool(attachment_meta.get('file_b64') or attachment_meta.get('blob'))
+            # If we have an att_id but no inline blob, assume lazy fetch and hide text
+            if att_id and not has_inline:
+                try:
+                    # replace visible text with empty string to show only bubble bg
+                    bubble_frame.msg_label.configure(text="")
+                except Exception:
+                    try:
+                        # fallback for tk.Label
+                        bubble_frame.msg_label.configure(text=" ")
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+        bubble_frame._msg_is_textbox = False
+
     # If this appears to be an image attachment, replace the large placeholder text with a compact caption
     try:
         if is_image_attachment and isinstance(bubble_frame.msg_label, (ctk.CTkLabel, ctk.CTkTextbox)):
