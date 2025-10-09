@@ -187,44 +187,35 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
 
     # Top sender label (bold)
     if not prev_same:
-        avatar_size = 28
-        avatar_img = None
-        try:
-            if display_sender != "You":
-                avatar_img = generate_identicon(sender_pub, size=avatar_size)
-            else:
-                avatar_img = generate_identicon(my_pub_hex, size=avatar_size)
-        except Exception:
-            avatar_img = None
-        avatar_label = None
-        if avatar_img:
-            try:
-                avatar_ctk = ctk.CTkImage(light_image=avatar_img, dark_image=avatar_img, size=(avatar_size, avatar_size))
-                avatar_label = ctk.CTkLabel(row, image=avatar_ctk, text="", width=avatar_size, height=avatar_size, corner_radius=avatar_size//2)
-                avatar_label._avatar_ctk_image = avatar_ctk
-            except Exception:
-                pass
-        # If both aligned left, put avatar then bubble on left for everyone
+        # Pack bubble frame into the row first (keeps previous left/right alignment)
         if align_both_left:
-            if avatar_label:
-                avatar_label.pack(side='left', padx=(6, 4))
             bubble_frame.pack(side='left', padx=(4, 6), pady=0)
         else:
             if is_you:
                 bubble_frame.pack(side='right', padx=(6, 4), pady=0)
-                if avatar_label:
-                    avatar_label.pack(side='right', padx=(4, 6))
             else:
-                if avatar_label:
-                    avatar_label.pack(side='left', padx=(6, 4))
                 bubble_frame.pack(side='left', padx=(4, 6), pady=0)
-        bubble_frame.sender_label = ctk.CTkLabel(
-            bubble_frame,
-            text=display_sender,
-            text_color=text_color,
-            font=("Roboto", 9, "bold")
-        )
-        bubble_frame.sender_label.pack(anchor=side_anchor, padx=10, pady=(6, 0))
+
+        # Create a small sender row inside the bubble (no avatar)
+        try:
+            sender_row = ctk.CTkFrame(bubble_frame, fg_color="transparent")
+            sender_row.pack(fill='x', anchor=side_anchor, padx=10, pady=(6, 0))
+            bubble_frame.sender_label = ctk.CTkLabel(
+                sender_row,
+                text=display_sender,
+                text_color=text_color,
+                font=("Roboto", 9, "bold")
+            )
+            bubble_frame.sender_label.pack(side='left')
+        except Exception:
+            # Fallback: attach sender label directly to bubble
+            bubble_frame.sender_label = ctk.CTkLabel(
+                bubble_frame,
+                text=display_sender,
+                text_color=text_color,
+                font=("Roboto", 9, "bold")
+            )
+            bubble_frame.sender_label.pack(anchor=side_anchor, padx=10, pady=(6, 0))
     else:
         # No avatar, compact placement for continuation messages
         if align_both_left:
