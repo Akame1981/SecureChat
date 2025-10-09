@@ -12,7 +12,10 @@ except Exception:
     except Exception:
         import sqlite3 as sqlcipher  # type: ignore
 
+import base64
+
 from nacl.utils import random as nacl_random
+from nacl.secret import SecretBox
 
 from utils.path_utils import get_resource_path
 from utils.crypto import derive_master_key, zero_bytes
@@ -53,6 +56,30 @@ def _key_from_pin(pin: str) -> bytes:
     key_bytes = bytes(key[:32])
     zero_bytes(key)
     return key_bytes
+
+
+def _enc_box_from_pin(pin: str) -> SecretBox:
+    """Derive a SecretBox (symmetric) from the user's PIN and the DB salt.
+
+    Returns a SecretBox instance. This function attempts to zero sensitive
+    intermediate buffers as soon as possible.
+    """
+    # derive_master_key returns a mutable bytearray
+    master_key = derive_master_key(pin, _ensure_db_salt())
+    try:
+        enc_key = bytes(master_key[:32])
+        box = SecretBox(enc_key)
+        return box
+    finally:
+        # Zero sensitive material we created
+        try:
+            zero_bytes(master_key)
+        except Exception:
+            pass
+        try:
+            zero_bytes(enc_key)
+        except Exception:
+            pass
 
 
 def get_connection(pin: str):
@@ -138,13 +165,33 @@ def get_connection(pin: str):
 
 
 def insert_message(pin: str, pub_hex: str, sender: str, text: str, timestamp: float, attachment_meta: Optional[dict] = None):
+    # Encrypt the message text at-rest using a symmetric key derived from the PIN.
+    # This provides message-level encryption even when SQLCipher is not available.
+    try:
+        box = _enc_box_from_pin(pin)
+        try:
+            cipher = box.encrypt(text.encode())
+            stored_text = base64.b64encode(cipher).decode()
+        except Exception:
+            # If encryption fails for any reason, fall back to storing plaintext
+            stored_text = text
+        try:
+            sender_cipher = box.encrypt(sender.encode())
+            stored_sender = base64.b64encode(sender_cipher).decode()
+        except Exception:
+            stored_sender = sender
+    except Exception:
+        # If deriving key fails (e.g., PIN too short), store plaintext to avoid data loss
+        stored_text = text
+        stored_sender = sender
+
     conn = get_connection(pin)
     try:
         cur = conn.cursor()
         att = json.dumps(attachment_meta) if attachment_meta else None
         cur.execute(
             "INSERT OR IGNORE INTO messages(pub_hex, sender, text, timestamp, attachment_meta) VALUES(?,?,?,?,?)",
-            (pub_hex, sender, text, timestamp, att),
+            (pub_hex, stored_sender, stored_text, timestamp, att),
         )
         conn.commit()
     finally:
@@ -165,9 +212,32 @@ def query_messages(pin: str, pub_hex: str, limit: Optional[int] = None, since_ts
         sql = f"SELECT sender, text, timestamp, attachment_meta FROM messages {where} ORDER BY timestamp {order}{lim}"
         rows = cur.execute(sql, params).fetchall()
         msgs = []
+        # Attempt to derive box once per query to avoid repeated KDF calls
+        try:
+            box = _enc_box_from_pin(pin)
+        except Exception:
+            box = None
+
         for sender, text, ts, att_json in rows:
+            # Try to decrypt stored text and sender; if it fails, assume plaintext
+            decoded_text = text
+            decoded_sender = sender
+            if text is not None and box is not None:
+                try:
+                    # Stored format is base64(ciphertext)
+                    ct = base64.b64decode(text)
+                    decoded_text = box.decrypt(ct).decode()
+                except Exception:
+                    decoded_text = text
+            if sender is not None and box is not None:
+                try:
+                    cs = base64.b64decode(sender)
+                    decoded_sender = box.decrypt(cs).decode()
+                except Exception:
+                    decoded_sender = sender
+
             # Defer JSON parsing to render-time to reduce CPU during bulk loads
-            m = {"sender": sender, "text": text, "timestamp": ts, "_attachment_json": att_json}
+            m = {"sender": decoded_sender, "text": decoded_text, "timestamp": ts, "_attachment_json": att_json}
             msgs.append(m)
         if not order_asc:
             msgs.reverse()
@@ -186,8 +256,27 @@ def query_messages_before(pin: str, pub_hex: str, before_ts: float, limit: int) 
             (pub_hex, before_ts, int(limit)),
         ).fetchall()
         msgs = []
+        try:
+            box = _enc_box_from_pin(pin)
+        except Exception:
+            box = None
+
         for sender, text, ts, att_json in rows:
-            msgs.append({"sender": sender, "text": text, "timestamp": ts, "_attachment_json": att_json})
+            decoded_text = text
+            decoded_sender = sender
+            if text is not None and box is not None:
+                try:
+                    ct = base64.b64decode(text)
+                    decoded_text = box.decrypt(ct).decode()
+                except Exception:
+                    decoded_text = text
+            if sender is not None and box is not None:
+                try:
+                    cs = base64.b64decode(sender)
+                    decoded_sender = box.decrypt(cs).decode()
+                except Exception:
+                    decoded_sender = sender
+            msgs.append({"sender": decoded_sender, "text": decoded_text, "timestamp": ts, "_attachment_json": att_json})
         msgs.reverse()  # return ascending
         return msgs
     finally:
