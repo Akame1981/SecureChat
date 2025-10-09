@@ -102,4 +102,38 @@ def get_recipient_name(pub_key: str, pin: str):
     return None
 
 
+def ensure_recipient_exists(pub_key: str, pin: str, preferred_name: str | None = None) -> str:
+    """Ensure a recipient entry exists for the given public key.
+
+    - If the key already exists, return its name.
+    - Else, create a new recipient with a generated unique name and return it.
+    Name generation: preferred_name if provided and unique; otherwise
+    "Unknown-<first6>" with a numeric suffix if needed to avoid collisions.
+    """
+    if not pub_key:
+        raise ValueError("pub_key is required")
+
+    recipients = load_recipients(pin)
+    normalized = pub_key.strip().lower()
+
+    # If key already present, return existing name
+    for name, key in recipients.items():
+        if key.strip().lower() == normalized:
+            return name
+
+    # Propose a base name
+    base = preferred_name.strip() if preferred_name else f"Unknown-{normalized[:6]}"
+    candidate = base
+    i = 1
+    # Ensure uniqueness among names
+    while candidate in recipients:
+        i += 1
+        candidate = f"{base}-{i}"
+
+    # Add and persist
+    recipients[candidate] = normalized
+    save_recipients(recipients, pin)
+    return candidate
+
+
 
