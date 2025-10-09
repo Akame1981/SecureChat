@@ -31,7 +31,8 @@ def store_attachment(data: bytes, pin: str) -> str:
     master = derive_master_key(pin, salt)
     try:
         box = SecretBox(bytes(master[:32]))
-        enc = box.encrypt(data)
+        # Use explicit nonce so attachments encrypted twice won't match
+        enc = box.encrypt(data, random(SecretBox.NONCE_SIZE))
         blob = MARKER + salt + enc
         tmp = path + '.tmp'
         with open(tmp, 'wb') as f:

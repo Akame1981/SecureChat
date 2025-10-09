@@ -31,7 +31,8 @@ def encrypt_data(data: dict, pin: str) -> bytes:
     try:
         box = SecretBox(bytes(master_key[:32]))
         json_bytes = json.dumps(data).encode()
-        encrypted = box.encrypt(json_bytes)
+        # Use explicit random nonce for non-deterministic encryption
+        encrypted = box.encrypt(json_bytes, random(SecretBox.NONCE_SIZE))
         return salt + encrypted
     finally:
         zero_bytes(master_key)
