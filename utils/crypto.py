@@ -148,7 +148,9 @@ def save_key(private_key: PrivateKey, signing_key: SigningKey, pin: str, usernam
     # Store username as JSON, then keys
     username_bytes = json.dumps({"username": username}).encode()
     data = len(username_bytes).to_bytes(2, "big") + username_bytes + private_key.encode() + signing_key.encode()
-    encrypted = box.encrypt(data)
+    # Explicitly generate a fresh random nonce so encryption is non-deterministic
+    nonce = random(SecretBox.NONCE_SIZE)
+    encrypted = box.encrypt(data, nonce)
     tag = hmac.new(bytes(hmac_key), encrypted, hashlib.sha256).digest()
 
     # Atomic write: write to a temp file then replace
