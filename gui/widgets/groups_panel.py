@@ -5,6 +5,7 @@ from datetime import datetime
 from gui.widgets.group_settings import GroupSettingsDialog
 from gui.identicon import generate_identicon
 import threading
+from utils.recipients import get_recipient_name
 
 from utils.group_manager import GroupManager
 from utils.db import store_my_group_key
@@ -524,11 +525,37 @@ class GroupsPanel(ctk.CTkFrame):
                 stamp = datetime.fromtimestamp(float(ts)).strftime("%H:%M")
         except Exception:
             stamp = ""
-        header = f"{sender}  {stamp}" if stamp else sender
+        display = self._resolve_sender_display(sender)
+        header = f"{display}  {stamp}" if stamp else display
         ctk.CTkLabel(bubble, text=header, font=("Segoe UI", 11, "bold"),
                      text_color=self.theme.get("sidebar_text", "white")).pack(anchor="w", padx=8, pady=(6, 0))
         ctk.CTkLabel(bubble, text=text, font=("Segoe UI", 12),
                      text_color=self.theme.get("sidebar_text", "white"), wraplength=800, justify="left").pack(anchor="w", padx=8, pady=(0, 8))
+
+    def _resolve_sender_display(self, sender_id: str | None) -> str:
+        try:
+            if not sender_id:
+                return "?"
+            # Map my own key to my username (from PIN dialog), fallback to "You"
+            if hasattr(self.app, 'my_pub_hex') and sender_id == getattr(self.app, 'my_pub_hex', ''):
+                uname = getattr(self.app, 'username', None)
+                return uname or "You"
+            if sender_id == "You":
+                uname = getattr(self.app, 'username', None)
+                return uname or "You"
+            # Resolve from local recipients
+            name = None
+            try:
+                name = get_recipient_name(sender_id, getattr(self.app, 'pin', ''))
+            except Exception:
+                name = None
+            if name:
+                return name
+            # Fallback: short key
+            sid = str(sender_id)
+            return f"{sid[:8]}…" if len(sid) > 9 else sid
+        except Exception:
+            return str(sender_id) if sender_id else "?"
 
     # ----- Helpers -----
     def _schedule_poll(self):
