@@ -3,5 +3,8 @@
     "custom_url": "http://127.0.0.1:8000",
     "use_cert": false,
     "cert_path": "utils/cert.pem",
-    "theme_name": "Dark"
+    "max_messages_per_recipient": 20,
+    "max_messages_per_second": 10,
+    "message_ttl_seconds": 60,
+    "attachment_max_size_bytes": 10485760
 }
