@@ -6,6 +6,7 @@ from gui.widgets.group_settings import GroupSettingsDialog
 from gui.identicon import generate_identicon
 import threading
 from utils.recipients import get_recipient_name
+from tkinter import messagebox
 
 from utils.group_manager import GroupManager
 from utils.db import store_my_group_key
@@ -539,10 +540,19 @@ class GroupsPanel(ctk.CTkFrame):
 
     def _open_channel_menu(self, event, channel_id: str, channel_name: str, btn_widget):
         try:
+            # Determine my role to enable/disable destructive items
+            my_role = None
+            try:
+                info = self.gm.client.get_my_role(self.selected_group_id)
+                my_role = (info or {}).get("role")
+            except Exception:
+                my_role = None
+            is_admin = my_role in ("owner", "admin")
+
             menu = tk.Menu(self, tearoff=0)
             menu.add_command(label="Open", command=lambda: self._select_channel(channel_id, channel_name))
-            menu.add_command(label="Rename…", command=lambda: self._rename_channel_prompt(channel_id, channel_name))
-            menu.add_command(label="Delete…", command=lambda: self._delete_channel_confirm(channel_id, channel_name))
+            menu.add_command(label="Rename…", command=lambda: self._rename_channel_prompt(channel_id, channel_name), state=("normal" if is_admin else "disabled"))
+            menu.add_command(label="Delete…", command=lambda: self._delete_channel_confirm(channel_id, channel_name), state=("normal" if is_admin else "disabled"))
             menu.add_separator()
             menu.add_command(label="Channel Settings", command=lambda: self._open_channel_settings(channel_id, channel_name))
             # Show at mouse position
@@ -574,9 +584,9 @@ class GroupsPanel(ctk.CTkFrame):
 
     def _delete_channel_confirm(self, channel_id: str, cname: str):
         try:
-            # Quick confirm via simpledialog; could be a custom modal later
-            ans = simpledialog.askstring("Delete Channel", f"Type the channel name to confirm delete: {cname}", parent=self)
-            if not ans or ans.strip() != cname:
+            # Proper confirm modal
+            ok = messagebox.askyesno("Delete Channel", f"Are you sure you want to delete '#{cname}'? This cannot be undone.")
+            if not ok:
                 return
             self.gm.client.delete_channel(channel_id)
             # If we deleted the selected channel, clear selection
@@ -595,9 +605,105 @@ class GroupsPanel(ctk.CTkFrame):
                 pass
 
     def _open_channel_settings(self, channel_id: str, channel_name: str):
-        # Placeholder for future per-channel settings dialog
         try:
-            self.app.notifier.show("Channel settings coming soon", type_="info")
+            ChannelSettingsDialog(self, self.app, self.gm, channel_id, channel_name, self.theme)
+        except Exception as e:
+            try:
+                self.app.notifier.show(f"Failed to open channel settings: {e}", type_="error")
+            except Exception:
+                pass
+
+
+class ChannelSettingsDialog(ctk.CTkToplevel):
+    def __init__(self, parent, app, gm, channel_id: str, channel_name: str, theme: dict | None = None):
+        super().__init__(parent)
+        self.app = app
+        self.gm = gm
+        self.cid = channel_id
+        self.cname = channel_name
+        self.theme = theme or {}
+        self.title(f"Channel Settings - #{channel_name}")
+        self.geometry("480x420")
+        self.transient(parent)
+        self.grab_set()
+
+        # Permissions view (role-based info)
+        role_frame = ctk.CTkFrame(self, fg_color="transparent")
+        role_frame.pack(fill="x", padx=10, pady=(10, 6))
+        self.role_var = tk.StringVar(value="?")
+        ctk.CTkLabel(role_frame, text="Your role:").pack(side="left")
+        ctk.CTkEntry(role_frame, textvariable=self.role_var, width=120).pack(side="left", padx=6)
+        try:
+            info = self.gm.client.get_my_role(getattr(app, 'groups_panel', None).selected_group_id if hasattr(app, 'groups_panel') else None)
+            if info and info.get("role"):
+                self.role_var.set(info.get("role"))
+        except Exception:
+            pass
+
+        # Topic/Description
+        meta_frame = ctk.CTkFrame(self, fg_color="transparent")
+        meta_frame.pack(fill="x", padx=10, pady=(0, 6))
+        ctk.CTkLabel(meta_frame, text="Topic").pack(anchor="w")
+        self.topic_var = tk.StringVar(value="")
+        ctk.CTkEntry(meta_frame, textvariable=self.topic_var, width=420).pack(fill="x", padx=0, pady=(0, 6))
+        ctk.CTkLabel(meta_frame, text="Description").pack(anchor="w")
+        self.desc = ctk.CTkTextbox(meta_frame, width=420, height=120)
+        self.desc.pack(fill="x")
+
+        # Notifications (client-side preference per channel)
+        notif_frame = ctk.CTkFrame(self, fg_color="transparent")
+        notif_frame.pack(fill="x", padx=10, pady=(10, 6))
+        self.notif_var = tk.BooleanVar(value=True)
+        ctk.CTkSwitch(notif_frame, text="Enable notifications for this channel", variable=self.notif_var).pack(anchor="w")
+
+        # Buttons
+        btns = ctk.CTkFrame(self, fg_color="transparent")
+        btns.pack(fill="x", padx=10, pady=10)
+        ctk.CTkButton(btns, text="Save", command=self._save).pack(side="left")
+        ctk.CTkButton(btns, text="Close", command=self.destroy, fg_color=self.theme.get("cancel_button", "#9a9a9a"), hover_color=self.theme.get("cancel_button_hover", "#7a7a7a")).pack(side="left", padx=6)
+
+        self._hydrate()
+
+    def _hydrate(self):
+        # Load meta
+        try:
+            meta = self.gm.client.get_channel_meta(self.cid)
+            if meta:
+                self.topic_var.set(meta.get("topic") or "")
+                try:
+                    self.desc.delete("1.0", tk.END)
+                    self.desc.insert("1.0", meta.get("description") or "")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Load per-channel notif preference from app settings memory (no file write yet)
+        try:
+            key = f"notif:{self.cid}"
+            current = getattr(self.app, "_channel_notifs", {}).get(key, True)
+            self.notif_var.set(bool(current))
+        except Exception:
+            pass
+
+    def _save(self):
+        # Save meta to server
+        try:
+            self.gm.client.set_channel_meta(self.cid, self.topic_var.get().strip() or None, self.desc.get("1.0", tk.END).strip() or None)
+        except Exception as e:
+            try:
+                self.app.notifier.show(f"Save failed: {e}", type_="error")
+            except Exception:
+                pass
+            return
+        # Save per-channel notif in-memory preference (could be persisted later)
+        try:
+            if not hasattr(self.app, "_channel_notifs"):
+                self.app._channel_notifs = {}
+            self.app._channel_notifs[f"notif:{self.cid}"] = bool(self.notif_var.get())
+        except Exception:
+            pass
+        try:
+            self.app.notifier.show("Channel settings saved", type_="success")
         except Exception:
             pass
 

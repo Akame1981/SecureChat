@@ -3,7 +3,7 @@ from typing import Optional
 import secrets
 import time
 
-from .db import SessionLocal, init_db, Group, GroupMember, Channel, GroupMessage
+from .db import SessionLocal, init_db, Group, GroupMember, Channel, GroupMessage, ChannelMeta
 from .schemas import (
     CreateGroupRequest,
     CreateGroupResponse,
@@ -245,6 +245,56 @@ def list_channels(group_id: str, user_id: str):
                 for c in rows
             ]
         }
+    finally:
+        db.close()
+
+
+@router.get("/channels/meta")
+def get_channel_meta(channel_id: str, user_id: str):
+    db = SessionLocal()
+    try:
+        ch = db.query(Channel).filter(Channel.id == channel_id).first()
+        if not ch:
+            raise HTTPException(status_code=404, detail="Channel not found")
+        _require_member(db, ch.group_id, user_id)
+        meta = db.query(ChannelMeta).filter(ChannelMeta.channel_id == channel_id).first()
+        return {
+            "topic": meta.topic if meta else None,
+            "description": meta.description if meta else None,
+        }
+    finally:
+        db.close()
+
+
+@router.post("/channels/meta/set")
+def set_channel_meta(channel_id: str, user_id: str, topic: str | None = None, description: str | None = None):
+    db = SessionLocal()
+    try:
+        ch = db.query(Channel).filter(Channel.id == channel_id).first()
+        if not ch:
+            raise HTTPException(status_code=404, detail="Channel not found")
+        gm = _require_member(db, ch.group_id, user_id)
+        # Allow any member to edit topic/description for now; adjust if needed
+        meta = db.query(ChannelMeta).filter(ChannelMeta.channel_id == channel_id).first()
+        if not meta:
+            meta = ChannelMeta(channel_id=channel_id)
+            db.add(meta)
+        meta.topic = topic
+        meta.description = description
+        db.commit()
+        return {"status": "ok"}
+    finally:
+        db.close()
+
+
+@router.get("/channels/role")
+def get_my_role(group_id: str, user_id: str):
+    db = SessionLocal()
+    try:
+        gm = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.user_id == user_id, GroupMember.pending == False).first()
+        if not gm:
+            raise HTTPException(status_code=403, detail="Not a member")
+        return {"role": gm.role}
     finally:
         db.close()
 
