@@ -34,6 +34,14 @@ class GroupSettingsDialog(ctk.CTkToplevel):
         self.name_entry.pack(side="left", padx=6)
         ctk.CTkButton(name_frame, text="Rename", command=self._rename_group).pack(side="left")
 
+        # Public toggle
+        pub_frame = ctk.CTkFrame(self, fg_color="transparent")
+        pub_frame.pack(fill="x", padx=10, pady=(0, 10))
+        ctk.CTkLabel(pub_frame, text="Public (discoverable)").pack(side="left")
+        self.is_public_var = tk.BooleanVar(value=False)
+        self.public_switch = ctk.CTkSwitch(pub_frame, text="", variable=self.is_public_var, command=self._toggle_public)
+        self.public_switch.pack(side="left", padx=8)
+
         # Rekey controls
         rekey_frame = ctk.CTkFrame(self, fg_color="transparent")
         rekey_frame.pack(fill="x", padx=10, pady=(0, 10))
@@ -52,6 +60,7 @@ class GroupSettingsDialog(ctk.CTkToplevel):
         self.members_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
         self._load_members()
+        self._hydrate_public_and_name()
 
         # Channels management
         chan_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -70,6 +79,29 @@ class GroupSettingsDialog(ctk.CTkToplevel):
             self.app.notifier.show("Rename requested (server route TBD)", type_="info")
         except Exception as e:
             self.app.notifier.show(str(e), type_="error")
+
+    def _hydrate_public_and_name(self):
+        """Initialize current is_public and name using list_groups (cheap and available)."""
+        try:
+            data = self.gm.list_groups()
+            groups = data.get("groups", [])
+            me = next((g for g in groups if g.get("id") == self.gid), None)
+            if me:
+                self.is_public_var.set(bool(me.get("is_public")))
+                self.name_var.set(me.get("name") or "")
+        except Exception:
+            pass
+
+    def _toggle_public(self):
+        try:
+            new_val = bool(self.is_public_var.get())
+            res = self.gm.client.set_group_public(self.gid, new_val)
+            self.is_public_var.set(bool(res.get("is_public", new_val)))
+            self.app.notifier.show("Group visibility updated", type_="success")
+        except Exception as e:
+            # revert UI switch on failure
+            self.is_public_var.set(not self.is_public_var.get())
+            self.app.notifier.show(f"Failed to update visibility: {e}", type_="error")
 
     def _rekey_group(self):
         try:
