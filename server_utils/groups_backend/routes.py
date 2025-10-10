@@ -1,0 +1,384 @@
+from fastapi import APIRouter, HTTPException
+from typing import Optional
+import secrets
+import time
+
+from .db import SessionLocal, init_db, Group, GroupMember, Channel, GroupMessage
+from .schemas import (
+    CreateGroupRequest,
+    CreateGroupResponse,
+    JoinGroupRequest,
+    LeaveGroupRequest,
+    ListGroupsResponse,
+    GroupInfo,
+    CreateChannelRequest,
+    RenameChannelRequest,
+    SendGroupMessageRequest,
+    FetchGroupMessagesRequest,
+)
+
+
+router = APIRouter(prefix="/groups", tags=["groups"])
+
+# Ensure DB schema is ready on module import
+init_db()
+
+
+def _require_member(db, group_id: str, user_id: str) -> GroupMember:
+    gm = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.user_id == user_id, GroupMember.pending == False).first()
+    if not gm:
+        raise HTTPException(status_code=403, detail="Not a group member")
+    return gm
+
+
+@router.post("/create", response_model=CreateGroupResponse)
+def create_group(req: CreateGroupRequest):
+    db = SessionLocal()
+    try:
+        invite_code = secrets.token_urlsafe(8)
+        g = Group(name=req.name, owner_id=req.owner_id, is_public=req.is_public, invite_code=invite_code, key_version=1)
+        db.add(g)
+        db.flush()
+        # Default text channel "general"
+        ch = Channel(group_id=g.id, name="general", type="text")
+        db.add(ch)
+        # Owner as member (owner role); encrypted_group_key set by clients later
+        gm = GroupMember(group_id=g.id, user_id=req.owner_id, role="owner", encrypted_group_key=None, key_version=1, pending=False)
+        db.add(gm)
+        db.commit()
+        return CreateGroupResponse(id=g.id, invite_code=invite_code)
+    finally:
+        db.close()
+
+
+@router.post("/join")
+def join_group(req: JoinGroupRequest):
+    db = SessionLocal()
+    try:
+        g: Optional[Group] = None
+        if req.invite_code:
+            g = db.query(Group).filter(Group.invite_code == req.invite_code).first()
+            if not g:
+                raise HTTPException(status_code=404, detail="Invalid invite code")
+        elif req.group_id:
+            g = db.query(Group).filter(Group.id == req.group_id).first()
+            if not g:
+                raise HTTPException(status_code=404, detail="Group not found")
+        else:
+            raise HTTPException(status_code=400, detail="invite_code or group_id required")
+
+        existing = db.query(GroupMember).filter(GroupMember.group_id == g.id, GroupMember.user_id == req.user_id).first()
+        if existing and not existing.pending:
+            return {"status": "already_member", "group_id": g.id}
+
+        if g.is_public or req.invite_code:
+            if existing:
+                existing.pending = False
+            else:
+                db.add(GroupMember(group_id=g.id, user_id=req.user_id, role="member", encrypted_group_key=None, key_version=g.key_version, pending=False))
+            db.commit()
+            return {"status": "joined", "group_id": g.id, "key_version": g.key_version}
+        else:
+            # Admin approval flow -> create pending request
+            if existing:
+                existing.pending = True
+            else:
+                db.add(GroupMember(group_id=g.id, user_id=req.user_id, role="member", encrypted_group_key=None, key_version=g.key_version, pending=True))
+            db.commit()
+            return {"status": "pending", "group_id": g.id}
+    finally:
+        db.close()
+
+
+@router.post("/approve")
+def approve_member(req: JoinGroupRequest):
+    if not req.group_id or not req.approve_user_id or not req.user_id:
+        raise HTTPException(status_code=400, detail="group_id, approve_user_id, user_id required")
+    db = SessionLocal()
+    try:
+        g = db.query(Group).filter(Group.id == req.group_id).first()
+        if not g:
+            raise HTTPException(status_code=404, detail="Group not found")
+        approver = db.query(GroupMember).filter(GroupMember.group_id == g.id, GroupMember.user_id == req.user_id).first()
+        if not approver or approver.role not in ("owner", "admin"):
+            raise HTTPException(status_code=403, detail="Only admins/owner can approve")
+        pending = db.query(GroupMember).filter(GroupMember.group_id == g.id, GroupMember.user_id == req.approve_user_id).first()
+        if not pending:
+            raise HTTPException(status_code=404, detail="Pending request not found")
+        pending.pending = False
+        db.commit()
+        return {"status": "approved"}
+    finally:
+        db.close()
+
+
+@router.post("/leave")
+def leave_group(req: LeaveGroupRequest):
+    db = SessionLocal()
+    try:
+        mem = db.query(GroupMember).filter(GroupMember.group_id == req.group_id, GroupMember.user_id == req.user_id).first()
+        if not mem:
+            return {"status": "not_member"}
+        db.delete(mem)
+        # Increment key_version on group to indicate clients must rotate
+        g = db.query(Group).filter(Group.id == req.group_id).first()
+        if g:
+            g.key_version = int((g.key_version or 1) + 1)
+        db.commit()
+        return {"status": "left", "new_key_version": g.key_version if g else None}
+    finally:
+        db.close()
+
+
+@router.get("/list", response_model=ListGroupsResponse)
+def list_groups(user_id: str):
+    db = SessionLocal()
+    try:
+        # Only non-pending memberships
+        q = (
+            db.query(Group)
+            .join(GroupMember, GroupMember.group_id == Group.id)
+            .filter(GroupMember.user_id == user_id, GroupMember.pending == False)
+        )
+        groups = [
+            GroupInfo(
+                id=g.id,
+                name=g.name,
+                is_public=bool(g.is_public),
+                owner_id=g.owner_id,
+                key_version=int(g.key_version or 1),
+            )
+            for g in q.all()
+        ]
+        return ListGroupsResponse(groups=groups)
+    finally:
+        db.close()
+
+
+@router.get("/discover")
+def discover_public_groups(query: Optional[str] = None, limit: int = 50):
+    db = SessionLocal()
+    try:
+        q = db.query(Group).filter(Group.is_public == True)
+        if query:
+            # SQLite lacks ILIKE; emulate case-insensitive search
+            pattern = f"%{query.lower()}%"
+            from sqlalchemy import func
+            q = q.filter(func.lower(Group.name).like(pattern))
+        q = q.order_by(Group.created_at.desc()).limit(int(limit))
+        items = [
+            {
+                "id": g.id,
+                "name": g.name,
+                "owner_id": g.owner_id,
+                "invite_code": g.invite_code,
+                "key_version": int(g.key_version or 1),
+                "created_at": g.created_at,
+            }
+            for g in q.all()
+        ]
+        return {"groups": items}
+    finally:
+        db.close()
+
+
+@router.post("/channels/create")
+def create_channel(req: CreateChannelRequest, user_id: str):
+    db = SessionLocal()
+    try:
+        gm = _require_member(db, req.group_id, user_id)
+        # Any member can create channel; permission model can be extended later
+        ch = Channel(group_id=req.group_id, name=req.name, type=req.type or "text")
+        db.add(ch)
+        db.commit()
+        return {"channel_id": ch.id}
+    finally:
+        db.close()
+
+
+@router.post("/channels/rename")
+def rename_channel(req: RenameChannelRequest, user_id: str):
+    db = SessionLocal()
+    try:
+        ch = db.query(Channel).filter(Channel.id == req.channel_id).first()
+        if not ch:
+            raise HTTPException(status_code=404, detail="Channel not found")
+        gm = _require_member(db, ch.group_id, user_id)
+        # Only admins/owner can rename for now
+        if gm.role not in ("owner", "admin"):
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        ch.name = req.name
+        db.commit()
+        return {"status": "renamed"}
+    finally:
+        db.close()
+
+
+@router.post("/messages/send")
+def send_group_message(req: SendGroupMessageRequest):
+    db = SessionLocal()
+    try:
+        # Validate membership and version
+        gm = _require_member(db, req.group_id, req.sender_id)
+        g = db.query(Group).filter(Group.id == req.group_id).first()
+        if not g:
+            raise HTTPException(status_code=404, detail="Group not found")
+        if int(req.key_version) != int(g.key_version or 1):
+            raise HTTPException(status_code=409, detail="Key version mismatch")
+        # Save ciphertext only
+        msg = GroupMessage(
+            group_id=req.group_id,
+            channel_id=req.channel_id,
+            sender_id=req.sender_id,
+            ciphertext=req.ciphertext,
+            nonce=req.nonce,
+            key_version=req.key_version,
+            timestamp=req.timestamp or time.time(),
+        )
+        db.add(msg)
+        db.commit()
+        return {"status": "ok", "id": msg.id, "timestamp": msg.timestamp}
+    finally:
+        db.close()
+
+
+@router.post("/messages/fetch")
+def fetch_group_messages(req: FetchGroupMessagesRequest, user_id: str):
+    db = SessionLocal()
+    try:
+        _require_member(db, req.group_id, user_id)
+        q = (
+            db.query(GroupMessage)
+            .filter(
+                GroupMessage.group_id == req.group_id,
+                GroupMessage.channel_id == req.channel_id,
+                GroupMessage.timestamp > (req.since or 0.0),
+            )
+            .order_by(GroupMessage.timestamp.asc())
+        )
+        if req.limit:
+            q = q.limit(int(req.limit))
+        rows = q.all()
+        return {
+            "messages": [
+                {
+                    "id": m.id,
+                    "sender_id": m.sender_id,
+                    "ciphertext": m.ciphertext,
+                    "nonce": m.nonce,
+                    "key_version": m.key_version,
+                    "timestamp": m.timestamp,
+                }
+                for m in rows
+            ]
+        }
+    finally:
+        db.close()
+
+
+@router.get("/members/keys")
+def get_member_keys(group_id: str):
+    """Return members and their encrypted_group_key for client distribution or reconciliation.
+
+    Clients should update encrypted_group_key when rekeying.
+    """
+    db = SessionLocal()
+    try:
+        g = db.query(Group).filter(Group.id == group_id).first()
+        if not g:
+            raise HTTPException(status_code=404, detail="Group not found")
+        ms = (
+            db.query(GroupMember)
+            .filter(GroupMember.group_id == group_id, GroupMember.pending == False)
+            .all()
+        )
+        return {
+            "key_version": g.key_version,
+            "members": [
+                {
+                    "user_id": m.user_id,
+                    "role": m.role,
+                    "encrypted_group_key": m.encrypted_group_key,
+                    "key_version": m.key_version,
+                }
+                for m in ms
+            ],
+        }
+    finally:
+        db.close()
+
+
+@router.post("/members/keys/update")
+def update_member_key(group_id: str, user_id: str, encrypted_key_b64: str, key_version: int):
+    db = SessionLocal()
+    try:
+        m = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.user_id == user_id).first()
+        if not m:
+            raise HTTPException(status_code=404, detail="Member not found")
+        m.encrypted_group_key = encrypted_key_b64
+        m.key_version = key_version
+        db.commit()
+        return {"status": "ok"}
+    finally:
+        db.close()
+
+
+@router.post("/invites/rotate")
+def rotate_invite(group_id: str, user_id: str):
+    db = SessionLocal()
+    try:
+        g = db.query(Group).filter(Group.id == group_id).first()
+        if not g:
+            raise HTTPException(status_code=404, detail="Group not found")
+        gm = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.user_id == user_id).first()
+        if not gm or gm.role not in ("owner", "admin"):
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        import secrets
+        g.invite_code = secrets.token_urlsafe(8)
+        db.commit()
+        return {"invite_code": g.invite_code}
+    finally:
+        db.close()
+
+
+@router.post("/members/ban")
+def ban_member(group_id: str, target_user_id: str, user_id: str):
+    """Admin/owner removes a member from the group and bumps key_version.
+
+    Clients must rekey. Server only updates version; key distribution is client-driven.
+    """
+    db = SessionLocal()
+    try:
+        g = db.query(Group).filter(Group.id == group_id).first()
+        if not g:
+            raise HTTPException(status_code=404, detail="Group not found")
+        actor = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.user_id == user_id).first()
+        if not actor or actor.role not in ("owner", "admin"):
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        target = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.user_id == target_user_id).first()
+        if not target:
+            return {"status": "not_member"}
+        db.delete(target)
+        g.key_version = int((g.key_version or 1) + 1)
+        db.commit()
+        return {"status": "banned", "new_key_version": g.key_version}
+    finally:
+        db.close()
+
+
+@router.post("/rekey")
+def rekey_group(group_id: str, user_id: str):
+    """Owner/Admin requests key_version increment. Clients then distribute new key."""
+    db = SessionLocal()
+    try:
+        g = db.query(Group).filter(Group.id == group_id).first()
+        if not g:
+            raise HTTPException(status_code=404, detail="Group not found")
+        actor = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.user_id == user_id).first()
+        if not actor or actor.role not in ("owner", "admin"):
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        g.key_version = int((g.key_version or 1) + 1)
+        db.commit()
+        return {"key_version": g.key_version}
+    finally:
+        db.close()

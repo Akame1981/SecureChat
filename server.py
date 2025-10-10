@@ -24,6 +24,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Groups backend
+try:
+    from server_utils.groups_backend.routes import router as groups_router  # type: ignore
+    app.include_router(groups_router)
+    print("✅ Groups backend routes enabled")
+except Exception as e:
+    print(f"⚠ Groups backend disabled: {e}")
+
 try:
     import redis
     try:
