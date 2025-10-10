@@ -188,7 +188,31 @@ class WhisprApp(ctk.CTk):
         # If keypair failed to load (incorrect PIN or user cancelled), show a
         # locked placeholder UI so the app remains open and user can retry.
         if not getattr(self, "private_key", None):
-            show_locked_screen(self)
+            try:
+                # Defensive: only attempt to show locked screen if the Tk root
+                # still exists. In some edge cases (dialogs calling
+                # sys.exit()/destroy), the Tcl interpreter may already be
+                # destroyed which causes a hard crash when creating widgets.
+                if getattr(self, 'winfo_exists', lambda: False)() and self.winfo_exists():
+                    show_locked_screen(self)
+                else:
+                    # Root doesn't exist anymore; abort initialization
+                    raise tk.TclError("Tk root not available")
+            except tk.TclError:
+                # If Tk was already destroyed, ensure we exit cleanly instead
+                # of raising an uncaught exception that crashes the process.
+                try:
+                    self.on_close()
+                except Exception:
+                    pass
+                try:
+                    sys.exit(0)
+                except SystemExit:
+                    raise
+            except Exception:
+                # Any other error when creating the locked screen should not
+                # stop the whole application startup; continue gracefully.
+                pass
         else:
             self._post_key_init()
 
