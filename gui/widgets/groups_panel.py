@@ -1,8 +1,9 @@
 import customtkinter as ctk
 import tkinter as tk
-from tkinter import simpledialog
+from tkinter import simpledialog, Toplevel
 
 from utils.group_manager import GroupManager
+from utils.db import store_my_group_key
 
 
 class GroupsPanel(ctk.CTkFrame):
@@ -12,52 +13,74 @@ class GroupsPanel(ctk.CTkFrame):
         self.theme = theme or {}
         self.gm = GroupManager(app)
 
-        # Left: groups list + actions
-        left = ctk.CTkFrame(self, fg_color=self.theme.get("sidebar_bg", "#2a2a3a"), width=280)
+        # State
+        self.selected_group_id: str | None = None
+        self.selected_channel_id: str | None = None
+        self._poll_job = None
+
+        # Left: search + groups list + actions
+        left = ctk.CTkFrame(self, fg_color=self.theme.get("sidebar_bg", "#2a2a3a"), width=300)
         left.pack(side="left", fill="y")
+
+        # Search / join entry
+        sframe = ctk.CTkFrame(left, fg_color="transparent")
+        sframe.pack(fill="x", padx=8, pady=(8, 4))
+        self.search = ctk.CTkEntry(sframe, placeholder_text="Search groups or paste invite code",
+                                   fg_color=self.theme.get("input_bg", "#2e2e3f"),
+                                   text_color=self.theme.get("input_text", "white"))
+        self.search.pack(side="left", expand=True, fill="x")
+        ctk.CTkButton(sframe, text="Go", width=50, fg_color=self.theme.get("sidebar_button", "#4a90e2"),
+                      hover_color=self.theme.get("sidebar_button_hover", "#357ABD"),
+                      command=self._search_or_join).pack(side="left", padx=(6, 0))
 
         # Actions
         actions = ctk.CTkFrame(left, fg_color="transparent")
-        actions.pack(fill="x", padx=8, pady=8)
+        actions.pack(fill="x", padx=8, pady=4)
         ctk.CTkButton(actions, text="New Group", command=self._create_group,
                       fg_color=self.theme.get("sidebar_button", "#4a90e2"),
                       hover_color=self.theme.get("sidebar_button_hover", "#357ABD")).pack(fill="x", pady=4)
-        ctk.CTkButton(actions, text="Join by Invite", command=self._join_by_invite,
+        ctk.CTkButton(actions, text="Discover", command=self._discover_public_modal,
                       fg_color=self.theme.get("sidebar_button", "#4a90e2"),
                       hover_color=self.theme.get("sidebar_button_hover", "#357ABD")).pack(fill="x", pady=4)
-        ctk.CTkButton(actions, text="Discover Public", command=self._discover_public,
-                      fg_color=self.theme.get("sidebar_button", "#4a90e2"),
-                      hover_color=self.theme.get("sidebar_button_hover", "#357ABD")).pack(fill="x", pady=4)
+        ctk.CTkButton(actions, text="Leave Group", command=self._leave_group,
+                      fg_color=self.theme.get("cancel_button", "#9a9a9a"),
+                      hover_color=self.theme.get("cancel_button_hover", "#7a7a7a")).pack(fill="x", pady=(4, 8))
 
         # Groups list
         self.groups_list = ctk.CTkScrollableFrame(left, fg_color=self.theme.get("sidebar_bg", "#2a2a3a"))
-        self.groups_list.pack(fill="both", expand=True, padx=8, pady=8)
+        self.groups_list.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
-        # Right: channels and messages
+        # Right: channels (left) + messages (right)
         right = ctk.CTkFrame(self, fg_color="transparent")
         right.pack(side="left", fill="both", expand=True)
 
-        # Top: group name + channel actions
+        # Top bar
         top = ctk.CTkFrame(right, fg_color=self.theme.get("pub_frame_bg", "#2e2e3f"))
         top.pack(fill="x", padx=10, pady=10)
         self.group_title = ctk.CTkLabel(top, text="", anchor="w", justify="left",
                                         text_color=self.theme.get("pub_text", "white"))
         self.group_title.pack(side="left", padx=10, pady=8)
+        ctk.CTkButton(top, text="Settings", command=self._open_group_settings,
+                      fg_color=self.theme.get("button_send", "#4a90e2"),
+                      hover_color=self.theme.get("button_send_hover", "#357ABD")).pack(side="right", padx=6)
         ctk.CTkButton(top, text="New Channel", command=self._create_channel,
                       fg_color=self.theme.get("button_send", "#4a90e2"),
-                      hover_color=self.theme.get("button_send_hover", "#357ABD")).pack(side="right", padx=8)
+                      hover_color=self.theme.get("button_send_hover", "#357ABD")).pack(side="right", padx=6)
 
-        # Channels list
-        self.channels_list = ctk.CTkScrollableFrame(right, fg_color=self.theme.get("background", "#2e2e3f"),
-                                                    height=120, corner_radius=8)
-        self.channels_list.pack(fill="x", padx=10, pady=(0, 10))
+        # Body split: channels list (left) and messages (right)
+        body = ctk.CTkFrame(right, fg_color="transparent")
+        body.pack(fill="both", expand=True)
 
-        # Messages area (reuses app display but isolated here)
-        self.messages = ctk.CTkScrollableFrame(right, fg_color=self.theme.get("background", "#2e2e3f"), corner_radius=10)
+        self.channels_list = ctk.CTkScrollableFrame(body, fg_color=self.theme.get("background", "#2e2e3f"), width=220)
+        self.channels_list.pack(side="left", fill="y", padx=(10, 6), pady=(0, 10))
+
+        center = ctk.CTkFrame(body, fg_color="transparent")
+        center.pack(side="left", fill="both", expand=True)
+
+        self.messages = ctk.CTkScrollableFrame(center, fg_color=self.theme.get("background", "#2e2e3f"), corner_radius=10)
         self.messages.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # Input area
-        input_frame = ctk.CTkFrame(right, fg_color="transparent")
+        input_frame = ctk.CTkFrame(center, fg_color="transparent")
         input_frame.pack(fill="x", padx=10, pady=(0, 10))
         self.input = ctk.CTkEntry(input_frame, placeholder_text="Message #channel",
                                   fg_color=self.theme.get("input_bg", "#2e2e3f"),
@@ -67,10 +90,7 @@ class GroupsPanel(ctk.CTkFrame):
                       fg_color=self.theme.get("button_send", "#4a90e2"),
                       hover_color=self.theme.get("button_send_hover", "#357ABD")).pack(side="left")
 
-        # Selection state
-        self.selected_group_id: str | None = None
-        self.selected_channel_id: str | None = None
-
+        # Populate
         self.refresh_groups()
 
     def refresh_theme(self, theme: dict):
@@ -82,6 +102,29 @@ class GroupsPanel(ctk.CTkFrame):
             pass
 
     # ----- Actions -----
+    def _search_or_join(self):
+        term = (self.search.get() or "").strip()
+        if not term:
+            return
+        # Try join by invite if looks like a compact code
+        if len(term) >= 6 and "://" not in term:
+            try:
+                res = self.gm.join_group_via_invite(term)
+                st = res.get("status")
+                if st == "joined":
+                    self.app.notifier.show("Joined group", type_="success")
+                elif st == "pending":
+                    self.app.notifier.show("Join request sent (pending)", type_="info")
+                else:
+                    self.app.notifier.show(str(res), type_="info")
+                self.refresh_groups()
+                return
+            except Exception:
+                # fall through to local filter
+                pass
+        # Local filter
+        self._filter_groups(term)
+
     def _create_group(self):
         name = simpledialog.askstring("Create Group", "Group name:", parent=self)
         if not name:
@@ -110,30 +153,55 @@ class GroupsPanel(ctk.CTkFrame):
         except Exception as e:
             self.app.notifier.show(f"Join failed: {e}", type_="error")
 
-    def _discover_public(self):
+    def _discover_public_modal(self):
         try:
             res = self.gm.client.discover_public()
             items = res.get("groups", [])
-            if not items:
-                self.app.notifier.show("No public groups found", type_="info")
-                return
-            # Simple chooser: show first few and let user pick by index
-            names = [f"{i+1}. {g.get('name')} ({g.get('id')[:6]})" for i, g in enumerate(items)]
-            choice = simpledialog.askstring("Discover", "Pick number to join:\n" + "\n".join(names[:10]), parent=self)
-            if not choice:
-                return
-            try:
-                idx = int(choice) - 1
-            except Exception:
-                return
-            if 0 <= idx < len(items):
-                inv = items[idx].get("invite_code")
-                if inv:
-                    self.gm.join_group_via_invite(inv)
-                    self.app.notifier.show("Joined group", type_="success")
-                    self.refresh_groups(select_id=items[idx].get("id"))
         except Exception as e:
             self.app.notifier.show(f"Discover failed: {e}", type_="error")
+            return
+        win = Toplevel(self)
+        win.title("Discover Public Groups")
+        win.geometry("420x480")
+        win.transient(self)
+        win.grab_set()
+
+        top = ctk.CTkFrame(win, fg_color="transparent")
+        top.pack(fill="x", padx=10, pady=10)
+        q = ctk.CTkEntry(top, placeholder_text="Search public groups")
+        q.pack(side="left", expand=True, fill="x")
+        def do_search():
+            try:
+                r = self.gm.client.discover_public(query=(q.get() or None))
+                self._render_discover_list(list_frame, r.get("groups", []))
+            except Exception:
+                pass
+        ctk.CTkButton(top, text="Search", command=do_search).pack(side="left", padx=6)
+
+        list_frame = ctk.CTkScrollableFrame(win, fg_color=self.theme.get("background", "#2e2e3f"))
+        list_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        self._render_discover_list(list_frame, items)
+
+    def _render_discover_list(self, parent, items: list[dict]):
+        for w in parent.winfo_children():
+            w.destroy()
+        for g in items:
+            row = ctk.CTkFrame(parent, fg_color=self.theme.get("input_bg", "#2e2e3f"))
+            row.pack(fill="x", padx=6, pady=4)
+            name = ctk.CTkLabel(row, text=g.get("name", "?"), font=("Segoe UI", 12, "bold"))
+            name.pack(side="left", padx=8, pady=6)
+            ctk.CTkButton(row, text="Join", width=80,
+                          command=lambda inv=g.get("invite_code"), gid=g.get("id"): self._join_discovered(inv, gid)).pack(side="right", padx=6)
+
+    def _join_discovered(self, invite_code: str | None, group_id: str | None):
+        if not invite_code:
+            return
+        try:
+            self.gm.join_group_via_invite(invite_code)
+            self.app.notifier.show("Joined group", type_="success")
+            self.refresh_groups(select_id=group_id)
+        except Exception as e:
+            self.app.notifier.show(f"Join failed: {e}", type_="error")
 
     def _create_channel(self):
         if not self.selected_group_id:
@@ -156,6 +224,25 @@ class GroupsPanel(ctk.CTkFrame):
             self._append_message("You", txt)
             self.input.delete(0, tk.END)
         except Exception as e:
+            # Attempt key-version recovery on 409 errors
+            msg = str(e)
+            if "409" in msg or "Key version" in msg:
+                try:
+                    info = self.gm.client.get_member_keys(self.selected_group_id)
+                    kv = int(info.get("key_version", 1))
+                    my = next((m for m in info.get("members", []) if m.get("user_id") == self.app.my_pub_hex), None)
+                    if my and my.get("encrypted_group_key"):
+                        from utils.group_crypto import decrypt_group_key_for_me
+                        key = decrypt_group_key_for_me(my["encrypted_group_key"], self.app.private_key)
+                        store_my_group_key(self.app.pin, self.selected_group_id, key, kv)
+                        # Retry once
+                        self.gm.send_text(self.selected_group_id, self.selected_channel_id, txt)
+                        self._append_message("You", txt)
+                        self.input.delete(0, tk.END)
+                        self.app.notifier.show("Recovered new group key", type_="success")
+                        return
+                except Exception:
+                    pass
             self.app.notifier.show(f"Send failed: {e}", type_="error")
 
     # ----- Lists -----
@@ -168,11 +255,15 @@ class GroupsPanel(ctk.CTkFrame):
         except Exception:
             groups = []
         for g in groups:
-            btn = ctk.CTkButton(self.groups_list, text=g.get("name"),
-                                command=lambda gid=g.get("id"), name=g.get("name"): self._select_group(gid, name),
-                                fg_color=self.theme.get("bubble_other", "#2a2a3a"),
-                                hover_color=self.theme.get("bubble_you", "#7289da"))
-            btn.pack(fill="x", padx=4, pady=4)
+            row = ctk.CTkFrame(self.groups_list, fg_color=self.theme.get("bubble_other", "#2a2a3a"))
+            row.pack(fill="x", padx=4, pady=4)
+            name = ctk.CTkLabel(row, text=g.get("name"), font=("Segoe UI", 12, "bold"))
+            name.pack(side="left", padx=8, pady=6)
+            tag_txt = "Public" if g.get("is_public") else "Private"
+            tag = ctk.CTkLabel(row, text=tag_txt, fg_color="#3b3b52", corner_radius=8, width=60)
+            tag.pack(side="left", padx=6)
+            ctk.CTkButton(row, text="Open", width=70,
+                          command=lambda gid=g.get("id"), n=g.get("name"): self._select_group(gid, n)).pack(side="right", padx=6)
         if select_id:
             # Find group by id and select
             for g in groups:
@@ -184,6 +275,13 @@ class GroupsPanel(ctk.CTkFrame):
         self.selected_group_id = group_id
         self.group_title.configure(text=f"{group_name}")
         self._load_channels(group_id)
+        # stop any previous polling
+        if self._poll_job:
+            try:
+                self.after_cancel(self._poll_job)
+            except Exception:
+                pass
+            self._poll_job = None
 
     def _load_channels(self, group_id: str, select_id: str | None = None):
         for w in self.channels_list.winfo_children():
@@ -198,7 +296,7 @@ class GroupsPanel(ctk.CTkFrame):
                                 command=lambda cid=ch.get("id"), name=ch.get("name"): self._select_channel(cid, name),
                                 fg_color=self.theme.get("input_bg", "#2e2e3f"),
                                 hover_color=self.theme.get("bubble_you", "#7289da"))
-            btn.pack(side="left", padx=4, pady=4)
+            btn.pack(fill="x", padx=4, pady=4)
         if select_id:
             for ch in chans:
                 if ch.get("id") == select_id:
@@ -216,6 +314,8 @@ class GroupsPanel(ctk.CTkFrame):
             msgs = []
         for m in msgs:
             self._append_message(m.get("sender_id"), m.get("text"))
+        # start polling for new messages
+        self._schedule_poll()
 
     def _append_message(self, sender: str, text: str):
         # Simple message card; use app.create_message_bubble if desired later
@@ -225,3 +325,117 @@ class GroupsPanel(ctk.CTkFrame):
                      text_color=self.theme.get("sidebar_text", "white")).pack(anchor="w", padx=8, pady=(6, 0))
         ctk.CTkLabel(bubble, text=text, font=("Segoe UI", 12),
                      text_color=self.theme.get("sidebar_text", "white"), wraplength=800, justify="left").pack(anchor="w", padx=8, pady=(0, 8))
+
+    # ----- Helpers -----
+    def _schedule_poll(self):
+        if not self.selected_group_id or not self.selected_channel_id:
+            return
+        # poll new messages every 2 seconds
+        def _tick():
+            try:
+                msgs = self.gm.fetch_messages(self.selected_group_id, self.selected_channel_id, since=0)
+                # naive: clear and redraw for now; can diff later
+                for w in self.messages.winfo_children():
+                    w.destroy()
+                for m in msgs:
+                    self._append_message(m.get("sender_id"), m.get("text"))
+            except Exception:
+                pass
+            self._poll_job = self.after(2000, _tick)
+        self._poll_job = self.after(2000, _tick)
+
+    def _filter_groups(self, term: str):
+        # simple UI-only filter: just rebuild buttons where name includes term
+        term = term.lower()
+        for w in self.groups_list.winfo_children():
+            w.destroy()
+        try:
+            data = self.gm.list_groups()
+            groups = [g for g in data.get("groups", []) if term in (g.get("name", "").lower())]
+        except Exception:
+            groups = []
+        for g in groups:
+            row = ctk.CTkFrame(self.groups_list, fg_color=self.theme.get("bubble_other", "#2a2a3a"))
+            row.pack(fill="x", padx=4, pady=4)
+            name = ctk.CTkLabel(row, text=g.get("name"), font=("Segoe UI", 12, "bold"))
+            name.pack(side="left", padx=8, pady=6)
+            tag_txt = "Public" if g.get("is_public") else "Private"
+            tag = ctk.CTkLabel(row, text=tag_txt, fg_color="#3b3b52", corner_radius=8, width=60)
+            tag.pack(side="left", padx=6)
+            ctk.CTkButton(row, text="Open", width=70,
+                          command=lambda gid=g.get("id"), n=g.get("name"): self._select_group(gid, n)).pack(side="right", padx=6)
+
+    def _open_group_settings(self):
+        if not self.selected_group_id:
+            return
+        gid = self.selected_group_id
+        win = Toplevel(self)
+        win.title("Group Settings")
+        win.geometry("520x520")
+        win.transient(self)
+        win.grab_set()
+
+        header = ctk.CTkFrame(win, fg_color="transparent")
+        header.pack(fill="x", padx=10, pady=10)
+        ctk.CTkLabel(header, text="Invite Code:").pack(side="left")
+        code_var = tk.StringVar(value="...")
+        entry = ctk.CTkEntry(header, textvariable=code_var, width=320)
+        entry.pack(side="left", padx=6)
+        def copy():
+            try:
+                self.app.clipboard_clear()
+                self.app.clipboard_append(entry.get())
+                self.app.notifier.show("Invite copied", type_="success")
+            except Exception:
+                pass
+        ctk.CTkButton(header, text="Copy", command=copy).pack(side="left")
+        def rotate():
+            try:
+                res = self.gm.client.rotate_invite(gid)
+                code_var.set(res.get("invite_code", ""))
+                self.app.notifier.show("Invite rotated", type_="success")
+            except Exception as e:
+                self.app.notifier.show(f"Rotate failed: {e}", type_="error")
+        ctk.CTkButton(win, text="Rotate Invite", command=rotate).pack(padx=10, pady=(0, 10), anchor="w")
+
+        # Members
+        members_frame = ctk.CTkScrollableFrame(win, fg_color=self.theme.get("background", "#2e2e3f"))
+        members_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        try:
+            info = self.gm.client.get_member_keys(gid)
+            code_var.set("" if not info else "")
+            # We don't get invite_code from this endpoint; keep last rotated value if any
+            members = info.get("members", []) if info else []
+        except Exception:
+            members = []
+        for m in members:
+            row = ctk.CTkFrame(members_frame, fg_color=self.theme.get("input_bg", "#2e2e3f"))
+            row.pack(fill="x", padx=6, pady=4)
+            ctk.CTkLabel(row, text=m.get("user_id")[:16] + "…").pack(side="left", padx=8, pady=6)
+            ctk.CTkLabel(row, text=m.get("role", "member"), fg_color="#3b3b52", corner_radius=8, width=70).pack(side="left", padx=6)
+            # Ban button (admin/owner enforcement happens server-side)
+            ctk.CTkButton(row, text="Ban", width=60,
+                          command=lambda uid=m.get("user_id"): self._ban_member(gid, uid)).pack(side="right", padx=6)
+
+    def _ban_member(self, group_id: str, user_id: str):
+        try:
+            self.gm.client.ban_member(group_id, user_id)
+            self.app.notifier.show("Member removed. Rekey required.", type_="warning")
+        except Exception as e:
+            self.app.notifier.show(f"Ban failed: {e}", type_="error")
+
+    def _leave_group(self):
+        if not self.selected_group_id:
+            return
+        try:
+            self.gm.client.leave_group(self.selected_group_id)
+            self.app.notifier.show("Left group (members should rekey)", type_="info")
+            self.selected_group_id = None
+            self.selected_channel_id = None
+            self.refresh_groups()
+            for w in self.channels_list.winfo_children():
+                w.destroy()
+            for w in self.messages.winfo_children():
+                w.destroy()
+        except Exception as e:
+            self.app.notifier.show(f"Leave failed: {e}", type_="error")
