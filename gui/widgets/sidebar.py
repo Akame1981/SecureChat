@@ -1,6 +1,7 @@
 # gui/widgets/sidebar.py
 import customtkinter as ctk
 import tkinter as tk
+import os
 from PIL import Image, ImageEnhance
 from utils.path_utils import get_resource_path
 from gui.identicon import generate_identicon
@@ -246,12 +247,32 @@ class Sidebar(ctk.CTkFrame):
             self.settings_btn.bind("<Leave>", lambda e: self.settings_btn.configure(text_color=avatar_text))
             self.settings_btn.configure(cursor="hand2")
 
-        # Add button (to the left of settings)
-        self.add_btn = ctk.CTkButton(
-            user_frame, text="➕", width=36, height=36, corner_radius=18,
-            fg_color=add_fg, hover_color=add_hover, text_color=avatar_text,
-            font=("Segoe UI", 18, "bold"), command=self.open_add_dialog
-        )
+        # Add button (to the left of settings) - prefer an image icon if available
+        try:
+            add_path = get_resource_path("gui/src/images/add_friend.png")
+            if not add_path or not os.path.exists(add_path):
+                raise FileNotFoundError
+            add_img = Image.open(add_path).resize((36, 36), Image.Resampling.LANCZOS)
+            add_ctk = ctk.CTkImage(light_image=add_img, dark_image=add_img, size=(36, 36))
+
+            # darker hover variant
+            darker = ImageEnhance.Brightness(add_img).enhance(0.78)
+            add_hover_ctk = ctk.CTkImage(light_image=darker, dark_image=darker, size=(36, 36))
+
+            self.add_btn = ctk.CTkLabel(user_frame, image=add_ctk, text="", fg_color="transparent")
+            self.add_btn.image = add_ctk
+            self.add_btn.hover_image = add_hover_ctk
+            self.add_btn.bind("<Button-1>", lambda e: self.open_add_dialog())
+            self.add_btn.bind("<Enter>", lambda e: self.add_btn.configure(image=self.add_btn.hover_image))
+            self.add_btn.bind("<Leave>", lambda e: self.add_btn.configure(image=self.add_btn.image))
+            self.add_btn.configure(cursor="hand2")
+        except Exception:
+            # Fallback to a simple CTkButton with a plus sign
+            self.add_btn = ctk.CTkButton(
+                user_frame, text="➕", width=36, height=36, corner_radius=18,
+                fg_color=add_fg, hover_color=add_hover, text_color=avatar_text,
+                font=("Segoe UI", 18, "bold"), command=self.open_add_dialog
+            )
 
         # Pack order: pack settings first (rightmost), then add button (left of settings)
         self.settings_btn.pack(side="right", padx=(8, 0))
