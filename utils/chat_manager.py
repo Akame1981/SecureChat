@@ -78,6 +78,15 @@ class ChatManager:
             if clear_existing:
                 for w in app.messages_container.winfo_children():
                     w.destroy()
+            else:
+                # Best-effort: if a 'Loading messages…' placeholder exists, clear it before rendering
+                try:
+                    kids = app.messages_container.winfo_children()
+                    if len(kids) == 1 and hasattr(kids[0], 'cget') and 'text' in kids[0].keys():
+                        if str(kids[0].cget('text')).lower().startswith('loading'):
+                            kids[0].destroy()
+                except Exception:
+                    pass
         except Exception:
             pass
 

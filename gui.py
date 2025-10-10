@@ -342,12 +342,24 @@ class WhisprApp(ctk.CTk):
         for widget in self.messages_container.winfo_children():
             widget.destroy()
 
+        # Show a lightweight loading placeholder (will be cleared by ChatManager render)
+        try:
+            theme = self.theme_manager.theme_colors.get(self.theme_manager.current_theme, {}) if hasattr(self, 'theme_manager') else {}
+            loading_lbl = ctk.CTkLabel(self.messages_container, text="Loading messages…",
+                                       text_color=theme.get("sidebar_text", "white"))
+            loading_lbl.pack(pady=8)
+        except Exception:
+            pass
+
         # Load messages non-blocking using ChatManager batched renderer
         if self.recipient_pub_hex:
             if hasattr(self, 'chat_manager'):
                 self.chat_manager.show_initial_messages(self.recipient_pub_hex)
             else:
                 # Fallback: synchronous (rare path if chat_manager missing)
+                # Clear the placeholder before synchronous rendering
+                for widget in self.messages_container.winfo_children():
+                    widget.destroy()
                 messages = load_messages(self.recipient_pub_hex, self.pin)
                 for msg in messages:
                     txt = msg.get("text", "")
