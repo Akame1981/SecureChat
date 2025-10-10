@@ -191,6 +191,68 @@ def get_connection(pin: str):
             )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_pub_ts ON messages(pub_hex, timestamp);")
             cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_unique ON messages(pub_hex, timestamp, sender, text);")
+            # Groups schema (client-side local cache + keys)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS groups (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    owner_id TEXT NOT NULL,
+                    is_public INTEGER DEFAULT 0,
+                    invite_code TEXT,
+                    key_version INTEGER DEFAULT 1,
+                    created_at REAL
+                );
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS group_members (
+                    group_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    role TEXT DEFAULT 'member',
+                    joined_at REAL,
+                    encrypted_group_key TEXT,
+                    key_version INTEGER DEFAULT 1,
+                    PRIMARY KEY (group_id, user_id)
+                );
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS channels (
+                    id TEXT PRIMARY KEY,
+                    group_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    type TEXT DEFAULT 'text',
+                    created_at REAL
+                );
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS group_messages (
+                    id TEXT PRIMARY KEY,
+                    group_id TEXT NOT NULL,
+                    channel_id TEXT NOT NULL,
+                    sender_id TEXT NOT NULL,
+                    ciphertext TEXT NOT NULL,
+                    nonce TEXT NOT NULL,
+                    key_version INTEGER DEFAULT 1,
+                    timestamp REAL
+                );
+                """
+            )
+            # Local secure store of my group keys (encrypted with PIN-derived SecretBox)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS my_group_keys (
+                    group_id TEXT PRIMARY KEY,
+                    key_version INTEGER NOT NULL,
+                    enc_blob TEXT NOT NULL
+                );
+                """
+            )
             conn.commit()
         except Exception:
             # If the DB is unreadable with current key, back it up and recreate
@@ -223,6 +285,67 @@ def get_connection(pin: str):
             )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_pub_ts ON messages(pub_hex, timestamp);")
             cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_unique ON messages(pub_hex, timestamp, sender, text);")
+            # Groups schema
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS groups (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    owner_id TEXT NOT NULL,
+                    is_public INTEGER DEFAULT 0,
+                    invite_code TEXT,
+                    key_version INTEGER DEFAULT 1,
+                    created_at REAL
+                );
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS group_members (
+                    group_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    role TEXT DEFAULT 'member',
+                    joined_at REAL,
+                    encrypted_group_key TEXT,
+                    key_version INTEGER DEFAULT 1,
+                    PRIMARY KEY (group_id, user_id)
+                );
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS channels (
+                    id TEXT PRIMARY KEY,
+                    group_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    type TEXT DEFAULT 'text',
+                    created_at REAL
+                );
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS group_messages (
+                    id TEXT PRIMARY KEY,
+                    group_id TEXT NOT NULL,
+                    channel_id TEXT NOT NULL,
+                    sender_id TEXT NOT NULL,
+                    ciphertext TEXT NOT NULL,
+                    nonce TEXT NOT NULL,
+                    key_version INTEGER DEFAULT 1,
+                    timestamp REAL
+                );
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS my_group_keys (
+                    group_id TEXT PRIMARY KEY,
+                    key_version INTEGER NOT NULL,
+                    enc_blob TEXT NOT NULL
+                );
+                """
+            )
             conn.commit()
         return conn
 
@@ -273,6 +396,67 @@ def get_connection(pin: str):
             )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_pub_ts ON messages(pub_hex, timestamp);")
             cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_unique ON messages(pub_hex, timestamp, sender, text);")
+            # Groups schema
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS groups (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    owner_id TEXT NOT NULL,
+                    is_public INTEGER DEFAULT 0,
+                    invite_code TEXT,
+                    key_version INTEGER DEFAULT 1,
+                    created_at REAL
+                );
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS group_members (
+                    group_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    role TEXT DEFAULT 'member',
+                    joined_at REAL,
+                    encrypted_group_key TEXT,
+                    key_version INTEGER DEFAULT 1,
+                    PRIMARY KEY (group_id, user_id)
+                );
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS channels (
+                    id TEXT PRIMARY KEY,
+                    group_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    type TEXT DEFAULT 'text',
+                    created_at REAL
+                );
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS group_messages (
+                    id TEXT PRIMARY KEY,
+                    group_id TEXT NOT NULL,
+                    channel_id TEXT NOT NULL,
+                    sender_id TEXT NOT NULL,
+                    ciphertext TEXT NOT NULL,
+                    nonce TEXT NOT NULL,
+                    key_version INTEGER DEFAULT 1,
+                    timestamp REAL
+                );
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS my_group_keys (
+                    group_id TEXT PRIMARY KEY,
+                    key_version INTEGER NOT NULL,
+                    enc_blob TEXT NOT NULL
+                );
+                """
+            )
             conn.commit()
         except Exception:
             # On schema init failure, clean up and re-raise
@@ -476,5 +660,42 @@ def count_messages(pin: str, pub_hex: str) -> int:
         cur = conn.cursor()
         row = cur.execute("SELECT COUNT(1) FROM messages WHERE pub_hex = ?", (pub_hex,)).fetchone()
         return int(row[0] if row else 0)
+    finally:
+        conn.close()
+
+
+# ---- Group key local vault helpers ----
+def store_my_group_key(pin: str, group_id: str, key_bytes: bytes, key_version: int) -> None:
+    box = _enc_box_from_pin(pin)
+    nonce = nacl_random(SecretBox.NONCE_SIZE)
+    ct = box.encrypt(key_bytes, nonce)
+    b64 = base64.b64encode(ct).decode()
+    conn = get_connection(pin)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO my_group_keys(group_id, key_version, enc_blob)
+            VALUES(?,?,?)
+            ON CONFLICT(group_id) DO UPDATE SET key_version=excluded.key_version, enc_blob=excluded.enc_blob
+            """,
+            (group_id, int(key_version), b64),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def load_my_group_key(pin: str, group_id: str) -> tuple[bytes, int] | None:
+    conn = get_connection(pin)
+    try:
+        cur = conn.cursor()
+        row = cur.execute("SELECT key_version, enc_blob FROM my_group_keys WHERE group_id = ?", (group_id,)).fetchone()
+        if not row:
+            return None
+        kv, b64 = int(row[0]), row[1]
+        box = _enc_box_from_pin(pin)
+        pt = box.decrypt(base64.b64decode(b64))
+        return pt, kv
     finally:
         conn.close()
