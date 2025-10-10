@@ -16,7 +16,28 @@ class DiscoverDialog(ctk.CTkToplevel):
         self.title("Discover Public Groups")
         self.geometry("520x560")
         self.transient(parent)
-        self.grab_set()
+        # Try to grab focus for modal behavior. On some Linux WMs this can
+        # fail with "grab failed: window not viewable" if the parent isn't
+        # currently mapped. Attempt once and, if parent is not viewable,
+        # schedule a single retry shortly after.
+        try:
+            self.grab_set()
+        except Exception:
+            try:
+                # If parent isn't viewable, retry once after a short delay.
+                if getattr(parent, "winfo_viewable", None) and not parent.winfo_viewable():
+                    def _retry():
+                        try:
+                            if getattr(self, "winfo_exists", None) and self.winfo_exists():
+                                self.grab_set()
+                        except Exception:
+                            pass
+                    try:
+                        self.after(150, _retry)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
         # Top controls
         top = ctk.CTkFrame(self, fg_color="transparent")
