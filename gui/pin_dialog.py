@@ -2,6 +2,7 @@ import customtkinter as ctk
 from customtkinter import CTkImage
 from PIL import Image, ImageEnhance
 import os
+import tkinter as tk
 from tkinter import messagebox
 from utils.crypto import is_strong_pin, load_key
 
@@ -44,28 +45,48 @@ class PinDialog(ctk.CTkToplevel):
         entry_bg = theme.get("input_bg", "#2a2a3f")
         entry_text = theme.get("input_text", "white")
         placeholder_color = theme.get("placeholder_text", "gray70")
+        border_color = theme.get("input_border", "#3a3a4f")
+        border_width = theme.get("input_border_width", 1)
 
         
         if self.new_pin:
+            # Prefer a rounded CTkFrame as a border so the entry corners match.
+            try:
+                uname_border = ctk.CTkFrame(self, fg_color=border_color, corner_radius=14)
+                uname_border.pack(pady=5, padx=30, fill="x")
+            except Exception:
+                uname_border = tk.Frame(self, bg=border_color)
+                uname_border.pack(pady=5, padx=30, fill="x")
+
             self.username_entry = ctk.CTkEntry(
-                self, placeholder_text="Username (default: Anonymous)",
+                uname_border, placeholder_text="Username (default: Anonymous)",
                 height=40, corner_radius=12, fg_color=entry_bg, text_color=entry_text,
                 placeholder_text_color=placeholder_color
             )
-            self.username_entry.pack(pady=5, padx=30, fill="x")
+            # place the entry with a small padding so the border is visible
+            self.username_entry.pack(fill="x", padx=max(1, border_width), pady=max(1, border_width))
         else:
             self.username_entry = None
         
         
-        entry_container = ctk.CTkFrame(self, fg_color="transparent")
+        # Use the window background for the container to avoid visual clipping
+        entry_container = ctk.CTkFrame(self, fg_color=win_bg)
         entry_container.pack(pady=5, padx=30, fill="x")
 
+        # Use a rounded CTkFrame as a border holder for a nicer look; fall back to tk.Frame
+        try:
+            border_holder = ctk.CTkFrame(entry_container, fg_color=border_color, corner_radius=14)
+            border_holder.pack(side="left", fill="x", expand=True)
+        except Exception:
+            border_holder = tk.Frame(entry_container, bg=border_color)
+            border_holder.pack(side="left", fill="x", expand=True)
+
         self.entry = ctk.CTkEntry(
-            entry_container, show="*", placeholder_text="Enter PIN",
+            border_holder, show="*", placeholder_text="Enter PIN",
             height=40, corner_radius=12, fg_color=entry_bg, text_color=entry_text,
             placeholder_text_color=placeholder_color
         )
-        self.entry.pack(side="left", expand=True, fill="x")
+        self.entry.pack(side="left", expand=True, fill="x", padx=max(1, border_width), pady=max(1, border_width))
         self.entry.focus()
         if not self.new_pin:
             try:
@@ -114,12 +135,19 @@ class PinDialog(ctk.CTkToplevel):
         if self.new_pin:
             self.entry.bind("<KeyRelease>", self.update_strength)
 
+            try:
+                confirm_border = ctk.CTkFrame(self, fg_color=border_color, corner_radius=14)
+                confirm_border.pack(pady=5, padx=30, fill="x")
+            except Exception:
+                confirm_border = tk.Frame(self, bg=border_color)
+                confirm_border.pack(pady=5, padx=30, fill="x")
+
             self.confirm_entry = ctk.CTkEntry(
-                self, show="*", placeholder_text="Confirm PIN",
+                confirm_border, show="*", placeholder_text="Confirm PIN",
                 height=40, corner_radius=12, fg_color=entry_bg, text_color=entry_text,
                 placeholder_text_color=placeholder_color
             )
-            self.confirm_entry.pack(pady=5, padx=30, fill="x")
+            self.confirm_entry.pack(fill="x", padx=max(1, border_width), pady=max(1, border_width))
 
             self.strength_label = ctk.CTkLabel(
                 self, text="", font=("Segoe UI", 12, "bold"),

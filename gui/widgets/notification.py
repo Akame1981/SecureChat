@@ -1,8 +1,5 @@
 import customtkinter as ctk
 import tkinter as tk
-import shutil
-import subprocess
-import sys
 
 
 def _darken_hex(hex_color: str, factor: float = 0.9) -> str:
@@ -263,15 +260,6 @@ class NotificationManager:
         self.active_notifications = []
 
     def show(self, message: str, type_: str = "info", duration=3000):
-        # On Linux prefer a native desktop notification when available to
-        # avoid compositor/window-manager issues that hide/blacken CTkToplevels.
-        try:
-            if sys.platform.startswith("linux") and shutil.which("notify-send"):
-                subprocess.Popen(["notify-send", "Whispr", message], close_fds=True)
-                return
-        except Exception:
-            pass
-
         # Limit how many notifications stack; if too many, remove the oldest
         if len(self.active_notifications) >= self.MAX_VISIBLE:
             old = self.active_notifications.pop(0)
