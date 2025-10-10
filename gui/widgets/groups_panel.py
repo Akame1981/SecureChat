@@ -285,8 +285,13 @@ class GroupsPanel(ctk.CTkFrame):
             self.app.notifier.show(f"Join failed: {e}", type_="error")
 
     def _discover_public_modal(self):
+        def on_join(group_id: str | None):
+            try:
+                self.refresh_groups(select_id=group_id)
+            except Exception:
+                pass
         try:
-            DiscoverDialog(self, self.gm, self.theme)
+            DiscoverDialog(self, self.app, self.gm, self.theme, on_join=on_join)
         except Exception as e:
             try:
                 self.app.notifier.show(f"Discover failed: {e}", type_="error")
