@@ -1,7 +1,9 @@
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import simpledialog, Toplevel
+from datetime import datetime
 from gui.widgets.group_settings import GroupSettingsDialog
+from gui.identicon import generate_identicon
 
 from utils.group_manager import GroupManager
 from utils.db import store_my_group_key
@@ -18,6 +20,15 @@ class GroupsPanel(ctk.CTkFrame):
         self.selected_group_id: str | None = None
         self.selected_channel_id: str | None = None
         self._poll_job = None
+        # Track last seen timestamp per (group_id, channel_id) for incremental polling
+        self._last_ts = {}
+        # Channel button widgets for highlighting
+        self.channel_buttons = {}
+        # Placeholder for empty-state label in messages area
+        self._empty_messages_label = None
+        # Groups list widgets and avatar cache for sidebar-like styling
+        self.group_item_widgets = {}
+        self.group_avatar_cache = {}
 
         # Left: search + groups list + actions
         left = ctk.CTkFrame(self, fg_color=self.theme.get("sidebar_bg", "#2a2a3a"), width=300)
@@ -97,12 +108,94 @@ class GroupsPanel(ctk.CTkFrame):
                                   fg_color=self.theme.get("input_bg", "#2e2e3f"),
                                   text_color=self.theme.get("input_text", "white"))
         self.input.pack(side="left", expand=True, fill="x", padx=(0, 6))
-        ctk.CTkButton(input_frame, text="Send", command=self._send,
-                      fg_color=self.theme.get("button_send", "#4a90e2"),
-                      hover_color=self.theme.get("button_send_hover", "#357ABD")).pack(side="left")
+        self.send_btn = ctk.CTkButton(input_frame, text="Send", command=self._send,
+                                      fg_color=self.theme.get("button_send", "#4a90e2"),
+                                      hover_color=self.theme.get("button_send_hover", "#357ABD"))
+        self.send_btn.pack(side="left")
+        # Disable send until a channel is selected
+        try:
+            self.send_btn.configure(state="disabled")
+        except Exception:
+            pass
+        # Enter key sends message
+        try:
+            self.input.bind("<Return>", lambda e: self._send())
+        except Exception:
+            pass
 
         # Populate
         self.refresh_groups()
+
+    def _filter_groups(self, term: str):
+        """Filter groups by name locally and re-render the list with sidebar-like styling."""
+        try:
+            data = self.gm.list_groups()
+            groups = data.get("groups", [])
+        except Exception:
+            groups = []
+        term_lower = (term or "").lower()
+        filtered = [g for g in groups if term_lower in (g.get("name", "").lower())]
+        self._render_group_list(self.groups_list, filtered)
+
+    def _render_group_list(self, parent, groups: list[dict]):
+        # Clear old
+        for w in parent.winfo_children():
+            w.destroy()
+        self.group_item_widgets.clear()
+        # Colors
+        sel_bg = self.theme.get("bubble_you", "#7289da")
+        item_bg = self.theme.get("bubble_other", "#2a2a3a")
+        text_color = self.theme.get("sidebar_text", "white")
+        avatar_bg = self.theme.get("sidebar_button", "#4a90e2")
+
+        if not groups:
+            ctk.CTkLabel(parent, text="No groups",
+                         text_color=text_color).pack(pady=8)
+            return
+
+        for g in groups:
+            gid = g.get("id")
+            gname = g.get("name")
+            is_sel = (gid == self.selected_group_id)
+            row = ctk.CTkFrame(parent,
+                               fg_color=sel_bg if is_sel else item_bg,
+                               corner_radius=12, height=40)
+            row.pack(fill="x", padx=6, pady=4)
+            self.group_item_widgets[gid] = row
+
+            # Avatar identicon
+            avatar_label = None
+            ident_size = 28
+            try:
+                if gid not in self.group_avatar_cache:
+                    pil_img = generate_identicon(gid or gname or "?", size=ident_size)
+                    ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(ident_size, ident_size))
+                    self.group_avatar_cache[gid] = ctk_img
+                ctk_img = self.group_avatar_cache[gid]
+                avatar_label = ctk.CTkLabel(row, image=ctk_img, text="",
+                                            width=ident_size, height=ident_size)
+                avatar_label.image = ctk_img
+            except Exception:
+                avatar_label = ctk.CTkLabel(
+                    row, text=(gname or "?")[0].upper(), width=28, height=28,
+                    fg_color=avatar_bg, text_color=text_color, corner_radius=14
+                )
+            avatar_label.pack(side="left", padx=8, pady=4)
+
+            # Name label
+            label = ctk.CTkLabel(row, text=gname, font=("Segoe UI", 12, "bold"),
+                                 text_color=text_color)
+            label.pack(side="left", padx=6)
+
+            # Visibility tag (Public/Private)
+            tag_txt = "Public" if g.get("is_public") else "Private"
+            tag = ctk.CTkLabel(row, text=tag_txt, fg_color="#3b3b52", corner_radius=8)
+            tag.pack(side="right", padx=8, pady=6)
+
+            # Click bindings for the whole row
+            row.bind("<Button-1>", lambda e, gid=gid, n=gname: self._select_group(gid, n))
+            avatar_label.bind("<Button-1>", lambda e, gid=gid, n=gname: self._select_group(gid, n))
+            label.bind("<Button-1>", lambda e, gid=gid, n=gname: self._select_group(gid, n))
 
     def set_sidebar_visible(self, visible: bool):
         """Show or hide the built-in left sidebar of this panel.
@@ -284,23 +377,12 @@ class GroupsPanel(ctk.CTkFrame):
 
     # ----- Lists -----
     def refresh_groups(self, select_id: str | None = None):
-        for w in self.groups_list.winfo_children():
-            w.destroy()
         try:
             data = self.gm.list_groups()
             groups = data.get("groups", [])
         except Exception:
             groups = []
-        for g in groups:
-            row = ctk.CTkFrame(self.groups_list, fg_color=self.theme.get("bubble_other", "#2a2a3a"))
-            row.pack(fill="x", padx=4, pady=4)
-            name = ctk.CTkLabel(row, text=g.get("name"), font=("Segoe UI", 12, "bold"))
-            name.pack(side="left", padx=8, pady=6)
-            tag_txt = "Public" if g.get("is_public") else "Private"
-            tag = ctk.CTkLabel(row, text=tag_txt, fg_color="#3b3b52", corner_radius=8, width=60)
-            tag.pack(side="left", padx=6)
-            ctk.CTkButton(row, text="Open", width=70,
-                          command=lambda gid=g.get("id"), n=g.get("name"): self._select_group(gid, n)).pack(side="right", padx=6)
+        self._render_group_list(self.groups_list, groups)
         if select_id:
             # Find group by id and select
             for g in groups:
@@ -310,6 +392,8 @@ class GroupsPanel(ctk.CTkFrame):
 
     def _select_group(self, group_id: str, group_name: str):
         self.selected_group_id = group_id
+        # Highlight selected group in the left list
+        self._highlight_group_item(group_id)
         self.group_title.configure(text=f"{group_name}")
         self._load_channels(group_id)
         # stop any previous polling
@@ -320,28 +404,55 @@ class GroupsPanel(ctk.CTkFrame):
                 pass
             self._poll_job = None
 
+    def _highlight_group_item(self, group_id: str):
+        sel_bg = self.theme.get("bubble_you", "#7289da")
+        item_bg = self.theme.get("bubble_other", "#2a2a3a")
+        try:
+            for gid, row in self.group_item_widgets.items():
+                row.configure(fg_color=sel_bg if gid == group_id else item_bg)
+        except Exception:
+            pass
+
     def _load_channels(self, group_id: str, select_id: str | None = None):
         for w in self.channels_list.winfo_children():
             w.destroy()
+        self.channel_buttons.clear()
         try:
             data = self.gm.client.list_channels(group_id)
             chans = data.get("channels", [])
         except Exception:
             chans = []
+        if not chans:
+            ctk.CTkLabel(self.channels_list, text="No channels",
+                         text_color=self.theme.get("sidebar_text", "white")).pack(pady=6)
         for ch in chans:
-            btn = ctk.CTkButton(self.channels_list, text=f"# {ch.get('name')}",
-                                command=lambda cid=ch.get("id"), name=ch.get("name"): self._select_channel(cid, name),
+            cid = ch.get("id")
+            cname = ch.get("name")
+            btn = ctk.CTkButton(self.channels_list, text=f"# {cname}",
+                                command=lambda cid=cid, name=cname: self._select_channel(cid, name),
                                 fg_color=self.theme.get("input_bg", "#2e2e3f"),
                                 hover_color=self.theme.get("bubble_you", "#7289da"))
             btn.pack(fill="x", padx=4, pady=4)
+            self.channel_buttons[cid] = btn
         if select_id:
             for ch in chans:
                 if ch.get("id") == select_id:
                     self._select_channel(ch.get("id"), ch.get("name"))
                     break
+        elif chans:
+            # Auto-select first channel
+            self._select_channel(chans[0].get("id"), chans[0].get("name"))
 
     def _select_channel(self, channel_id: str, channel_name: str):
         self.selected_channel_id = channel_id
+        # Enable send button and set placeholder
+        try:
+            self.send_btn.configure(state="normal")
+            self.input.configure(placeholder_text=f"Message #{channel_name}")
+        except Exception:
+            pass
+        # Highlight selected channel button
+        self._highlight_channel_btn(channel_id)
         # Load recent messages for the channel
         for w in self.messages.winfo_children():
             w.destroy()
@@ -349,16 +460,35 @@ class GroupsPanel(ctk.CTkFrame):
             msgs = self.gm.fetch_messages(self.selected_group_id, self.selected_channel_id, since=0)
         except Exception:
             msgs = []
-        for m in msgs:
-            self._append_message(m.get("sender_id"), m.get("text"))
+        if not msgs:
+            self._show_empty_messages("No messages yet")
+        else:
+            # Clear any empty-state label
+            self._clear_empty_messages()
+            last_ts = 0.0
+            for m in msgs:
+                self._append_message(m.get("sender_id"), m.get("text"), m.get("timestamp"))
+                try:
+                    last_ts = max(last_ts, float(m.get("timestamp") or 0))
+                except Exception:
+                    pass
+            self._last_ts[(self.selected_group_id, self.selected_channel_id)] = last_ts
         # start polling for new messages
         self._schedule_poll()
 
-    def _append_message(self, sender: str, text: str):
+    def _append_message(self, sender: str, text: str, ts: float | None = None):
         # Simple message card; use app.create_message_bubble if desired later
         bubble = ctk.CTkFrame(self.messages, fg_color=self.theme.get("bubble_other", "#2a2a3a"), corner_radius=10)
         bubble.pack(fill="x", padx=8, pady=4)
-        ctk.CTkLabel(bubble, text=sender, font=("Segoe UI", 11, "bold"),
+        # Format timestamp
+        stamp = ""
+        try:
+            if ts:
+                stamp = datetime.fromtimestamp(float(ts)).strftime("%H:%M")
+        except Exception:
+            stamp = ""
+        header = f"{sender}  {stamp}" if stamp else sender
+        ctk.CTkLabel(bubble, text=header, font=("Segoe UI", 11, "bold"),
                      text_color=self.theme.get("sidebar_text", "white")).pack(anchor="w", padx=8, pady=(6, 0))
         ctk.CTkLabel(bubble, text=text, font=("Segoe UI", 12),
                      text_color=self.theme.get("sidebar_text", "white"), wraplength=800, justify="left").pack(anchor="w", padx=8, pady=(0, 8))
@@ -370,16 +500,49 @@ class GroupsPanel(ctk.CTkFrame):
         # poll new messages every 2 seconds
         def _tick():
             try:
-                msgs = self.gm.fetch_messages(self.selected_group_id, self.selected_channel_id, since=0)
-                # naive: clear and redraw for now; can diff later
-                for w in self.messages.winfo_children():
-                    w.destroy()
-                for m in msgs:
-                    self._append_message(m.get("sender_id"), m.get("text"))
+                key = (self.selected_group_id, self.selected_channel_id)
+                since = self._last_ts.get(key, 0) or 0
+                msgs = self.gm.fetch_messages(self.selected_group_id, self.selected_channel_id, since=since)
+                if msgs:
+                    self._clear_empty_messages()
+                    for m in msgs:
+                        self._append_message(m.get("sender_id"), m.get("text"), m.get("timestamp"))
+                        try:
+                            tval = float(m.get("timestamp") or 0)
+                            self._last_ts[key] = max(self._last_ts.get(key, 0) or 0, tval)
+                        except Exception:
+                            pass
             except Exception:
                 pass
             self._poll_job = self.after(2000, _tick)
         self._poll_job = self.after(2000, _tick)
+
+    def _highlight_channel_btn(self, channel_id: str):
+        try:
+            for cid, btn in self.channel_buttons.items():
+                if cid == channel_id:
+                    btn.configure(fg_color=self.theme.get("bubble_you", "#7289da"))
+                else:
+                    btn.configure(fg_color=self.theme.get("input_bg", "#2e2e3f"))
+        except Exception:
+            pass
+
+    def _show_empty_messages(self, text: str):
+        self._clear_empty_messages()
+        try:
+            self._empty_messages_label = ctk.CTkLabel(self.messages, text=text,
+                                                     text_color=self.theme.get("sidebar_text", "white"))
+            self._empty_messages_label.pack(pady=10)
+        except Exception:
+            pass
+
+    def _clear_empty_messages(self):
+        try:
+            if self._empty_messages_label is not None:
+                self._empty_messages_label.destroy()
+                self._empty_messages_label = None
+        except Exception:
+            pass
 
     # Ban now handled inside GroupSettingsDialog
 
