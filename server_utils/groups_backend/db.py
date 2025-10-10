@@ -86,5 +86,12 @@ class GroupMessage(Base):
     timestamp = Column(Float, default=lambda: time.time(), index=True)
 
 
+class ChannelMeta(Base):
+    __tablename__ = "channel_meta"
+    channel_id = Column(String, ForeignKey("channels.id", ondelete="CASCADE"), primary_key=True)
+    topic = Column(Text, nullable=True)
+    description = Column(Text, nullable=True)
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
