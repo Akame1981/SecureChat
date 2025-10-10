@@ -1,6 +1,7 @@
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import simpledialog, Toplevel
+from gui.widgets.group_settings import GroupSettingsDialog
 
 from utils.group_manager import GroupManager
 from utils.db import store_my_group_key
@@ -368,85 +369,7 @@ class GroupsPanel(ctk.CTkFrame):
             self._poll_job = self.after(2000, _tick)
         self._poll_job = self.after(2000, _tick)
 
-    def _filter_groups(self, term: str):
-        # simple UI-only filter: just rebuild buttons where name includes term
-        term = term.lower()
-        for w in self.groups_list.winfo_children():
-            w.destroy()
-        try:
-            data = self.gm.list_groups()
-            groups = [g for g in data.get("groups", []) if term in (g.get("name", "").lower())]
-        except Exception:
-            groups = []
-        for g in groups:
-            row = ctk.CTkFrame(self.groups_list, fg_color=self.theme.get("bubble_other", "#2a2a3a"))
-            row.pack(fill="x", padx=4, pady=4)
-            name = ctk.CTkLabel(row, text=g.get("name"), font=("Segoe UI", 12, "bold"))
-            name.pack(side="left", padx=8, pady=6)
-            tag_txt = "Public" if g.get("is_public") else "Private"
-            tag = ctk.CTkLabel(row, text=tag_txt, fg_color="#3b3b52", corner_radius=8, width=60)
-            tag.pack(side="left", padx=6)
-            ctk.CTkButton(row, text="Open", width=70,
-                          command=lambda gid=g.get("id"), n=g.get("name"): self._select_group(gid, n)).pack(side="right", padx=6)
-
-    def _open_group_settings(self):
-        if not self.selected_group_id:
-            return
-        gid = self.selected_group_id
-        win = Toplevel(self)
-        win.title("Group Settings")
-        win.geometry("520x520")
-        win.transient(self)
-        win.grab_set()
-
-        header = ctk.CTkFrame(win, fg_color="transparent")
-        header.pack(fill="x", padx=10, pady=10)
-        ctk.CTkLabel(header, text="Invite Code:").pack(side="left")
-        code_var = tk.StringVar(value="...")
-        entry = ctk.CTkEntry(header, textvariable=code_var, width=320)
-        entry.pack(side="left", padx=6)
-        def copy():
-            try:
-                self.app.clipboard_clear()
-                self.app.clipboard_append(entry.get())
-                self.app.notifier.show("Invite copied", type_="success")
-            except Exception:
-                pass
-        ctk.CTkButton(header, text="Copy", command=copy).pack(side="left")
-        def rotate():
-            try:
-                res = self.gm.client.rotate_invite(gid)
-                code_var.set(res.get("invite_code", ""))
-                self.app.notifier.show("Invite rotated", type_="success")
-            except Exception as e:
-                self.app.notifier.show(f"Rotate failed: {e}", type_="error")
-        ctk.CTkButton(win, text="Rotate Invite", command=rotate).pack(padx=10, pady=(0, 10), anchor="w")
-
-        # Members
-        members_frame = ctk.CTkScrollableFrame(win, fg_color=self.theme.get("background", "#2e2e3f"))
-        members_frame.pack(fill="both", expand=True, padx=10, pady=10)
-        try:
-            info = self.gm.client.get_member_keys(gid)
-            code_var.set("" if not info else "")
-            # We don't get invite_code from this endpoint; keep last rotated value if any
-            members = info.get("members", []) if info else []
-        except Exception:
-            members = []
-        for m in members:
-            row = ctk.CTkFrame(members_frame, fg_color=self.theme.get("input_bg", "#2e2e3f"))
-            row.pack(fill="x", padx=6, pady=4)
-            ctk.CTkLabel(row, text=m.get("user_id")[:16] + "…").pack(side="left", padx=8, pady=6)
-            ctk.CTkLabel(row, text=m.get("role", "member"), fg_color="#3b3b52", corner_radius=8, width=70).pack(side="left", padx=6)
-            # Ban button (admin/owner enforcement happens server-side)
-            ctk.CTkButton(row, text="Ban", width=60,
-                          command=lambda uid=m.get("user_id"): self._ban_member(gid, uid)).pack(side="right", padx=6)
-
-    def _ban_member(self, group_id: str, user_id: str):
-        try:
-            self.gm.client.ban_member(group_id, user_id)
-            self.app.notifier.show("Member removed. Rekey required.", type_="warning")
-        except Exception as e:
-            self.app.notifier.show(f"Ban failed: {e}", type_="error")
+    # Ban now handled inside GroupSettingsDialog
 
     def _leave_group(self):
         if not self.selected_group_id:
