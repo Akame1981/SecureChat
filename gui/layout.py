@@ -45,6 +45,7 @@ class WhisprUILayout:
             add_callback=app.add_new_recipient,
             pin=app.pin,
             theme_colors=theme,
+            open_group_callback=lambda gid, name: self._open_group_from_sidebar(gid, name)
         )
         # Toggle button to switch between Recipients and Groups
         try:
@@ -56,9 +57,9 @@ class WhisprUILayout:
             row = ctk.CTkFrame(toggle_frame, fg_color="transparent")
             row.pack(fill="x")
             ctk.CTkButton(row, text="DMs", width=100, fg_color=btn_fg, hover_color=btn_hover,
-                          command=lambda: getattr(app, 'show_direct_messages', lambda: None)()).pack(side="left", padx=(0, 6), pady=4)
+                          command=lambda: (getattr(app, 'show_direct_messages', lambda: None)(), getattr(app, 'sidebar', None).show_recipients_view())).pack(side="left", padx=(0, 6), pady=4)
             ctk.CTkButton(row, text="Groups", width=100, fg_color=btn_fg, hover_color=btn_hover,
-                          command=lambda: getattr(app, 'show_groups_panel', lambda: None)()).pack(side="left", padx=(6, 0), pady=4)
+                          command=lambda: (getattr(app, 'show_groups_panel', lambda: None)(), getattr(app, 'sidebar', None).show_groups_view())).pack(side="left", padx=(6, 0), pady=4)
         except Exception:
             pass
 
@@ -277,8 +278,14 @@ class WhisprUILayout:
             for w in [getattr(app, 'pub_frame', None), getattr(app, 'messages_container', None), getattr(app, 'input_frame', None)]:
                 if w and w.winfo_ismapped():
                     w.pack_forget()
+            # Hide the main sidebar entirely in groups mode
+            if hasattr(app, 'sidebar') and app.sidebar.winfo_ismapped():
+                app.sidebar.pack_forget()
             # Show groups panel
             app.groups_panel.pack(fill="both", expand=True)
+            # Show GroupsPanel's own left sidebar (it replaces the main sidebar)
+            if hasattr(app.groups_panel, 'set_sidebar_visible'):
+                app.groups_panel.set_sidebar_visible(True)
             if hasattr(app.groups_panel, 'refresh_groups'):
                 app.groups_panel.refresh_groups()
         except Exception:
@@ -290,10 +297,30 @@ class WhisprUILayout:
             # Hide groups panel
             if hasattr(app, 'groups_panel') and app.groups_panel.winfo_ismapped():
                 app.groups_panel.pack_forget()
+                # Restore left panel when re-entering groups later
+                if hasattr(app.groups_panel, 'set_sidebar_visible'):
+                    app.groups_panel.set_sidebar_visible(True)
+            # Show the main sidebar again
+            if hasattr(app, 'sidebar') and not app.sidebar.winfo_ismapped():
+                app.sidebar.pack(side="left", fill="y")
             # Show DM widgets
             app.pub_frame.pack(fill="x", padx=10, pady=10)
             app.messages_container.pack(padx=10, pady=10, fill="both", expand=True)
             app.input_frame.pack(fill="x", padx=10, pady=(0,10))
+        except Exception:
+            pass
+
+    def _open_group_from_sidebar(self, group_id: str, name: str):
+        # Ensure groups view is active and open the selected group in the panel
+        try:
+            if hasattr(self.app, 'sidebar'):
+                self.app.sidebar.show_groups_view()
+        except Exception:
+            pass
+        try:
+            self._switch_to_groups()
+            if hasattr(self.app, 'groups_panel'):
+                self.app.groups_panel._select_group(group_id, name)
         except Exception:
             pass
 
