@@ -1,132 +1,195 @@
-"""Custom color picker widget used by the Theme Editor.
+"""Modernized CustomColorPicker for the Theme Editor.
 
-Provides a CTk modal with RGB sliders, hex input, live preview and preset swatches.
+This version keeps the original behavior but updates the layout and
+controls to look more contemporary:
+- Large preview with rounded border
+- Hue slider plus RGB sliders (keeps HSV/RGB in sync)
+- Larger, rounded preset swatches and a "copy hex" button
+- Cleaner spacing and labels
 """
 import customtkinter as ctk
+import colorsys
+
+
+def _hex_to_rgb(h):
+    h = h.lstrip('#')
+    if len(h) == 3:
+        h = ''.join([c * 2 for c in h])
+    try:
+        return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+    except Exception:
+        return (114, 137, 218)
+
+
+def _rgb_to_hex(r, g, b):
+    return '#%02x%02x%02x' % (int(r), int(g), int(b))
 
 
 class CustomColorPicker(ctk.CTkToplevel):
-    """A simple modal color picker implemented with customtkinter.
-
-    Features:
-    - RGB sliders
-    - Hex input (validated)
-    - Live preview
-    - Preset swatches
-    """
     def __init__(self, master, initial='#7289da'):
         super().__init__(master)
         self.title('Pick a color')
         self.resizable(False, False)
         self.chosen = None
 
-        # Helpers
-        def _hex_to_rgb(h):
-            h = h.lstrip('#')
-            if len(h) == 3:
-                h = ''.join([c*2 for c in h])
-            try:
-                return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
-            except Exception:
-                return (114, 137, 218)
-
-        def _rgb_to_hex(r, g, b):
-            return '#%02x%02x%02x' % (int(r), int(g), int(b))
-
-        # Layout
-        pad = 8
-        body = ctk.CTkFrame(self, fg_color='#2b2d3a')
-        body.grid(row=0, column=0, padx=pad, pady=pad)
-
-        # Preview
-        self.preview = ctk.CTkFrame(body, width=120, height=60, corner_radius=6)
-        self.preview.grid(row=0, column=0, columnspan=3, pady=(0, pad))
-
-        # Sliders for R, G, B
+        # Core state (RGB and HSV)
         self.r_var = ctk.DoubleVar()
         self.g_var = ctk.DoubleVar()
         self.b_var = ctk.DoubleVar()
+        self.h_var = ctk.DoubleVar()
+        self.s_var = ctk.DoubleVar()
+        self.v_var = ctk.DoubleVar()
 
-        def on_slider_change(_=None):
-            r = int(self.r_var.get())
-            g = int(self.g_var.get())
-            b = int(self.b_var.get())
-            hx = _rgb_to_hex(r, g, b)
-            try:
-                self.hex_entry.delete(0, ctk.END)
-                self.hex_entry.insert(0, hx)
-            except Exception:
-                pass
-            try:
-                self.preview.configure(fg_color=hx)
-            except Exception:
-                pass
+        pad = 12
+        body = ctk.CTkFrame(self, fg_color='#242631', corner_radius=8)
+        body.grid(row=0, column=0, padx=pad, pady=pad)
 
-        lbl_r = ctk.CTkLabel(body, text='R')
-        lbl_r.grid(row=1, column=0, sticky='w')
-        s_r = ctk.CTkSlider(body, from_=0, to=255, variable=self.r_var, command=lambda v=None: on_slider_change())
-        s_r.grid(row=1, column=1, columnspan=2, sticky='ew', padx=(4,0))
+        # Two-column layout: preview on left, controls on right
+        body.grid_columnconfigure(0, weight=0)
+        body.grid_columnconfigure(1, weight=1)
 
-        lbl_g = ctk.CTkLabel(body, text='G')
-        lbl_g.grid(row=2, column=0, sticky='w')
-        s_g = ctk.CTkSlider(body, from_=0, to=255, variable=self.g_var, command=lambda v=None: on_slider_change())
-        s_g.grid(row=2, column=1, columnspan=2, sticky='ew', padx=(4,0))
+        # Left: large preview and hex
+        left = ctk.CTkFrame(body, fg_color='transparent')
+        left.grid(row=0, column=0, sticky='ns', padx=(0,12))
 
-        lbl_b = ctk.CTkLabel(body, text='B')
-        lbl_b.grid(row=3, column=0, sticky='w')
-        s_b = ctk.CTkSlider(body, from_=0, to=255, variable=self.b_var, command=lambda v=None: on_slider_change())
-        s_b.grid(row=3, column=1, columnspan=2, sticky='ew', padx=(4,0))
+        self.preview = ctk.CTkFrame(left, width=160, height=160, corner_radius=12, fg_color=initial)
+        self.preview.grid(row=0, column=0, pady=(0, 10))
+        self.preview.grid_propagate(False)
 
-        # Hex entry
-        ctk.CTkLabel(body, text='Hex').grid(row=4, column=0, sticky='w', pady=(6,0))
-        self.hex_entry = ctk.CTkEntry(body, width=160)
-        self.hex_entry.grid(row=4, column=1, columnspan=2, sticky='ew', pady=(6,0))
+        # Hex + copy button
+        hex_row = ctk.CTkFrame(left, fg_color='transparent')
+        hex_row.grid(row=1, column=0, sticky='ew')
+        self.hex_entry = ctk.CTkEntry(hex_row, width=110, justify='center')
+        self.hex_entry.grid(row=0, column=0, padx=(0,6))
+        copy_btn = ctk.CTkButton(hex_row, text='Copy', width=56, command=self._copy_hex, fg_color='#3b82f6')
+        copy_btn.grid(row=0, column=1)
 
-        def on_hex_edit(e=None):
-            txt = self.hex_entry.get().strip()
-            if not txt:
-                return
-            if not txt.startswith('#'):
-                txt = '#' + txt
-            rgb = _hex_to_rgb(txt)
-            # update sliders and preview
-            self.r_var.set(rgb[0]); self.g_var.set(rgb[1]); self.b_var.set(rgb[2])
-            try:
-                self.preview.configure(fg_color=_rgb_to_hex(*rgb))
-            except Exception:
-                pass
+        # Right: sliders and presets
+        right = ctk.CTkFrame(body, fg_color='transparent')
+        right.grid(row=0, column=1, sticky='nsew')
+        right.grid_columnconfigure(0, weight=1)
 
-        self.hex_entry.bind('<KeyRelease>', on_hex_edit)
+        # Hue slider (0-360)
+        ctk.CTkLabel(right, text='Hue').grid(row=0, column=0, sticky='w')
+        hue = ctk.CTkSlider(right, from_=0, to=360, variable=self.h_var, command=lambda v=None: self._hsv_changed())
+        hue.grid(row=1, column=0, sticky='ew', pady=(0,8))
 
-        # Preset swatches
-        presets = ['#FFFFFF', '#000000', '#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#7289da', '#2f3136', '#43b581', '#f04747']
-        sw_frame = ctk.CTkFrame(body, fg_color='transparent')
-        sw_frame.grid(row=5, column=0, columnspan=3, pady=(8,0))
-        for i, c in enumerate(presets):
-            def _make_cmd(col=c):
-                return lambda: (self.hex_entry.delete(0, ctk.END), self.hex_entry.insert(0, col), on_hex_edit())
-            b = ctk.CTkButton(sw_frame, text='', width=26, height=22, fg_color=c, command=_make_cmd())
-            b.grid(row=0, column=i, padx=3)
+        # RGB sliders
+        for i, (label_text, var) in enumerate((('R', self.r_var), ('G', self.g_var), ('B', self.b_var))):
+            ctk.CTkLabel(right, text=label_text).grid(row=2 + i*2, column=0, sticky='w')
+            s = ctk.CTkSlider(right, from_=0, to=255, variable=var, command=lambda v=None: self._rgb_changed())
+            s.grid(row=3 + i*2, column=0, sticky='ew', pady=(0,8))
 
-        # Buttons
-        btn_ok = ctk.CTkButton(body, text='OK', width=80, command=self._on_ok)
-        btn_ok.grid(row=6, column=1, pady=(10,0), sticky='e')
-        btn_cancel = ctk.CTkButton(body, text='Cancel', width=80, fg_color='#444b5e', command=self._on_cancel)
-        btn_cancel.grid(row=6, column=2, pady=(10,0), sticky='w')
+        # Presets area
+        ctk.CTkLabel(right, text='Presets').grid(row=8, column=0, sticky='w', pady=(6,4))
+        presets = ['#7289da', '#2f3136', '#43b581', '#f04747', '#ffd166', '#06d6a0', '#ef476f', '#118ab2']
+        sw_frame = ctk.CTkFrame(right, fg_color='transparent')
+        sw_frame.grid(row=9, column=0, sticky='w')
+        for i, col in enumerate(presets):
+            btn = ctk.CTkButton(sw_frame, text='', width=36, height=28, fg_color=col, corner_radius=8,
+                                command=lambda c=col: self._apply_preset(c))
+            btn.grid(row=0, column=i, padx=6)
 
-        # Initialize from initial value
+        # Buttons row
+        btn_row = ctk.CTkFrame(body, fg_color='transparent')
+        btn_row.grid(row=1, column=0, columnspan=2, pady=(12, 0), sticky='e')
+        ok = ctk.CTkButton(btn_row, text='OK', width=90, command=self._on_ok, fg_color='#10b981')
+        ok.grid(row=0, column=0, padx=(0,8))
+        cancel = ctk.CTkButton(btn_row, text='Cancel', width=90, command=self._on_cancel, fg_color='#6c757d')
+        cancel.grid(row=0, column=1)
+
+        # Initialization: set state from initial hex
         try:
-            rgb = _hex_to_rgb(initial or '#7289da')
-            self.r_var.set(rgb[0]); self.g_var.set(rgb[1]); self.b_var.set(rgb[2])
-            self.hex_entry.delete(0, ctk.END); self.hex_entry.insert(0, _rgb_to_hex(*rgb))
-            self.preview.configure(fg_color=_rgb_to_hex(*rgb))
+            r, g, b = _hex_to_rgb(initial or '#7289da')
         except Exception:
-            pass
+            r, g, b = (114, 137, 218)
+        self._set_rgb(r, g, b)
+        # bind hex edits
+        self.hex_entry.bind('<KeyRelease>', lambda e: self._hex_edited())
 
-        # Make modal
+        # Modal
         try:
             self.transient(master)
             self.grab_set()
+        except Exception:
+            pass
+
+    # -- state sync helpers -------------------------------------------------
+    def _set_rgb(self, r, g, b):
+        # set internal vars and update HSV & preview
+        self.r_var.set(r); self.g_var.set(g); self.b_var.set(b)
+        h, s, v = colorsys.rgb_to_hsv(r/255.0, g/255.0, b/255.0)
+        self.h_var.set(h * 360)
+        self.s_var.set(s)
+        self.v_var.set(v)
+        self._update_preview()
+
+    def _set_hsv(self, h, s, v):
+        self.h_var.set(h); self.s_var.set(s); self.v_var.set(v)
+        r, g, b = colorsys.hsv_to_rgb(h/360.0, s, v)
+        self.r_var.set(int(r * 255)); self.g_var.set(int(g * 255)); self.b_var.set(int(b * 255))
+        self._update_preview()
+
+    def _update_preview(self):
+        try:
+            r = int(self.r_var.get()); g = int(self.g_var.get()); b = int(self.b_var.get())
+            hx = _rgb_to_hex(r, g, b)
+            self.preview.configure(fg_color=hx)
+            # update hex entry without moving cursor
+            self.hex_entry.delete(0, ctk.END); self.hex_entry.insert(0, hx)
+        except Exception:
+            pass
+
+    def _rgb_changed(self):
+        # user moved RGB sliders -> update HSV and preview
+        try:
+            r = int(self.r_var.get()); g = int(self.g_var.get()); b = int(self.b_var.get())
+            h, s, v = colorsys.rgb_to_hsv(r/255.0, g/255.0, b/255.0)
+            self.h_var.set(h * 360)
+            self.s_var.set(s); self.v_var.set(v)
+            self._update_preview()
+        except Exception:
+            pass
+
+    def _hsv_changed(self):
+        try:
+            h = float(self.h_var.get())
+            s = float(self.s_var.get())
+            v = float(self.v_var.get())
+            self._set_hsv(h, s, v)
+        except Exception:
+            # Only hue slider is interactive; derive s/v from current rgb
+            try:
+                r = int(self.r_var.get()); g = int(self.g_var.get()); b = int(self.b_var.get())
+                h, s, v = colorsys.rgb_to_hsv(r/255.0, g/255.0, b/255.0)
+                self.s_var.set(s); self.v_var.set(v)
+            except Exception:
+                pass
+
+    def _hex_edited(self):
+        txt = self.hex_entry.get().strip()
+        if not txt:
+            return
+        if not txt.startswith('#'):
+            txt = '#' + txt
+        try:
+            r, g, b = _hex_to_rgb(txt)
+            self._set_rgb(r, g, b)
+        except Exception:
+            pass
+
+    def _apply_preset(self, hexcol):
+        try:
+            r, g, b = _hex_to_rgb(hexcol)
+            self._set_rgb(r, g, b)
+        except Exception:
+            pass
+
+    def _copy_hex(self):
+        try:
+            hx = self.hex_entry.get().strip()
+            if hx:
+                self.clipboard_clear(); self.clipboard_append(hx)
         except Exception:
             pass
 
@@ -136,12 +199,11 @@ class CustomColorPicker(ctk.CTkToplevel):
             return
         if not val.startswith('#'):
             val = '#' + val
-        # basic validation
+        # normalize length
         if len(val) not in (4, 7):
-            # try to normalize
             try:
                 r = int(self.r_var.get()); g = int(self.g_var.get()); b = int(self.b_var.get())
-                val = '#%02x%02x%02x' % (r, g, b)
+                val = _rgb_to_hex(r, g, b)
             except Exception:
                 val = '#7289da'
         self.chosen = val
