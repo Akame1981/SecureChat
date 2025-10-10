@@ -3,6 +3,8 @@ import tkinter as tk
 from tkinter import simpledialog, Toplevel
 from datetime import datetime
 from gui.widgets.group_settings import GroupSettingsDialog
+from gui.widgets.channel_settings import ChannelSettingsDialog
+from gui.widgets.discover_dialog import DiscoverDialog
 from gui.identicon import generate_identicon
 import threading
 from utils.recipients import get_recipient_name
@@ -284,32 +286,12 @@ class GroupsPanel(ctk.CTkFrame):
 
     def _discover_public_modal(self):
         try:
-            res = self.gm.client.discover_public()
-            items = res.get("groups", [])
+            DiscoverDialog(self, self.gm, self.theme)
         except Exception as e:
-            self.app.notifier.show(f"Discover failed: {e}", type_="error")
-            return
-        win = Toplevel(self)
-        win.title("Discover Public Groups")
-        win.geometry("420x480")
-        win.transient(self)
-        win.grab_set()
-
-        top = ctk.CTkFrame(win, fg_color="transparent")
-        top.pack(fill="x", padx=10, pady=10)
-        q = ctk.CTkEntry(top, placeholder_text="Search public groups")
-        q.pack(side="left", expand=True, fill="x")
-        def do_search():
             try:
-                r = self.gm.client.discover_public(query=(q.get() or None))
-                self._render_discover_list(list_frame, r.get("groups", []))
+                self.app.notifier.show(f"Discover failed: {e}", type_="error")
             except Exception:
                 pass
-        ctk.CTkButton(top, text="Search", command=do_search).pack(side="left", padx=6)
-
-        list_frame = ctk.CTkScrollableFrame(win, fg_color=self.theme.get("background", "#2e2e3f"))
-        list_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-        self._render_discover_list(list_frame, items)
 
     def _open_group_settings(self):
         # Open the dedicated Group Settings dialog for the selected group
@@ -323,16 +305,7 @@ class GroupsPanel(ctk.CTkFrame):
             except Exception:
                 pass
 
-    def _render_discover_list(self, parent, items: list[dict]):
-        for w in parent.winfo_children():
-            w.destroy()
-        for g in items:
-            row = ctk.CTkFrame(parent, fg_color=self.theme.get("input_bg", "#2e2e3f"))
-            row.pack(fill="x", padx=6, pady=4)
-            name = ctk.CTkLabel(row, text=g.get("name", "?"), font=("Segoe UI", 12, "bold"))
-            name.pack(side="left", padx=8, pady=6)
-            ctk.CTkButton(row, text="Join", width=80,
-                          command=lambda inv=g.get("invite_code"), gid=g.get("id"): self._join_discovered(inv, gid)).pack(side="right", padx=6)
+    # discover list rendering moved to DiscoverDialog
 
     def _join_discovered(self, invite_code: str | None, group_id: str | None):
         if not invite_code:
@@ -714,7 +687,7 @@ class GroupsPanel(ctk.CTkFrame):
         except Exception:
             pass
 
-    # Ban now handled inside GroupSettingsDialog
+
 
     def _leave_group(self):
         if not self.selected_group_id:
@@ -731,98 +704,3 @@ class GroupsPanel(ctk.CTkFrame):
                 w.destroy()
         except Exception as e:
             self.app.notifier.show(f"Leave failed: {e}", type_="error")
-
-class ChannelSettingsDialog(ctk.CTkToplevel):
-    def __init__(self, parent, app, gm, channel_id: str, channel_name: str, theme: dict | None = None):
-        super().__init__(parent)
-        self.app = app
-        self.gm = gm
-        self.cid = channel_id
-        self.cname = channel_name
-        self.theme = theme or {}
-        self.title(f"Channel Settings - #{channel_name}")
-        self.geometry("480x420")
-        self.transient(parent)
-        self.grab_set()
-
-        # Permissions view (role-based info)
-        role_frame = ctk.CTkFrame(self, fg_color="transparent")
-        role_frame.pack(fill="x", padx=10, pady=(10, 6))
-        self.role_var = tk.StringVar(value="?")
-        ctk.CTkLabel(role_frame, text="Your role:").pack(side="left")
-        ctk.CTkEntry(role_frame, textvariable=self.role_var, width=120).pack(side="left", padx=6)
-        try:
-            info = self.gm.client.get_my_role(getattr(app, 'groups_panel', None).selected_group_id if hasattr(app, 'groups_panel') else None)
-            if info and info.get("role"):
-                self.role_var.set(info.get("role"))
-        except Exception:
-            pass
-
-        # Topic/Description
-        meta_frame = ctk.CTkFrame(self, fg_color="transparent")
-        meta_frame.pack(fill="x", padx=10, pady=(0, 6))
-        ctk.CTkLabel(meta_frame, text="Topic").pack(anchor="w")
-        self.topic_var = tk.StringVar(value="")
-        ctk.CTkEntry(meta_frame, textvariable=self.topic_var, width=420).pack(fill="x", padx=0, pady=(0, 6))
-        ctk.CTkLabel(meta_frame, text="Description").pack(anchor="w")
-        self.desc = ctk.CTkTextbox(meta_frame, width=420, height=120)
-        self.desc.pack(fill="x")
-
-        # Notifications (client-side preference per channel)
-        notif_frame = ctk.CTkFrame(self, fg_color="transparent")
-        notif_frame.pack(fill="x", padx=10, pady=(10, 6))
-        self.notif_var = tk.BooleanVar(value=True)
-        ctk.CTkSwitch(notif_frame, text="Enable notifications for this channel", variable=self.notif_var).pack(anchor="w")
-
-        # Buttons
-        btns = ctk.CTkFrame(self, fg_color="transparent")
-        btns.pack(fill="x", padx=10, pady=10)
-        ctk.CTkButton(btns, text="Save", command=self._save).pack(side="left")
-        ctk.CTkButton(btns, text="Close", command=self.destroy, fg_color=self.theme.get("cancel_button", "#9a9a9a"), hover_color=self.theme.get("cancel_button_hover", "#7a7a7a")).pack(side="left", padx=6)
-
-        self._hydrate()
-
-    def _hydrate(self):
-        # Load meta
-        try:
-            meta = self.gm.client.get_channel_meta(self.cid)
-            if meta:
-                self.topic_var.set(meta.get("topic") or "")
-                try:
-                    self.desc.delete("1.0", tk.END)
-                    self.desc.insert("1.0", meta.get("description") or "")
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        # Load per-channel notif preference from app settings memory (no file write yet)
-        try:
-            key = f"notif:{self.cid}"
-            current = getattr(self.app, "_channel_notifs", {}).get(key, True)
-            self.notif_var.set(bool(current))
-        except Exception:
-            pass
-
-    def _save(self):
-        # Save meta to server
-        try:
-            self.gm.client.set_channel_meta(self.cid, self.topic_var.get().strip() or None, self.desc.get("1.0", tk.END).strip() or None)
-        except Exception as e:
-            try:
-                self.app.notifier.show(f"Save failed: {e}", type_="error")
-            except Exception:
-                pass
-            return
-        # Save per-channel notif in-memory preference (could be persisted later)
-        try:
-            if not hasattr(self.app, "_channel_notifs"):
-                self.app._channel_notifs = {}
-            self.app._channel_notifs[f"notif:{self.cid}"] = bool(self.notif_var.get())
-        except Exception:
-            pass
-        try:
-            self.app.notifier.show("Channel settings saved", type_="success")
-        except Exception:
-            pass
-
-    # Note: helpers above are class-scoped to GroupsPanel; removed mis-indented duplicates from ChannelSettingsDialog
