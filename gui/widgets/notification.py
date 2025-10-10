@@ -1,5 +1,8 @@
 import customtkinter as ctk
 import tkinter as tk
+import shutil
+import subprocess
+import sys
 
 
 def _darken_hex(hex_color: str, factor: float = 0.9) -> str:
@@ -36,13 +39,44 @@ class Notification(ctk.CTkToplevel):
         self.type_ = type_
         self.duration = max(500, int(duration))
 
-        # Window setup
-        self.overrideredirect(True)
-        self.attributes("-topmost", True)
-        self.attributes("-alpha", 0.0)
+        # Track whether per-window alpha is supported by this WM
+        self._alpha_supported = True
+
+        # Window setup: be defensive — some Linux WMs/compositors don't support
+        # overrideredirect/attributes exactly the same way as Windows.
+        try:
+            self.overrideredirect(True)
+        except Exception:
+            try:
+                # fallback name used by some tkinter builds
+                self.wm_overrideredirect(True)
+            except Exception:
+                pass
+        try:
+            self.attributes("-topmost", True)
+        except Exception:
+            try:
+                self.wm_attributes("-topmost", True)
+            except Exception:
+                pass
+        try:
+            self.attributes("-alpha", 0.0)
+            self._alpha_supported = True
+        except Exception:
+            # mark unsupported; skip fade animations
+            self._alpha_supported = False
 
         colors = self.COLORS.get(type_, self.COLORS["info"])
         bg, fg = colors["bg"], colors["fg"]
+
+        # Ensure the Toplevel background is set (avoids a black background on some WMs)
+        try:
+            self.configure(bg=bg)
+        except Exception:
+            try:
+                self['bg'] = bg
+            except Exception:
+                pass
 
         width, height = 320, 70
 
@@ -54,19 +88,33 @@ class Notification(ctk.CTkToplevel):
         y = parent_y + parent_h - height - 20
         self.geometry(f"{width}x{height}+{x}+{y}")
 
-        # Outer frame for rounded look and consistent CTk styling
-        container = ctk.CTkFrame(self, fg_color=bg, corner_radius=12)
-        container.pack(expand=True, fill="both", padx=6, pady=6)
+        # Outer frame for rounded look and consistent CTk styling. Use the
+        # background color instead of 'transparent' which can cause an
+        # unstyled/black area on some Linux compositors.
+        try:
+            container = ctk.CTkFrame(self, fg_color=bg, corner_radius=12)
+            container.pack(expand=True, fill="both", padx=6, pady=6)
+        except Exception:
+            container = tk.Frame(self, bg=bg)
+            container.pack(expand=True, fill="both", padx=6, pady=6)
 
-        # Layout: icon | message | close
-        inner = ctk.CTkFrame(container, fg_color="transparent")
-        inner.pack(side="top", fill="both", expand=True, padx=self.PADDING, pady=(8, 4))
-        inner.grid_columnconfigure(1, weight=1)
+        # Layout: icon | message | close. Avoid transparent inner frames.
+        try:
+            inner = ctk.CTkFrame(container, fg_color=bg)
+            inner.pack(side="top", fill="both", expand=True, padx=self.PADDING, pady=(8, 4))
+            inner.grid_columnconfigure(1, weight=1)
+        except Exception:
+            inner = tk.Frame(container, bg=bg)
+            inner.pack(fill="both", expand=True)
 
         icon_label = ctk.CTkLabel(inner, text=colors.get("icon", ""), width=30, anchor="w")
         icon_label.grid(row=0, column=0, sticky="w")
 
-        label = ctk.CTkLabel(inner, text=message, text_color=fg, fg_color="transparent", anchor="w", justify="left")
+        # Use non-transparent fg color to avoid invisible text on some setups
+        try:
+            label = ctk.CTkLabel(inner, text=message, text_color=fg, fg_color=bg, anchor="w", justify="left")
+        except Exception:
+            label = tk.Label(inner, text=message, bg=bg, fg=fg, justify="left")
         label.grid(row=0, column=1, sticky="we", padx=(8, 4))
         label.bind("<Button-1>", self.copy_to_clipboard)
 
@@ -77,10 +125,17 @@ class Notification(ctk.CTkToplevel):
 
         # Progress bar at the bottom (use a darkened bg for contrast)
         bar_bg_color = _darken_hex(bg, 0.88)
-        bar_bg = ctk.CTkFrame(container, fg_color=bar_bg_color, height=6, corner_radius=8)
-        bar_bg.pack(side="bottom", fill="x", padx=self.PADDING, pady=(0, 8))
-        self.bar = ctk.CTkFrame(bar_bg, fg_color=fg, corner_radius=8, width=0)
-        self.bar.place(relheight=1, x=0, y=0)
+        try:
+            bar_bg = ctk.CTkFrame(container, fg_color=bar_bg_color, height=6, corner_radius=8)
+            bar_bg.pack(side="bottom", fill="x", padx=self.PADDING, pady=(0, 8))
+            self.bar = ctk.CTkFrame(bar_bg, fg_color=fg, corner_radius=8, width=0)
+            self.bar.place(relheight=1, x=0, y=0)
+        except Exception:
+            try:
+                self.bar = tk.Frame(container, bg=fg, height=6)
+                self.bar.pack(side="bottom", fill="x", padx=self.PADDING, pady=(0, 8))
+            except Exception:
+                self.bar = None
 
         # Animation / timing state
         self._start_time = None
@@ -89,14 +144,22 @@ class Notification(ctk.CTkToplevel):
         self._progress_after = None
         self._fade_after = None
 
-        # Hover to pause
-        container.bind("<Enter>", lambda e: self._pause())
-        container.bind("<Leave>", lambda e: self._resume())
-        inner.bind("<Enter>", lambda e: self._pause())
-        inner.bind("<Leave>", lambda e: self._resume())
+        # Hover to pause (guard binds)
+        try:
+            container.bind("<Enter>", lambda e: self._pause())
+            container.bind("<Leave>", lambda e: self._resume())
+            inner.bind("<Enter>", lambda e: self._pause())
+            inner.bind("<Leave>", lambda e: self._resume())
+        except Exception:
+            pass
 
-        # Start
-        self._fade_in()
+        # Start: only run fade animation if alpha is supported
+        if self._alpha_supported:
+            try:
+                self._fade_in()
+            except Exception:
+                pass
+
         self._start_progress()
 
     def copy_to_clipboard(self, event=None):
@@ -200,6 +263,15 @@ class NotificationManager:
         self.active_notifications = []
 
     def show(self, message: str, type_: str = "info", duration=3000):
+        # On Linux prefer a native desktop notification when available to
+        # avoid compositor/window-manager issues that hide/blacken CTkToplevels.
+        try:
+            if sys.platform.startswith("linux") and shutil.which("notify-send"):
+                subprocess.Popen(["notify-send", "Whispr", message], close_fds=True)
+                return
+        except Exception:
+            pass
+
         # Limit how many notifications stack; if too many, remove the oldest
         if len(self.active_notifications) >= self.MAX_VISIBLE:
             old = self.active_notifications.pop(0)
