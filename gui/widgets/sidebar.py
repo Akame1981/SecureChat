@@ -1,5 +1,6 @@
 # gui/widgets/sidebar.py
 import customtkinter as ctk
+import tkinter as tk
 from PIL import Image, ImageEnhance
 from utils.path_utils import get_resource_path
 from gui.identicon import generate_identicon
@@ -16,7 +17,20 @@ class AddRecipientDialog(ctk.CTkToplevel):
         self.title("Add Recipient")
         self.geometry("360x260")
         self.resizable(False, False)
-        self.grab_set()
+        # Only attempt to grab input if the dialog/parent is viewable.
+        # Calling grab_set when the parent window isn't viewable raises
+        # "grab failed: window not viewable" on some platforms/Timings.
+        try:
+            # prefer checking this Toplevel's visibility; fall back to parent
+            if getattr(self, 'winfo_viewable', lambda: False)() or getattr(self.master, 'winfo_viewable', lambda: False)():
+                try:
+                    self.grab_set()
+                except tk.TclError:
+                    # If grab fails, ignore and continue without modal grab
+                    pass
+        except Exception:
+            # keep construction robust if any check fails
+            pass
         self.pin = pin
 
         # Resolve theme (prefer app.theme_manager)
