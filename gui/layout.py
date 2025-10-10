@@ -4,6 +4,7 @@ from customtkinter import CTkImage
 from datetime import datetime
 from gui.tooltip import ToolTip
 from gui.widgets.sidebar import Sidebar
+from gui.widgets.groups_panel import GroupsPanel
 from PIL import Image, ImageEnhance, ImageDraw, ImageOps
 from tkinter import filedialog
 import os
@@ -26,7 +27,7 @@ class WhisprUILayout:
         # Expose for theme refresh
         app.main_frame = main_frame
 
-        # --- Sidebar ---
+    # --- Sidebar ---
         # Support new ThemeManager (preferred) or fallback to legacy attributes
         if hasattr(app, "theme_manager"):
             current_theme = getattr(app.theme_manager, "current_theme", "Dark")
@@ -45,8 +46,23 @@ class WhisprUILayout:
             pin=app.pin,
             theme_colors=theme,
         )
+        # Toggle button to switch between Recipients and Groups
+        try:
+            toggle_frame = ctk.CTkFrame(app.sidebar, fg_color="transparent")
+            toggle_frame.pack(side="top", fill="x", padx=8, pady=(6, 0))
+            btn_fg = theme.get("sidebar_button", "#4a90e2")
+            btn_hover = theme.get("sidebar_button_hover", "#357ABD")
+            # Two small buttons: DMs and Groups
+            row = ctk.CTkFrame(toggle_frame, fg_color="transparent")
+            row.pack(fill="x")
+            ctk.CTkButton(row, text="DMs", width=100, fg_color=btn_fg, hover_color=btn_hover,
+                          command=lambda: getattr(app, 'show_direct_messages', lambda: None)()).pack(side="left", padx=(0, 6), pady=4)
+            ctk.CTkButton(row, text="Groups", width=100, fg_color=btn_fg, hover_color=btn_hover,
+                          command=lambda: getattr(app, 'show_groups_panel', lambda: None)()).pack(side="left", padx=(6, 0), pady=4)
+        except Exception:
+            pass
 
-        # --- Chat Frame ---
+    # --- Chat Frame ---
         chat_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
         chat_frame.pack(side="right", fill="both", expand=True)
         app.chat_frame = chat_frame
@@ -88,13 +104,13 @@ class WhisprUILayout:
         pub_frame.bind("<Configure>", update_pub_label)
         app.after(200, update_pub_label)
 
-        # --- Messages Container ---
+    # --- Messages Container ---
         app.messages_container = ctk.CTkScrollableFrame(chat_frame, fg_color=theme.get("background", "#2e2e3f"), corner_radius=10)
         app.messages_container.pack(padx=10, pady=10, fill="both", expand=True)
         app.messages_container.grid_columnconfigure(0, weight=1)
 
 
-        # --- Input Frame ---
+    # --- Input Frame ---
         input_frame = ctk.CTkFrame(chat_frame, fg_color="transparent")
         input_frame.pack(fill="x", padx=10, pady=(0,10))
         app.input_frame = input_frame
@@ -244,6 +260,42 @@ class WhisprUILayout:
             color = theme.get("server_online", "green") if online else theme.get("server_offline", "red")
             app.server_status.configure(text="●", text_color=color)
         app.update_status_color = update_status_color
+
+        # Instantiate but keep hidden the Groups panel; app.show_groups_panel() will swap views
+        try:
+            app.groups_panel = GroupsPanel(chat_frame, app, theme)
+            app.groups_panel.pack_forget()
+            app.show_groups_panel = lambda: self._switch_to_groups()
+            app.show_direct_messages = lambda: self._switch_to_dm()
+        except Exception as e:
+            print("Failed to init GroupsPanel", e)
+
+    def _switch_to_groups(self):
+        app = self.app
+        try:
+            # Hide direct messages widgets
+            for w in [getattr(app, 'pub_frame', None), getattr(app, 'messages_container', None), getattr(app, 'input_frame', None)]:
+                if w and w.winfo_ismapped():
+                    w.pack_forget()
+            # Show groups panel
+            app.groups_panel.pack(fill="both", expand=True)
+            if hasattr(app.groups_panel, 'refresh_groups'):
+                app.groups_panel.refresh_groups()
+        except Exception:
+            pass
+
+    def _switch_to_dm(self):
+        app = self.app
+        try:
+            # Hide groups panel
+            if hasattr(app, 'groups_panel') and app.groups_panel.winfo_ismapped():
+                app.groups_panel.pack_forget()
+            # Show DM widgets
+            app.pub_frame.pack(fill="x", padx=10, pady=10)
+            app.messages_container.pack(padx=10, pady=10, fill="both", expand=True)
+            app.input_frame.pack(fill="x", padx=10, pady=(0,10))
+        except Exception:
+            pass
 
     def refresh_theme(self, theme: dict):
         """Update top-level layout frame colors when theme changes."""

@@ -51,6 +51,11 @@ class GroupClient:
         r.raise_for_status()
         return r.json()
 
+    def list_channels(self, group_id: str) -> dict:
+        r = requests.get(f"{self.app.SERVER_URL}/groups/channels/list", params={"group_id": group_id, "user_id": self.app.my_pub_hex}, verify=self.app.SERVER_CERT, timeout=10)
+        r.raise_for_status()
+        return r.json()
+
     def send_message(self, group_id: str, channel_id: str, ciphertext_b64: str, nonce_b64: str, key_version: int, timestamp: float | None = None) -> dict:
         payload = {
             "group_id": group_id,
