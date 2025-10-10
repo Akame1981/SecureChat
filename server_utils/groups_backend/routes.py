@@ -214,6 +214,22 @@ def rename_channel(req: RenameChannelRequest, user_id: str):
         db.close()
 
 
+@router.get("/channels/list")
+def list_channels(group_id: str, user_id: str):
+    db = SessionLocal()
+    try:
+        _require_member(db, group_id, user_id)
+        rows = db.query(Channel).filter(Channel.group_id == group_id).order_by(Channel.created_at.asc()).all()
+        return {
+            "channels": [
+                {"id": c.id, "group_id": c.group_id, "name": c.name, "type": c.type, "created_at": c.created_at}
+                for c in rows
+            ]
+        }
+    finally:
+        db.close()
+
+
 @router.post("/messages/send")
 def send_group_message(req: SendGroupMessageRequest):
     db = SessionLocal()
