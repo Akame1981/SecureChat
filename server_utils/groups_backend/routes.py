@@ -214,6 +214,25 @@ def rename_channel(req: RenameChannelRequest, user_id: str):
         db.close()
 
 
+@router.post("/channels/delete")
+def delete_channel(channel_id: str, user_id: str):
+    db = SessionLocal()
+    try:
+        ch = db.query(Channel).filter(Channel.id == channel_id).first()
+        if not ch:
+            raise HTTPException(status_code=404, detail="Channel not found")
+        gm = _require_member(db, ch.group_id, user_id)
+        # Only admins/owner can delete a channel
+        if gm.role not in ("owner", "admin"):
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        # Deleting channel will cascade delete its messages due to FK ondelete
+        db.delete(ch)
+        db.commit()
+        return {"status": "deleted"}
+    finally:
+        db.close()
+
+
 @router.get("/channels/list")
 def list_channels(group_id: str, user_id: str):
     db = SessionLocal()

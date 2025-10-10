@@ -51,6 +51,12 @@ class GroupClient:
         r.raise_for_status()
         return r.json()
 
+    def delete_channel(self, channel_id: str) -> dict:
+        params = {"channel_id": channel_id, "user_id": self.app.my_pub_hex}
+        r = requests.post(f"{self.app.SERVER_URL}/groups/channels/delete", params=params, verify=self.app.SERVER_CERT, timeout=10)
+        r.raise_for_status()
+        return r.json()
+
     def list_channels(self, group_id: str) -> dict:
         r = requests.get(f"{self.app.SERVER_URL}/groups/channels/list", params={"group_id": group_id, "user_id": self.app.my_pub_hex}, verify=self.app.SERVER_CERT, timeout=10)
         r.raise_for_status()

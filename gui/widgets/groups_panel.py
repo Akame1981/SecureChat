@@ -462,6 +462,11 @@ class GroupsPanel(ctk.CTkFrame):
                                     fg_color=self.theme.get("input_bg", "#2e2e3f"),
                                     hover_color=self.theme.get("bubble_you", "#7289da"))
                 btn.pack(fill="x", padx=4, pady=4)
+                # Bind right-click for context menu
+                try:
+                    btn.bind("<Button-3>", lambda e, cid=cid, cname=cname, b=btn: self._open_channel_menu(e, cid, cname, b))
+                except Exception:
+                    pass
                 self.channel_buttons[cid] = btn
             if select_id:
                 for ch in chans:
@@ -531,6 +536,70 @@ class GroupsPanel(ctk.CTkFrame):
                      text_color=self.theme.get("sidebar_text", "white")).pack(anchor="w", padx=8, pady=(6, 0))
         ctk.CTkLabel(bubble, text=text, font=("Segoe UI", 12),
                      text_color=self.theme.get("sidebar_text", "white"), wraplength=800, justify="left").pack(anchor="w", padx=8, pady=(0, 8))
+
+    def _open_channel_menu(self, event, channel_id: str, channel_name: str, btn_widget):
+        try:
+            menu = tk.Menu(self, tearoff=0)
+            menu.add_command(label="Open", command=lambda: self._select_channel(channel_id, channel_name))
+            menu.add_command(label="Rename…", command=lambda: self._rename_channel_prompt(channel_id, channel_name))
+            menu.add_command(label="Delete…", command=lambda: self._delete_channel_confirm(channel_id, channel_name))
+            menu.add_separator()
+            menu.add_command(label="Channel Settings", command=lambda: self._open_channel_settings(channel_id, channel_name))
+            # Show at mouse position
+            try:
+                menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                menu.grab_release()
+        except Exception as e:
+            try:
+                self.app.notifier.show(f"Menu error: {e}", type_="error")
+            except Exception:
+                pass
+
+    def _rename_channel_prompt(self, channel_id: str, old_name: str):
+        try:
+            new_name = simpledialog.askstring("Rename Channel", f"Rename '{old_name}' to:", parent=self)
+            if not new_name:
+                return
+            self.gm.client.rename_channel(channel_id, new_name)
+            # Refresh channels
+            if self.selected_group_id:
+                self._load_channels(self.selected_group_id)
+            self.app.notifier.show("Channel renamed", type_="success")
+        except Exception as e:
+            try:
+                self.app.notifier.show(f"Rename failed: {e}", type_="error")
+            except Exception:
+                pass
+
+    def _delete_channel_confirm(self, channel_id: str, cname: str):
+        try:
+            # Quick confirm via simpledialog; could be a custom modal later
+            ans = simpledialog.askstring("Delete Channel", f"Type the channel name to confirm delete: {cname}", parent=self)
+            if not ans or ans.strip() != cname:
+                return
+            self.gm.client.delete_channel(channel_id)
+            # If we deleted the selected channel, clear selection
+            if self.selected_channel_id == channel_id:
+                self.selected_channel_id = None
+                for w in self.messages.winfo_children():
+                    w.destroy()
+            # Refresh
+            if self.selected_group_id:
+                self._load_channels(self.selected_group_id)
+            self.app.notifier.show("Channel deleted", type_="success")
+        except Exception as e:
+            try:
+                self.app.notifier.show(f"Delete failed: {e}", type_="error")
+            except Exception:
+                pass
+
+    def _open_channel_settings(self, channel_id: str, channel_name: str):
+        # Placeholder for future per-channel settings dialog
+        try:
+            self.app.notifier.show("Channel settings coming soon", type_="info")
+        except Exception:
+            pass
 
     def _resolve_sender_display(self, sender_id: str | None) -> str:
         try:
