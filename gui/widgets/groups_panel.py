@@ -21,6 +21,7 @@ class GroupsPanel(ctk.CTkFrame):
         # Left: search + groups list + actions
         left = ctk.CTkFrame(self, fg_color=self.theme.get("sidebar_bg", "#2a2a3a"), width=300)
         left.pack(side="left", fill="y")
+        self.left_panel = left
 
         # Search / join entry
         sframe = ctk.CTkFrame(left, fg_color="transparent")
@@ -53,6 +54,7 @@ class GroupsPanel(ctk.CTkFrame):
         # Right: channels (left) + messages (right)
         right = ctk.CTkFrame(self, fg_color="transparent")
         right.pack(side="left", fill="both", expand=True)
+        self.right_panel = right
 
         # Top bar
         top = ctk.CTkFrame(right, fg_color=self.theme.get("pub_frame_bg", "#2e2e3f"))
@@ -60,6 +62,14 @@ class GroupsPanel(ctk.CTkFrame):
         self.group_title = ctk.CTkLabel(top, text="", anchor="w", justify="left",
                                         text_color=self.theme.get("pub_text", "white"))
         self.group_title.pack(side="left", padx=10, pady=8)
+        # Add a quick back-to-DMs button when the main sidebar is hidden in groups mode
+        try:
+            ctk.CTkButton(top, text="DMs", width=60,
+                          command=lambda: getattr(self.app, 'show_direct_messages', lambda: None)(),
+                          fg_color=self.theme.get("sidebar_button", "#4a90e2"),
+                          hover_color=self.theme.get("sidebar_button_hover", "#357ABD")).pack(side="right", padx=6)
+        except Exception:
+            pass
         ctk.CTkButton(top, text="Settings", command=self._open_group_settings,
                       fg_color=self.theme.get("button_send", "#4a90e2"),
                       hover_color=self.theme.get("button_send_hover", "#357ABD")).pack(side="right", padx=6)
@@ -92,6 +102,20 @@ class GroupsPanel(ctk.CTkFrame):
 
         # Populate
         self.refresh_groups()
+
+    def set_sidebar_visible(self, visible: bool):
+        """Show or hide the built-in left sidebar of this panel.
+        Useful when the app's main sidebar is used for groups navigation.
+        """
+        try:
+            if visible:
+                if not self.left_panel.winfo_ismapped():
+                    self.left_panel.pack(side="left", fill="y")
+            else:
+                if self.left_panel.winfo_ismapped():
+                    self.left_panel.pack_forget()
+        except Exception:
+            pass
 
     def refresh_theme(self, theme: dict):
         self.theme = theme or {}

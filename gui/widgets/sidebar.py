@@ -5,6 +5,8 @@ from utils.path_utils import get_resource_path
 from gui.identicon import generate_identicon
 from utils.recipients import add_recipient, load_recipients
 from gui.widgets.notification import NotificationManager
+from utils.group_manager import GroupManager
+from tkinter import simpledialog
 from gui.profile_window import open_profile
 
 # Import AddRecipientDialog from this module
@@ -92,7 +94,7 @@ class AddRecipientDialog(ctk.CTkToplevel):
             self.notifier.show(str(e), type_="error")
 
 class Sidebar(ctk.CTkFrame):
-    def __init__(self, parent, app, *, select_callback, add_callback=None, pin=None, theme_colors=None):
+    def __init__(self, parent, app, *, select_callback, add_callback=None, pin=None, theme_colors=None, open_group_callback=None):
         # Resolve theme (prefer app.theme_manager)
         resolved = {}
         if hasattr(app, "theme_manager"):
@@ -106,11 +108,18 @@ class Sidebar(ctk.CTkFrame):
         self.app = app
         self.select_callback = select_callback
         self.add_callback = add_callback
+        self.open_group_callback = open_group_callback
         self.pin = pin
         self.theme = resolved
         self.pack(side="left", fill="y")
         # Cache for recipient identicon images: pub_key -> CTkImage
         self.recipient_avatar_cache = {}
+        # Group manager for groups listing/creation
+        try:
+            self.gm = GroupManager(app)
+        except Exception:
+            self.gm = None
+        self.view_mode = "recipients"  # or "groups"
 
         # Register with theme manager for live updates
         if hasattr(app, "theme_manager"):
@@ -141,6 +150,12 @@ class Sidebar(ctk.CTkFrame):
         )
         self.recipient_listbox.pack(fill="both", expand=True, padx=12, pady=(0,10))
         self.update_list()
+
+        # --- Scrollable groups list (hidden by default) ---
+        self.groups_listbox = ctk.CTkScrollableFrame(
+            self, fg_color=list_bg, width=220
+        )
+        self.groups_listbox.pack_forget()
 
         # --- Bottom user frame (add button + avatar + username) ---
         user_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -272,9 +287,12 @@ class Sidebar(ctk.CTkFrame):
                                                  text_color=theme.get("sidebar_text", "white"))
             except Exception:
                 pass
-        # Rebuild recipient entries with new colors
+        # Rebuild current view entries with new colors
         try:
-            self.update_list(selected_pub=getattr(self.app, 'recipient_pub_hex', None))
+            if self.view_mode == "recipients":
+                self.update_list(selected_pub=getattr(self.app, 'recipient_pub_hex', None))
+            else:
+                self.update_groups_list()
         except Exception:
             pass
 
@@ -328,6 +346,108 @@ class Sidebar(ctk.CTkFrame):
             frame.bind("<Button-1>", lambda e, n=name: self.select_callback(n))
             avatar_label.bind("<Button-1>", lambda e, n=name: self.select_callback(n))
             label.bind("<Button-1>", lambda e, n=name: self.select_callback(n))
+
+    # ---------------- Groups List ----------------
+    def update_groups_list(self):
+        # Clear existing
+        for widget in self.groups_listbox.winfo_children():
+            widget.destroy()
+
+        list_bg = self.theme.get("sidebar_bg", "#2a2a3a")
+        item_bg = self.theme.get("bubble_other", "#2a2a3a")
+        sel_bg = self.theme.get("bubble_you", "#7289da")
+        text_color = self.theme.get("sidebar_text", "white")
+
+        groups = []
+        try:
+            if self.gm:
+                data = self.gm.list_groups()
+                groups = data.get("groups", [])
+        except Exception:
+            groups = []
+
+        for g in groups:
+            frame = ctk.CTkFrame(self.groups_listbox, fg_color=item_bg, corner_radius=12, height=40)
+            frame.pack(fill="x", pady=4, padx=4)
+            name = ctk.CTkLabel(frame, text=g.get("name", "?"), font=("Segoe UI", 12, "bold"), text_color=text_color)
+            name.pack(side="left", padx=8, pady=6)
+            tag_txt = "Public" if g.get("is_public") else "Private"
+            tag = ctk.CTkLabel(frame, text=tag_txt, fg_color="#3b3b52", corner_radius=8, width=60)
+            tag.pack(side="left", padx=6)
+
+            def open_group(gid=g.get("id"), n=g.get("name")):
+                if callable(self.open_group_callback):
+                    try:
+                        self.open_group_callback(gid, n)
+                    except Exception:
+                        pass
+                else:
+                    # fallback: use app.groups_panel if present
+                    try:
+                        if hasattr(self.app, 'show_groups_panel'):
+                            self.app.show_groups_panel()
+                        if hasattr(self.app, 'groups_panel'):
+                            self.app.groups_panel._select_group(gid, n)
+                    except Exception:
+                        pass
+
+            frame.bind("<Button-1>", lambda e: open_group())
+            name.bind("<Button-1>", lambda e: open_group())
+            tag.bind("<Button-1>", lambda e: open_group())
+
+    # ---------------- View Toggles ----------------
+
+
+    def show_recipients_view(self):
+        self.view_mode = "recipients"
+        try:
+            self.title_label.configure(text="Recipients")
+        except Exception:
+            pass
+        try:
+            if self.groups_listbox.winfo_ismapped():
+                self.groups_listbox.pack_forget()
+            if not self.recipient_listbox.winfo_ismapped():
+                self.recipient_listbox.pack(fill="both", expand=True, padx=12, pady=(0,10))
+            # Restore add button behavior
+            if hasattr(self, 'add_btn'):
+                self.add_btn.configure(command=self.open_add_dialog)
+        except Exception:
+            pass
+        # Rebuild recipient list
+        self.update_list(selected_pub=getattr(self.app, 'recipient_pub_hex', None))
+
+    def _create_group(self):
+        if not self.gm:
+            return
+        name = simpledialog.askstring("Create Group", "Group name:", parent=self)
+        if not name:
+            return
+        try:
+            res = self.gm.create_group(name, is_public=False)
+            # update and open
+            self.update_groups_list()
+            gid = res.get("id")
+            if gid:
+                if callable(self.open_group_callback):
+                    self.open_group_callback(gid, name)
+                else:
+                    try:
+                        if hasattr(self.app, 'show_groups_panel'):
+                            self.app.show_groups_panel()
+                        if hasattr(self.app, 'groups_panel'):
+                            self.app.groups_panel._select_group(gid, name)
+                    except Exception:
+                        pass
+            try:
+                self.notifier.show(f"Group '{name}' created", type_="success")
+            except Exception:
+                pass
+        except Exception as e:
+            try:
+                self.notifier.show(f"Create failed: {e}", type_="error")
+            except Exception:
+                pass
 
     def open_add_dialog(self):
         # Use the custom dialog instead of add_callback
