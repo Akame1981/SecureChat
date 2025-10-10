@@ -207,6 +207,18 @@ class GroupsPanel(ctk.CTkFrame):
         list_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
         self._render_discover_list(list_frame, items)
 
+    def _open_group_settings(self):
+        # Open the dedicated Group Settings dialog for the selected group
+        if not self.selected_group_id:
+            return
+        try:
+            GroupSettingsDialog(self, self.app, self.gm, self.selected_group_id, self.theme)
+        except Exception as e:
+            try:
+                self.app.notifier.show(f"Failed to open settings: {e}", type_="error")
+            except Exception:
+                pass
+
     def _render_discover_list(self, parent, items: list[dict]):
         for w in parent.winfo_children():
             w.destroy()

@@ -25,11 +25,78 @@ class GroupSettingsDialog(ctk.CTkToplevel):
         ctk.CTkButton(header, text="Copy", command=self._copy_code).pack(side="left")
         ctk.CTkButton(self, text="Rotate Invite", command=self._rotate_invite).pack(padx=10, pady=(0, 10), anchor="w")
 
+        # Group name (rename)
+        name_frame = ctk.CTkFrame(self, fg_color="transparent")
+        name_frame.pack(fill="x", padx=10, pady=(0, 10))
+        ctk.CTkLabel(name_frame, text="Group Name:").pack(side="left")
+        self.name_var = tk.StringVar(value="")
+        self.name_entry = ctk.CTkEntry(name_frame, textvariable=self.name_var, width=320)
+        self.name_entry.pack(side="left", padx=6)
+        ctk.CTkButton(name_frame, text="Rename", command=self._rename_group).pack(side="left")
+
+        # Rekey controls
+        rekey_frame = ctk.CTkFrame(self, fg_color="transparent")
+        rekey_frame.pack(fill="x", padx=10, pady=(0, 10))
+        ctk.CTkButton(rekey_frame, text="Force Rekey", command=self._rekey_group).pack(side="left", padx=(0, 8))
+
+        # Approvals (enter user id to approve)
+        appr_frame = ctk.CTkFrame(self, fg_color="transparent")
+        appr_frame.pack(fill="x", padx=10, pady=(0, 10))
+        ctk.CTkLabel(appr_frame, text="Approve User ID:").pack(side="left")
+        self.appr_var = tk.StringVar(value="")
+        ctk.CTkEntry(appr_frame, textvariable=self.appr_var, width=300).pack(side="left", padx=6)
+        ctk.CTkButton(appr_frame, text="Approve", command=self._approve_member).pack(side="left")
+
         # Members list
         self.members_frame = ctk.CTkScrollableFrame(self, fg_color=self.theme.get("background", "#2e2e3f"))
         self.members_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
         self._load_members()
+
+        # Channels management
+        chan_frame = ctk.CTkFrame(self, fg_color="transparent")
+        chan_frame.pack(fill="x", padx=10, pady=(0, 10))
+        ctk.CTkLabel(chan_frame, text="New Channel:").pack(side="left")
+        self.chan_var = tk.StringVar(value="")
+        ctk.CTkEntry(chan_frame, textvariable=self.chan_var, width=240).pack(side="left", padx=6)
+        ctk.CTkButton(chan_frame, text="Create", command=self._create_channel).pack(side="left")
+
+    def _rename_group(self):
+        try:
+            # If server supports rename, you'd call a route here. Placeholder UX.
+            new_name = (self.name_var.get() or "").strip()
+            if not new_name:
+                return
+            self.app.notifier.show("Rename requested (server route TBD)", type_="info")
+        except Exception as e:
+            self.app.notifier.show(str(e), type_="error")
+
+    def _rekey_group(self):
+        try:
+            self.gm.client.rekey(self.gid)
+            self.app.notifier.show("Rekey requested", type_="success")
+        except Exception as e:
+            self.app.notifier.show(f"Rekey failed: {e}", type_="error")
+
+    def _approve_member(self):
+        uid = (self.appr_var.get() or "").strip()
+        if not uid:
+            return
+        try:
+            self.gm.client.approve_member(self.gid, uid)
+            self.app.notifier.show("User approved", type_="success")
+        except Exception as e:
+            self.app.notifier.show(f"Approve failed: {e}", type_="error")
+
+    def _create_channel(self):
+        name = (self.chan_var.get() or "").strip()
+        if not name:
+            return
+        try:
+            self.gm.client.create_channel(self.gid, name)
+            self.app.notifier.show("Channel created", type_="success")
+        except Exception as e:
+            self.app.notifier.show(f"Create channel failed: {e}", type_="error")
 
     def _copy_code(self):
         try:
