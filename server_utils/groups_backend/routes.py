@@ -398,3 +398,21 @@ def rekey_group(group_id: str, user_id: str):
         return {"key_version": g.key_version}
     finally:
         db.close()
+
+
+@router.post("/public/set")
+def set_group_public(group_id: str, is_public: bool, user_id: str):
+    """Owner/Admin can toggle whether a group is publicly discoverable/joinable without approval."""
+    db = SessionLocal()
+    try:
+        g = db.query(Group).filter(Group.id == group_id).first()
+        if not g:
+            raise HTTPException(status_code=404, detail="Group not found")
+        actor = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.user_id == user_id).first()
+        if not actor or actor.role not in ("owner", "admin"):
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        g.is_public = bool(is_public)
+        db.commit()
+        return {"is_public": bool(g.is_public)}
+    finally:
+        db.close()

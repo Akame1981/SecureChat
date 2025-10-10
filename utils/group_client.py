@@ -113,3 +113,9 @@ class GroupClient:
         r = requests.post(f"{self.app.SERVER_URL}/groups/rekey", params=params, verify=self.app.SERVER_CERT, timeout=10)
         r.raise_for_status()
         return r.json()
+
+    def set_group_public(self, group_id: str, is_public: bool) -> dict:
+        params = {"group_id": group_id, "user_id": self.app.my_pub_hex, "is_public": is_public}
+        r = requests.post(f"{self.app.SERVER_URL}/groups/public/set", params=params, verify=self.app.SERVER_CERT, timeout=10)
+        r.raise_for_status()
+        return r.json()
