@@ -4,6 +4,7 @@ from tkinter import simpledialog, Toplevel
 from datetime import datetime
 from gui.widgets.group_settings import GroupSettingsDialog
 from gui.identicon import generate_identicon
+import threading
 
 from utils.group_manager import GroupManager
 from utils.db import store_my_group_key
@@ -29,6 +30,8 @@ class GroupsPanel(ctk.CTkFrame):
         # Groups list widgets and avatar cache for sidebar-like styling
         self.group_item_widgets = {}
         self.group_avatar_cache = {}
+        # Polling guard
+        self._polling = False
 
         # Left: search + groups list + actions
         left = ctk.CTkFrame(self, fg_color=self.theme.get("sidebar_bg", "#2a2a3a"), width=300)
@@ -127,15 +130,21 @@ class GroupsPanel(ctk.CTkFrame):
         self.refresh_groups()
 
     def _filter_groups(self, term: str):
-        """Filter groups by name locally and re-render the list with sidebar-like styling."""
-        try:
-            data = self.gm.list_groups()
-            groups = data.get("groups", [])
-        except Exception:
-            groups = []
+        """Filter groups by name locally and re-render the list with sidebar-like styling without blocking UI."""
         term_lower = (term or "").lower()
-        filtered = [g for g in groups if term_lower in (g.get("name", "").lower())]
-        self._render_group_list(self.groups_list, filtered)
+
+        def work():
+            try:
+                data = self.gm.list_groups()
+                return data.get("groups", [])
+            except Exception:
+                return []
+
+        def done(groups):
+            filtered = [g for g in (groups or []) if term_lower in (g.get("name", "").lower())]
+            self._render_group_list(self.groups_list, filtered)
+
+        self._run_bg(work, done)
 
     def _render_group_list(self, parent, groups: list[dict]):
         # Clear old
@@ -377,18 +386,28 @@ class GroupsPanel(ctk.CTkFrame):
 
     # ----- Lists -----
     def refresh_groups(self, select_id: str | None = None):
-        try:
-            data = self.gm.list_groups()
-            groups = data.get("groups", [])
-        except Exception:
-            groups = []
-        self._render_group_list(self.groups_list, groups)
-        if select_id:
-            # Find group by id and select
-            for g in groups:
-                if g.get("id") == select_id:
-                    self._select_group(g.get("id"), g.get("name"))
-                    break
+        # show loading
+        for w in self.groups_list.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(self.groups_list, text="Loading…",
+                     text_color=self.theme.get("sidebar_text", "white")).pack(pady=8)
+
+        def work():
+            try:
+                return self.gm.list_groups()
+            except Exception:
+                return {"groups": []}
+
+        def done(res):
+            groups = res.get("groups", []) if isinstance(res, dict) else []
+            self._render_group_list(self.groups_list, groups)
+            if select_id:
+                for g in groups:
+                    if g.get("id") == select_id:
+                        self._select_group(g.get("id"), g.get("name"))
+                        break
+
+        self._run_bg(work, done)
 
     def _select_group(self, group_id: str, group_name: str):
         self.selected_group_id = group_id
@@ -417,31 +436,41 @@ class GroupsPanel(ctk.CTkFrame):
         for w in self.channels_list.winfo_children():
             w.destroy()
         self.channel_buttons.clear()
-        try:
-            data = self.gm.client.list_channels(group_id)
-            chans = data.get("channels", [])
-        except Exception:
-            chans = []
-        if not chans:
-            ctk.CTkLabel(self.channels_list, text="No channels",
-                         text_color=self.theme.get("sidebar_text", "white")).pack(pady=6)
-        for ch in chans:
-            cid = ch.get("id")
-            cname = ch.get("name")
-            btn = ctk.CTkButton(self.channels_list, text=f"# {cname}",
-                                command=lambda cid=cid, name=cname: self._select_channel(cid, name),
-                                fg_color=self.theme.get("input_bg", "#2e2e3f"),
-                                hover_color=self.theme.get("bubble_you", "#7289da"))
-            btn.pack(fill="x", padx=4, pady=4)
-            self.channel_buttons[cid] = btn
-        if select_id:
+        ctk.CTkLabel(self.channels_list, text="Loading channels…",
+                     text_color=self.theme.get("sidebar_text", "white")).pack(pady=6)
+
+        def work():
+            try:
+                return self.gm.client.list_channels(group_id)
+            except Exception:
+                return {"channels": []}
+
+        def done(data):
+            for w in self.channels_list.winfo_children():
+                w.destroy()
+            chans = data.get("channels", []) if isinstance(data, dict) else []
+            if not chans:
+                ctk.CTkLabel(self.channels_list, text="No channels",
+                             text_color=self.theme.get("sidebar_text", "white")).pack(pady=6)
+                return
             for ch in chans:
-                if ch.get("id") == select_id:
-                    self._select_channel(ch.get("id"), ch.get("name"))
-                    break
-        elif chans:
-            # Auto-select first channel
-            self._select_channel(chans[0].get("id"), chans[0].get("name"))
+                cid = ch.get("id")
+                cname = ch.get("name")
+                btn = ctk.CTkButton(self.channels_list, text=f"# {cname}",
+                                    command=lambda cid=cid, name=cname: self._select_channel(cid, name),
+                                    fg_color=self.theme.get("input_bg", "#2e2e3f"),
+                                    hover_color=self.theme.get("bubble_you", "#7289da"))
+                btn.pack(fill="x", padx=4, pady=4)
+                self.channel_buttons[cid] = btn
+            if select_id:
+                for ch in chans:
+                    if ch.get("id") == select_id:
+                        self._select_channel(ch.get("id"), ch.get("name"))
+                        break
+            elif chans:
+                self._select_channel(chans[0].get("id"), chans[0].get("name"))
+
+        self._run_bg(work, done)
 
     def _select_channel(self, channel_id: str, channel_name: str):
         self.selected_channel_id = channel_id
@@ -453,28 +482,36 @@ class GroupsPanel(ctk.CTkFrame):
             pass
         # Highlight selected channel button
         self._highlight_channel_btn(channel_id)
-        # Load recent messages for the channel
+        # Load recent messages for the channel in background
         for w in self.messages.winfo_children():
             w.destroy()
-        try:
-            msgs = self.gm.fetch_messages(self.selected_group_id, self.selected_channel_id, since=0)
-        except Exception:
-            msgs = []
-        if not msgs:
-            self._show_empty_messages("No messages yet")
-        else:
-            # Clear any empty-state label
-            self._clear_empty_messages()
-            last_ts = 0.0
-            for m in msgs:
-                self._append_message(m.get("sender_id"), m.get("text"), m.get("timestamp"))
-                try:
-                    last_ts = max(last_ts, float(m.get("timestamp") or 0))
-                except Exception:
-                    pass
-            self._last_ts[(self.selected_group_id, self.selected_channel_id)] = last_ts
-        # start polling for new messages
-        self._schedule_poll()
+        self._show_empty_messages("Loading messages…")
+
+        def work():
+            try:
+                return self.gm.fetch_messages(self.selected_group_id, self.selected_channel_id, since=0)
+            except Exception:
+                return []
+
+        def done(msgs):
+            for w in self.messages.winfo_children():
+                w.destroy()
+            msgs = msgs or []
+            if not msgs:
+                self._show_empty_messages("No messages yet")
+            else:
+                self._clear_empty_messages()
+                last_ts = 0.0
+                for m in msgs:
+                    self._append_message(m.get("sender_id"), m.get("text"), m.get("timestamp"))
+                    try:
+                        last_ts = max(last_ts, float(m.get("timestamp") or 0))
+                    except Exception:
+                        pass
+                self._last_ts[(self.selected_group_id, self.selected_channel_id)] = last_ts
+            self._schedule_poll()
+
+        self._run_bg(work, done)
 
     def _append_message(self, sender: str, text: str, ts: float | None = None):
         # Simple message card; use app.create_message_bubble if desired later
@@ -499,23 +536,48 @@ class GroupsPanel(ctk.CTkFrame):
             return
         # poll new messages every 2 seconds
         def _tick():
-            try:
-                key = (self.selected_group_id, self.selected_channel_id)
-                since = self._last_ts.get(key, 0) or 0
-                msgs = self.gm.fetch_messages(self.selected_group_id, self.selected_channel_id, since=since)
-                if msgs:
-                    self._clear_empty_messages()
-                    for m in msgs:
-                        self._append_message(m.get("sender_id"), m.get("text"), m.get("timestamp"))
-                        try:
-                            tval = float(m.get("timestamp") or 0)
-                            self._last_ts[key] = max(self._last_ts.get(key, 0) or 0, tval)
-                        except Exception:
-                            pass
-            except Exception:
-                pass
-            self._poll_job = self.after(2000, _tick)
+            if self._polling:
+                self._poll_job = self.after(2000, _tick)
+                return
+            self._polling = True
+            key = (self.selected_group_id, self.selected_channel_id)
+            since = self._last_ts.get(key, 0) or 0
+
+            def work():
+                try:
+                    return self.gm.fetch_messages(self.selected_group_id, self.selected_channel_id, since=since)
+                except Exception:
+                    return []
+
+            def done(msgs):
+                try:
+                    if msgs:
+                        self._clear_empty_messages()
+                        for m in msgs:
+                            self._append_message(m.get("sender_id"), m.get("text"), m.get("timestamp"))
+                            try:
+                                tval = float(m.get("timestamp") or 0)
+                                self._last_ts[key] = max(self._last_ts.get(key, 0) or 0, tval)
+                            except Exception:
+                                pass
+                finally:
+                    self._polling = False
+                    self._poll_job = self.after(2000, _tick)
+
+            self._run_bg(work, done)
+
         self._poll_job = self.after(2000, _tick)
+
+    def _run_bg(self, func, callback):
+        """Run blocking work in a daemon thread and call callback(result) on UI thread."""
+        def runner():
+            try:
+                res = func()
+            except Exception as e:
+                res = e
+            self.after(0, lambda: callback(res) if callable(callback) else None)
+        t = threading.Thread(target=runner, daemon=True)
+        t.start()
 
     def _highlight_channel_btn(self, channel_id: str):
         try:
