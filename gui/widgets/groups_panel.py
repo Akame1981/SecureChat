@@ -172,8 +172,9 @@ class GroupsPanel(ctk.CTkFrame):
                             store_attachment(data, getattr(self.app, 'pin', ''))
                         except Exception:
                             pass
-                        # Append placeholder message UI
-                        self._append_message("You", placeholder, ts)
+                        # Append placeholder message UI (include group context so save action knows where to download)
+                        meta['group_id'] = self.selected_group_id
+                        self._append_message("You", placeholder, ts, attachment_meta=meta)
 
                         # Background upload and send
                         def _bg():
@@ -593,7 +594,27 @@ class GroupsPanel(ctk.CTkFrame):
                 self._clear_empty_messages()
                 last_ts = 0.0
                 for m in msgs:
-                    self._append_message(m.get("sender_id"), m.get("text"), m.get("timestamp"))
+                    # Attach group_id into attachment_meta so message renderer can use groups download endpoint
+                    att = m.get("attachment_meta")
+                    # If no attachment_meta but text is an ATTACH envelope, parse it so UI shows a nice placeholder
+                    txt = m.get("text")
+                    if not att and isinstance(txt, str) and txt.startswith("ATTACH:"):
+                        try:
+                            from utils.attachment_envelope import parse_attachment_envelope
+                            placeholder, parsed = parse_attachment_envelope(txt)
+                            if parsed:
+                                att = parsed
+                                # replace text with placeholder for display
+                                m["text"] = placeholder or m.get("text")
+                        except Exception:
+                            att = None
+                    if isinstance(att, dict):
+                        try:
+                            att = dict(att)
+                            att["group_id"] = self.selected_group_id
+                        except Exception:
+                            pass
+                    self._append_message(m.get("sender_id"), m.get("text"), m.get("timestamp"), attachment_meta=att)
                     try:
                         last_ts = max(last_ts, float(m.get("timestamp") or 0))
                     except Exception:
@@ -605,9 +626,117 @@ class GroupsPanel(ctk.CTkFrame):
 
     def _append_message(self, sender: str, text: str, ts: float | None = None, attachment_meta: dict | None = None):
         try:
+            # Normalize text: if this is an attachment message, prefer a friendly filename placeholder
+            display_text = text
+            # If attachment_meta omitted but text contains ATTACH: envelope, try to parse it
+            if not attachment_meta and isinstance(text, str) and text.startswith("ATTACH:"):
+                try:
+                    from utils.attachment_envelope import parse_attachment_envelope
+                    placeholder, parsed = parse_attachment_envelope(text)
+                    if parsed:
+                        attachment_meta = parsed
+                        display_text = placeholder or display_text
+                except Exception:
+                    pass
+
+            # If we have attachment_meta with a name, show that instead of raw ATTACH JSON
+            if attachment_meta and isinstance(attachment_meta, dict):
+                try:
+                    name = attachment_meta.get('name')
+                    size = int(attachment_meta.get('size') or 0)
+                    if name and (not display_text or display_text.startswith('ATTACH:')):
+                        # human-readable size
+                        def _human_size(n: int) -> str:
+                            units = ["B", "KB", "MB", "GB", "TB"]
+                            f = float(n)
+                            for u in units:
+                                if f < 1024 or u == units[-1]:
+                                    return f"{f:.1f} {u}"
+                                f /= 1024
+                            return f"{n} B"
+                        display_text = f"[Attachment] {name} ({_human_size(size)})"
+                except Exception:
+                    pass
+
             # Use central styling logic so attachments render inline where supported
             from gui.message_styling import create_message_bubble
-            create_message_bubble(self.messages, sender, text, self.app.my_pub_hex, self.app.pin, app=self.app, timestamp=ts, attachment_meta=attachment_meta)
+            bubble = create_message_bubble(self.messages, sender, display_text, self.app.my_pub_hex, self.app.pin, app=self.app, timestamp=ts, attachment_meta=attachment_meta)
+            # If this message has an attachment, add an explicit right-click 'Download Attachment' entry
+            try:
+                if attachment_meta and isinstance(attachment_meta, dict) and attachment_meta.get('type', 'file') == 'file':
+                    def _download_attachment(ev=None):
+                        try:
+                            raw = None
+                            att_id = attachment_meta.get('att_id')
+                            if att_id:
+                                try:
+                                    from utils.attachments import load_attachment, AttachmentNotFound
+                                    raw = load_attachment(att_id, self.app.pin)
+                                except AttachmentNotFound:
+                                    # Try to stream from groups attachments endpoint
+                                    try:
+                                        import requests
+                                        g_id = attachment_meta.get('group_id') or self.selected_group_id
+                                        r = requests.get(f"{self.app.SERVER_URL}/groups/attachments/{att_id}", params={"group_id": g_id, "user_id": self.app.my_pub_hex}, verify=getattr(self.app, 'SERVER_CERT', None), timeout=60)
+                                        if r.ok:
+                                            raw = r.content
+                                        else:
+                                            try:
+                                                messagebox.showerror("Attachment", f"Download failed: {r.status_code}")
+                                            except Exception:
+                                                pass
+                                            return
+                                    except Exception as de:
+                                        try:
+                                            messagebox.showerror("Attachment", f"Download error: {de}")
+                                        except Exception:
+                                            pass
+                                        return
+                            else:
+                                try:
+                                    messagebox.showerror("Attachment", "Missing attachment id")
+                                except Exception:
+                                    pass
+                                return
+                            # Prompt save
+                            default_name = attachment_meta.get('name', 'file')
+                            path = filedialog.asksaveasfilename(defaultextension='', initialfile=default_name)
+                            if path and raw is not None:
+                                with open(path, 'wb') as f:
+                                    f.write(raw)
+                                try:
+                                    self.app.notifier.show(f"Saved {default_name}")
+                                except Exception:
+                                    pass
+                        except Exception as e:
+                            print('Attachment download failed', e)
+                            try:
+                                messagebox.showerror('Attachment', 'Failed to download attachment')
+                            except Exception:
+                                pass
+
+                    # Add context menu and bind
+                    try:
+                        menu = tk.Menu(bubble, tearoff=0)
+                        menu.add_command(label='Download Attachment', command=_download_attachment)
+                        def _popup(ev):
+                            try:
+                                menu.tk_popup(ev.x_root, ev.y_root)
+                            finally:
+                                menu.grab_release()
+                        # Bind right click on the bubble frame and its message label if present
+                        try:
+                            bubble.bind('<Button-3>', _popup)
+                        except Exception:
+                            pass
+                        try:
+                            bubble.msg_label.bind('<Button-3>', _popup)
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         except Exception:
             # Fallback to simple rendering
             bubble = ctk.CTkFrame(self.messages, fg_color=self.theme.get("bubble_other", "#2a2a3a"), corner_radius=10)
@@ -749,7 +878,14 @@ class GroupsPanel(ctk.CTkFrame):
                     if msgs:
                         self._clear_empty_messages()
                         for m in msgs:
-                            self._append_message(m.get("sender_id"), m.get("text"), m.get("timestamp"))
+                            att = m.get("attachment_meta")
+                            if isinstance(att, dict):
+                                try:
+                                    att = dict(att)
+                                    att["group_id"] = self.selected_group_id
+                                except Exception:
+                                    pass
+                            self._append_message(m.get("sender_id"), m.get("text"), m.get("timestamp"), attachment_meta=att)
                             try:
                                 tval = float(m.get("timestamp") or 0)
                                 self._last_ts[key] = max(self._last_ts.get(key, 0) or 0, tval)

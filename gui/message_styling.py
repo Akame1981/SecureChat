@@ -736,17 +736,28 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
                         except AttachmentNotFound:
                             # Try lazy fetch from server
                             try:
-                                r = requests.get(f"{app.SERVER_URL}/download/{att_id}", params={"recipient": app.my_pub_hex}, verify=app.SERVER_CERT, timeout=20)
-                                if r.ok:
-                                    data = r.json()
-                                    blob_b64 = data.get('blob')
-                                    if not blob_b64:
-                                        messagebox.showerror("Attachment", "Server returned no data")
+                                # If this attachment belongs to a group, use the groups attachments endpoint (streaming bytes).
+                                group_id = attachment_meta.get('group_id') if isinstance(attachment_meta, dict) else None
+                                if group_id:
+                                    r = requests.get(f"{app.SERVER_URL}/groups/attachments/{att_id}", params={"group_id": group_id, "user_id": app.my_pub_hex}, verify=app.SERVER_CERT, timeout=30)
+                                    if r.ok:
+                                        raw = r.content
+                                    else:
+                                        messagebox.showerror("Attachment", f"Download failed: {r.status_code}")
                                         return
-                                    raw = _b64.b64decode(blob_b64)
                                 else:
-                                    messagebox.showerror("Attachment", f"Download failed: {r.status_code}")
-                                    return
+                                    # Recipient/download JSON endpoint (returns base64 blob)
+                                    r = requests.get(f"{app.SERVER_URL}/download/{att_id}", params={"recipient": app.my_pub_hex}, verify=app.SERVER_CERT, timeout=20)
+                                    if r.ok:
+                                        data = r.json()
+                                        blob_b64 = data.get('blob')
+                                        if not blob_b64:
+                                            messagebox.showerror("Attachment", "Server returned no data")
+                                            return
+                                        raw = _b64.b64decode(blob_b64)
+                                    else:
+                                        messagebox.showerror("Attachment", f"Download failed: {r.status_code}")
+                                        return
                             except Exception as de:
                                 messagebox.showerror("Attachment", f"Download error: {de}")
                                 return
