@@ -1219,6 +1219,27 @@ class GroupsPanel(ctk.CTkFrame):
         if not self.selected_group_id:
             return
         try:
+            # Don't allow owners to leave their own group; require transfer or deletion
+            try:
+                info = self.gm.client.get_my_role(self.selected_group_id)
+                my_role = (info or {}).get("role")
+            except Exception:
+                my_role = None
+            if my_role == 'owner':
+                try:
+                    self.app.notifier.show("You are the owner of this group and cannot leave it. Transfer ownership or delete the group.", type_="warning")
+                except Exception:
+                    try:
+                        messagebox.showinfo("Cannot leave", "You are the owner of this group and cannot leave it. Transfer ownership or delete the group.")
+                    except Exception:
+                        pass
+                return
+
+            # Confirm leave
+            ok = messagebox.askyesno("Leave Group", "Are you sure you want to leave this group?")
+            if not ok:
+                return
+
             self.gm.client.leave_group(self.selected_group_id)
             self.app.notifier.show("Left group (members should rekey)", type_="info")
             self.selected_group_id = None
