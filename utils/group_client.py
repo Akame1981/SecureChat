@@ -152,3 +152,9 @@ class GroupClient:
         r = requests.post(f"{self.app.SERVER_URL}/groups/public/set", params=params, verify=self.app.SERVER_CERT, timeout=10)
         r.raise_for_status()
         return r.json()
+
+    def rename_group(self, group_id: str, new_name: str) -> dict:
+        payload = {"group_id": group_id, "new_name": new_name, "user_id": self.app.my_pub_hex}
+        r = requests.post(f"{self.app.SERVER_URL}/groups/rename", json=payload, verify=self.app.SERVER_CERT, timeout=10)
+        r.raise_for_status()
+        return r.json()
