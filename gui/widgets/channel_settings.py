@@ -13,7 +13,30 @@ class ChannelSettingsDialog(ctk.CTkToplevel):
         self.title(f"Channel Settings - #{channel_name}")
         self.geometry("480x420")
         self.transient(parent)
-        self.grab_set()
+        # Try to grab focus for modal behavior. On some Linux WMs this can
+        # fail with "grab failed: window not viewable" if the parent isn't
+        # currently mapped. Attempt once and, if parent is not viewable,
+        # schedule a single retry shortly after.
+        try:
+            try:
+                self.grab_set()
+            except Exception:
+                try:
+                    if getattr(parent, "winfo_viewable", None) and not parent.winfo_viewable():
+                        def _retry():
+                            try:
+                                if getattr(self, "winfo_exists", None) and self.winfo_exists():
+                                    self.grab_set()
+                            except Exception:
+                                pass
+                        try:
+                            self.after(150, _retry)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
         # Permissions view (role-based info)
         role_frame = ctk.CTkFrame(self, fg_color="transparent")
