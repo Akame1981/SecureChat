@@ -13,6 +13,8 @@ import os
 from tkinter import filedialog
 from gui.tooltip import ToolTip
 from PIL import Image, ImageEnhance
+import imghdr
+import io
 
 from utils.group_manager import GroupManager
 from utils.db import store_my_group_key, load_my_group_key
@@ -33,6 +35,8 @@ class GroupsPanel(ctk.CTkFrame):
         self._last_ts = {}
         # Channel button widgets for highlighting
         self.channel_buttons = {}
+        # Channel metadata (id -> dict with type, name, etc.)
+        self.channel_meta: dict[str, dict] = {}
         # Placeholder for empty-state label in messages area
         self._empty_messages_label = None
         # Groups list widgets and avatar cache for sidebar-like styling
@@ -221,9 +225,16 @@ class GroupsPanel(ctk.CTkFrame):
             else:
                 a_img = ImageEnhance.Brightness(Image.new('RGBA', (28,28), (120,120,120))).enhance(0.5)
             attach_icon = ctk.CTkImage(light_image=a_img, dark_image=a_img, size=(28,28))
-            attach_btn = ctk.CTkLabel(input_frame, image=attach_icon, text="", fg_color="transparent")
-            attach_btn.image = attach_icon
-            attach_btn.pack(side="left", padx=(6,4))
+            self.attach_btn = ctk.CTkLabel(input_frame, image=attach_icon, text="", fg_color="transparent")
+            self.attach_btn.image = attach_icon
+            # Create optional spacers (not packed yet) to allow centering the attach button when entry is hidden
+            try:
+                self._input_left_spacer = ctk.CTkFrame(input_frame, fg_color="transparent", width=20)
+                self._input_right_spacer = ctk.CTkFrame(input_frame, fg_color="transparent", width=20)
+            except Exception:
+                self._input_left_spacer = None
+                self._input_right_spacer = None
+            self.attach_btn.pack(side="left", padx=(6,4))
 
             def _do_attach_group(_=None):
                 if not self.selected_group_id or not self.selected_channel_id:
@@ -310,8 +321,11 @@ class GroupsPanel(ctk.CTkFrame):
                         except Exception:
                             pass
 
-            attach_btn.bind('<Button-1>', _do_attach_group)
-            ToolTip(attach_btn, 'Send attachment to channel')
+            try:
+                self.attach_btn.bind('<Button-1>', _do_attach_group)
+                ToolTip(self.attach_btn, 'Send attachment to channel')
+            except Exception:
+                pass
         except Exception:
             pass
         # Disable send until a channel is selected
@@ -535,8 +549,15 @@ class GroupsPanel(ctk.CTkFrame):
         name = simpledialog.askstring("New Channel", "Channel name:", parent=self)
         if not name:
             return
+        # Ask type (text or media)
         try:
-            res = self.gm.create_channel(self.selected_group_id, name)
+            ctype = simpledialog.askstring("Channel Type", "Enter channel type ('text' or 'media'):", initialvalue='text', parent=self)
+            if not ctype:
+                ctype = 'text'
+            ctype = ctype.strip().lower()
+            if ctype not in ('text', 'media'):
+                ctype = 'text'
+            res = self.gm.create_channel(self.selected_group_id, name, type_=ctype)
             self._load_channels(self.selected_group_id, select_id=res.get("channel_id"))
         except Exception as e:
             self.app.notifier.show(f"Create channel failed: {e}", type_="error")
@@ -636,6 +657,14 @@ class GroupsPanel(ctk.CTkFrame):
             for w in self.channels_list.winfo_children():
                 w.destroy()
             chans = data.get("channels", []) if isinstance(data, dict) else []
+            # store channel metadata for later decisions (media vs text)
+            try:
+                for ch in chans:
+                    cid = ch.get('id')
+                    if cid:
+                        self.channel_meta[cid] = ch
+            except Exception:
+                pass
             if not chans:
                 ctk.CTkLabel(self.channels_list, text="No channels",
                              text_color=self.theme.get("sidebar_text", "white")).pack(pady=6)
@@ -668,11 +697,74 @@ class GroupsPanel(ctk.CTkFrame):
         self.selected_channel_id = channel_id
         # Enable send button and set placeholder
         try:
-            if hasattr(self, '_set_send_enabled'):
-                self._set_send_enabled(True)
-            else:
-                self.send_btn.configure(state="normal")
-            self.input.configure(placeholder_text=f"Message #{channel_name}")
+            cmeta = self.channel_meta.get(channel_id, {})
+            ctype = (cmeta.get('type') or 'text') if isinstance(cmeta, dict) else 'text'
+            # Show or hide message entry/send depending on channel type.
+            try:
+                if ctype == 'media':
+                    # Hide the text entry and send control for media channels
+                    try:
+                        if hasattr(self, 'input') and self.input.winfo_manager():
+                            self.input.pack_forget()
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(self, 'send_btn') and self.send_btn.winfo_manager():
+                            self.send_btn.pack_forget()
+                    except Exception:
+                        pass
+                    # Center attach button using flexible spacers
+                    try:
+                        # remove any previous spacers
+                        if getattr(self, '_input_left_spacer', None) and self._input_left_spacer.winfo_manager():
+                            self._input_left_spacer.pack_forget()
+                        if getattr(self, '_input_right_spacer', None) and self._input_right_spacer.winfo_manager():
+                            self._input_right_spacer.pack_forget()
+                        if getattr(self, '_input_left_spacer', None):
+                            self._input_left_spacer.pack(side='left', expand=True, fill='x')
+                        # ensure attach is packed (it will appear between spacers)
+                        try:
+                            if self.attach_btn.winfo_manager():
+                                self.attach_btn.pack_forget()
+                        except Exception:
+                            pass
+                        try:
+                            self.attach_btn.pack(side='left')
+                        except Exception:
+                            pass
+                        if getattr(self, '_input_right_spacer', None):
+                            self._input_right_spacer.pack(side='left', expand=True, fill='x')
+                    except Exception:
+                        pass
+                else:
+                    # Non-media: remove centering spacers and restore input/send on the left
+                    try:
+                        if getattr(self, '_input_left_spacer', None) and self._input_left_spacer.winfo_manager():
+                            self._input_left_spacer.pack_forget()
+                        if getattr(self, '_input_right_spacer', None) and self._input_right_spacer.winfo_manager():
+                            self._input_right_spacer.pack_forget()
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(self, 'input') and not self.input.winfo_manager():
+                            self.input.pack(side="left", expand=True, fill="x", padx=(0, 6))
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(self, 'send_btn') and not self.send_btn.winfo_manager():
+                            self.send_btn.pack(side="left")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            try:
+                # Update placeholder when the entry is visible
+                if ctype == 'media' and hasattr(self, 'input') and self.input.winfo_manager():
+                    self.input.configure(placeholder_text=f"Message or upload files to #{channel_name}")
+                elif hasattr(self, 'input'):
+                    self.input.configure(placeholder_text=f"Message #{channel_name}")
+            except Exception:
+                pass
         except Exception:
             pass
         # Highlight selected channel button
@@ -692,38 +784,92 @@ class GroupsPanel(ctk.CTkFrame):
             for w in self.messages.winfo_children():
                 w.destroy()
             msgs = msgs or []
-            if not msgs:
-                self._show_empty_messages("No messages yet")
-            else:
-                self._clear_empty_messages()
-                last_ts = 0.0
-                for m in msgs:
-                    # Attach group_id into attachment_meta so message renderer can use groups download endpoint
-                    att = m.get("attachment_meta")
-                    # If no attachment_meta but text is an ATTACH envelope, parse it so UI shows a nice placeholder
-                    txt = m.get("text")
-                    if not att and isinstance(txt, str) and txt.startswith("ATTACH:"):
-                        try:
-                            from utils.attachment_envelope import parse_attachment_envelope
-                            placeholder, parsed = parse_attachment_envelope(txt)
-                            if parsed:
-                                att = parsed
-                                # replace text with placeholder for display
-                                m["text"] = placeholder or m.get("text")
-                        except Exception:
-                            att = None
-                    if isinstance(att, dict):
-                        try:
-                            att = dict(att)
-                            att["group_id"] = self.selected_group_id
-                        except Exception:
-                            pass
-                    self._append_message(m.get("sender_id"), m.get("text"), m.get("timestamp"), attachment_meta=att)
+            # If channel type is 'media', render a grid of media attachments
+            cmeta = self.channel_meta.get(self.selected_channel_id, {})
+            ctype = (cmeta.get('type') or 'text') if isinstance(cmeta, dict) else 'text'
+            if ctype == 'media':
+                try:
+                    # delegate to media channel renderer
+                    from gui.widgets.channel_types.media_channel import render_media_grid
+                    render_media_grid(self.messages, self.app, msgs, self.selected_group_id, self.theme)
+                    # update last_ts
                     try:
-                        last_ts = max(last_ts, float(m.get("timestamp") or 0))
+                        last_ts = 0.0
+                        for m in msgs:
+                            try:
+                                last_ts = max(last_ts, float(m.get("timestamp") or 0))
+                            except Exception:
+                                pass
+                        self._last_ts[(self.selected_group_id, self.selected_channel_id)] = last_ts
                     except Exception:
                         pass
-                self._last_ts[(self.selected_group_id, self.selected_channel_id)] = last_ts
+                except Exception:
+                    # fallback to text rendering if media render fails
+                    if not msgs:
+                        self._show_empty_messages("No messages yet")
+                    else:
+                        self._clear_empty_messages()
+                        last_ts = 0.0
+                        for m in msgs:
+                            # Attach group_id into attachment_meta so message renderer can use groups download endpoint
+                            att = m.get("attachment_meta")
+                            # If no attachment_meta but text is an ATTACH envelope, parse it so UI shows a nice placeholder
+                            txt = m.get("text")
+                            if not att and isinstance(txt, str) and txt.startswith("ATTACH:"):
+                                try:
+                                    from utils.attachment_envelope import parse_attachment_envelope
+                                    placeholder, parsed = parse_attachment_envelope(txt)
+                                    if parsed:
+                                        att = parsed
+                                        # replace text with placeholder for display
+                                        m["text"] = placeholder or m.get("text")
+                                except Exception:
+                                    att = None
+                            if isinstance(att, dict):
+                                try:
+                                    att = dict(att)
+                                    att["group_id"] = self.selected_group_id
+                                except Exception:
+                                    pass
+                            self._append_message(m.get("sender_id"), m.get("text"), m.get("timestamp"), attachment_meta=att)
+                            try:
+                                last_ts = max(last_ts, float(m.get("timestamp") or 0))
+                            except Exception:
+                                pass
+                        self._last_ts[(self.selected_group_id, self.selected_channel_id)] = last_ts
+            else:
+                if not msgs:
+                    self._show_empty_messages("No messages yet")
+                else:
+                    self._clear_empty_messages()
+                    last_ts = 0.0
+                    for m in msgs:
+                        # Attach group_id into attachment_meta so message renderer can use groups download endpoint
+                        att = m.get("attachment_meta")
+                        # If no attachment_meta but text is an ATTACH envelope, parse it so UI shows a nice placeholder
+                        txt = m.get("text")
+                        if not att and isinstance(txt, str) and txt.startswith("ATTACH:"):
+                            try:
+                                from utils.attachment_envelope import parse_attachment_envelope
+                                placeholder, parsed = parse_attachment_envelope(txt)
+                                if parsed:
+                                    att = parsed
+                                    # replace text with placeholder for display
+                                    m["text"] = placeholder or m.get("text")
+                            except Exception:
+                                att = None
+                        if isinstance(att, dict):
+                            try:
+                                att = dict(att)
+                                att["group_id"] = self.selected_group_id
+                            except Exception:
+                                pass
+                        self._append_message(m.get("sender_id"), m.get("text"), m.get("timestamp"), attachment_meta=att)
+                        try:
+                            last_ts = max(last_ts, float(m.get("timestamp") or 0))
+                        except Exception:
+                            pass
+                    self._last_ts[(self.selected_group_id, self.selected_channel_id)] = last_ts
             self._schedule_poll()
 
         self._run_bg(work, done)
@@ -857,6 +1003,9 @@ class GroupsPanel(ctk.CTkFrame):
                          text_color=self.theme.get("sidebar_text", "white")).pack(anchor="w", padx=8, pady=(6, 0))
             ctk.CTkLabel(bubble, text=text, font=("Segoe UI", 12),
                          text_color=self.theme.get("sidebar_text", "white"), wraplength=800, justify="left").pack(anchor="w", padx=8, pady=(0, 8))
+
+    # Media channel rendering and previewing is implemented in gui.widgets.channel_types.media_channel
+    # groups_panel delegates to that module to keep channel-type logic separated.
 
     def _open_channel_menu(self, event, channel_id: str, channel_name: str, btn_widget):
         try:
