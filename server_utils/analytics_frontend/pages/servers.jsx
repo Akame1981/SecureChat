@@ -31,7 +31,14 @@ export default function ServersPage(){
       // reload
       load(q || null)
     }catch(e){
-      alert('Delete failed: ' + (e?.response?.data?.detail || e.message || e))
+      console.error('Delete error:', e)
+      let msg = 'Delete failed'
+      try{
+        if(e?.response?.data) msg = JSON.stringify(e.response.data)
+        else if(e?.message) msg = e.message
+        else msg = String(e)
+      }catch(_){ msg = String(e) }
+      alert(msg)
     }
   }
 
