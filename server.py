@@ -414,23 +414,15 @@ def get_inbox(recipient_key: str, since: Optional[float] = Query(0)):
         encoded_msgs = r.lrange(inbox_key, 0, -1)
         r.delete(inbox_key)
 
-        import ast
         for em in encoded_msgs:
             try:
                 raw = base64.b64decode(em).decode()
             except Exception:
                 continue
-            decoded = None
-            # Prefer JSON parsing for safety
             try:
                 decoded = json.loads(raw)
             except Exception:
-                try:
-                    # Legacy fallback: safely evaluate Python literal structures
-                    decoded = ast.literal_eval(raw)
-                except Exception:
-                    decoded = None
-            if not decoded:
+                # Skip entries that are not valid JSON (do not eval)
                 continue
             if decoded.get("timestamp", 0) > since:
                 msgs.append(decoded)
