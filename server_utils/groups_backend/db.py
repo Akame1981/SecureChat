@@ -15,6 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+from sqlalchemy import text
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -96,3 +97,15 @@ class ChannelMeta(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    # Ensure older databases get the new attachment_meta column without requiring a full migration tool.
+    try:
+        with engine.connect() as conn:
+            # Query existing columns
+            res = conn.execute(text("PRAGMA table_info('group_messages')"))
+            cols = [r[1] for r in res.fetchall()]
+            if 'attachment_meta' not in cols:
+                # Add the column in-place (SQLite supports adding a nullable column)
+                conn.execute(text("ALTER TABLE group_messages ADD COLUMN attachment_meta TEXT"))
+    except Exception:
+        # Don't fail startup for edge case DB locks or permission issues; fallback is to recreate DB manually
+        pass
