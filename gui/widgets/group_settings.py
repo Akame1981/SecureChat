@@ -140,11 +140,20 @@ class GroupSettingsDialog(ctk.CTkToplevel):
 
     def _rename_group(self):
         try:
-            # If server supports rename, you'd call a route here. Placeholder UX.
             new_name = (self.name_var.get() or "").strip()
             if not new_name:
                 return
-            self.app.notifier.show("Rename requested (server route TBD)", type_="info")
+            # Call server rename route
+            try:
+                resp = self.gm.client.rename_group(self.gid, new_name)
+                if resp.get("status") == "renamed":
+                    # Update UI title
+                    self.title_label.configure(text=new_name)
+                    self.app.notifier.show("Group renamed", type_="success")
+                else:
+                    self.app.notifier.show("Rename request returned unexpected response", type_="warning")
+            except Exception as e:
+                self.app.notifier.show(f"Rename failed: {e}", type_="error")
         except Exception as e:
             self.app.notifier.show(str(e), type_="error")
 

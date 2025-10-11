@@ -198,9 +198,28 @@ def create_channel(req: CreateChannelRequest, user_id: str):
         ch = Channel(group_id=req.group_id, name=req.name, type=req.type or "text")
         db.add(ch)
         db.commit()
-        return {"channel_id": ch.id}
+        return {"status": "created", "channel_id": ch.id}
     finally:
         db.close()
+
+
+@router.post("/rename")
+def rename_group(group_id: str = Body(...), new_name: str = Body(...), user_id: str = Body(...)):
+    """Rename a group. Only owner/admin may rename."""
+    db = SessionLocal()
+    try:
+        g = db.query(Group).filter(Group.id == group_id).first()
+        if not g:
+            raise HTTPException(status_code=404, detail="Group not found")
+        actor = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.user_id == user_id).first()
+        if not actor or actor.role not in ("owner", "admin"):
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        g.name = new_name
+        db.commit()
+        return {"status": "renamed", "name": g.name}
+    finally:
+        db.close()
+    
 
 
 @router.post("/channels/rename")
