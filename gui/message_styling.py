@@ -15,6 +15,7 @@ from collections import OrderedDict
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from utils.text_file_utils import is_text_file
+from gui.text_attachment_view import render_text_attachment
 
 # Thread pool for background image/attachment work
 _IMAGE_EXECUTOR = ThreadPoolExecutor(max_workers=3)
@@ -282,129 +283,16 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
 
     # Message text or text attachment preview
     if is_text_attachment and text_attachment_content is not None:
-        # Collapsible/expandable CTkTextbox for text/code files
-        # Show filename on top
         try:
-            file_label = ctk.CTkLabel(bubble_frame, text=nm, text_color=theme.get('muted_text', '#bfbfbf'), font=("Roboto", 9, "bold"))
-            file_label.pack(anchor=side_anchor, padx=10, pady=(6, 0))
+            textbox, expand_btn = render_text_attachment(bubble_frame, nm, ext, text_attachment_content, wrap_len, side_anchor, prev_same, theme)
+            bubble_frame.msg_label = textbox
+            bubble_frame._msg_is_textbox = True
         except Exception:
-            pass
-        preview_lines = 12
-        total_lines = text_attachment_content.count('\n') + 1
-        collapsed = True
-        textbox = ctk.CTkTextbox(
-            bubble_frame,
-            width=wrap_len,
-            height=min(preview_lines * 18, 320),
-            font=("Roboto Mono", 11),
-            fg_color="#23272e",
-            text_color="#e5e5e5",
-            border_width=1,
-            border_color="#444"
-        )
-        # Insert content and attempt basic syntax highlighting for common languages
-        textbox.insert("1.0", text_attachment_content)
-        try:
-            lang = ext.lower()
-            # Create simple tags for colors (CTkTextbox maps to tk.Text internally)
-            # We rely on tk tags; CTkTextbox exposes tk.Text methods.
-            # Keywords for python and javascript
-            if lang in ('py', 'pyw'):
-                keywords = [
-                    'def', 'class', 'import', 'from', 'return', 'if', 'elif', 'else', 'for', 'while', 'try', 'except', 'with', 'as', 'pass', 'break', 'continue', 'lambda', 'yield', 'True', 'False', 'None'
-                ]
-                for kw in keywords:
-                    start = '1.0'
-                    while True:
-                        pos = textbox.search(r'\b' + kw + r'\b', start, stopindex='end', regexp=True)
-                        if not pos:
-                            break
-                        endpos = f"{pos}+{len(kw)}c"
-                        try:
-                            textbox.tag_add('kw', pos, endpos)
-                        except Exception:
-                            pass
-                        start = endpos
-                # strings
-                textbox.tag_config('str', foreground='#a8ff60')
-                textbox.tag_config('com', foreground='#888888')
-            elif lang in ('js', 'ts'):
-                keywords = ['function', 'var', 'let', 'const', 'if', 'else', 'for', 'while', 'return', 'class', 'import', 'from', 'export', 'try', 'catch']
-                for kw in keywords:
-                    start = '1.0'
-                    while True:
-                        pos = textbox.search(r'\b' + kw + r'\b', start, stopindex='end', regexp=True)
-                        if not pos:
-                            break
-                        endpos = f"{pos}+{len(kw)}c"
-                        try:
-                            textbox.tag_add('kw', pos, endpos)
-                        except Exception:
-                            pass
-                        start = endpos
-                textbox.tag_config('str', foreground='#a8ff60')
-                textbox.tag_config('com', foreground='#888888')
-            elif lang in ('json',):
-                # highlight keys and punctuation lightly
-                textbox.tag_config('str', foreground='#a8ff60')
-            else:
-                # generic: highlight lines starting with // or # as comments
-                textbox.tag_config('com', foreground='#888888')
-
-            # generic: tag strings in double or single quotes
-            import re
-            for m in re.finditer(r"(?P<q>\'[^\']*\'|\"[^\"]*\")", text_attachment_content):
-                try:
-                    sidx = f"1.0+{m.start()}c"
-                    eidx = f"1.0+{m.end()}c"
-                    textbox.tag_add('str', sidx, eidx)
-                except Exception:
-                    pass
-
-            # comments: python (#...) and js (//...)
-            lines = text_attachment_content.splitlines()
-            offset = 0
-            for i, ln in enumerate(lines, start=1):
-                if ln.lstrip().startswith('#') or ln.lstrip().startswith('//'):
-                    try:
-                        sidx = f"{i}.0"
-                        eidx = f"{i}.end"
-                        textbox.tag_add('com', sidx, eidx)
-                    except Exception:
-                        pass
-
-            # Configure keyword tag color last (so it doesn't get overridden)
-            textbox.tag_config('kw', foreground='#66b8ff')
-        except Exception:
-            pass
-        textbox.configure(state="disabled")
-        textbox.pack(anchor=side_anchor, padx=10, pady=(4 if not prev_same else 2, 4), fill="x")
-        bubble_frame.msg_label = textbox
-        bubble_frame._msg_is_textbox = True
-
-        # Expand/collapse button
-        def toggle_expand():
-            nonlocal collapsed
-            if collapsed:
-                textbox.configure(height=min(total_lines * 18, 600))
-                expand_btn.configure(text="Collapse")
-                collapsed = False
-            else:
-                textbox.configure(height=min(preview_lines * 18, 320))
-                expand_btn.configure(text="Expand")
-                collapsed = True
-
-        expand_btn = ctk.CTkButton(
-            bubble_frame,
-            text="Expand" if total_lines > preview_lines else "Full View",
-            width=80,
-            height=22,
-            font=("Roboto", 10),
-            command=toggle_expand
-        )
-        expand_btn.pack(anchor=side_anchor, padx=10, pady=(0, 4))
-        if total_lines <= preview_lines:
-            expand_btn.configure(state="disabled")
+            # Fallback to inline rendering if the new module fails
+            try:
+                pass
+            except Exception:
+                pass
     else:
         # Use a lightweight label instead of a Text/Textbox for performance while
         # keeping the same look. Copying is provided via Ctrl+C and the context menu.
