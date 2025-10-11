@@ -113,6 +113,10 @@ class AttachmentUpload(BaseModel):
 attachments_store = {}
 attachments_lock = threading.Lock()
 
+# Persistent attachment storage directory (for recipient attachments)
+ATT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'server_utils', 'data', 'attachments'))
+os.makedirs(ATT_DIR, exist_ok=True)
+
 
 def verify_signature(sender_hex, message_b64, signature_b64):
     try:
@@ -239,6 +243,19 @@ def upload_attachment(att: AttachmentUpload):
         raise HTTPException(status_code=400, detail="sha256 mismatch")
     now = _time.time()
     with attachments_lock:
+        # Persist raw blob to disk for durability and lazy download
+        path = os.path.join(ATT_DIR, f"{att.sha256}.bin")
+        if not os.path.exists(path):
+            try:
+                tmp = path + '.tmp'
+                with open(tmp, 'wb') as f:
+                    f.write(blob_bytes)
+                    try: f.flush(); os.fsync(f.fileno())
+                    except Exception: pass
+                os.replace(tmp, path)
+            except Exception:
+                # If disk write fails, still keep in-memory store as fallback
+                pass
         attachments_store[att.sha256] = {
             "from": att.from_,
             "to": att.to,
@@ -247,6 +264,7 @@ def upload_attachment(att: AttachmentUpload):
             "name": att.name,
             "size": att.size,
             "ts": now,
+            "path": path if os.path.exists(path) else None,
         }
 
     try:
@@ -293,6 +311,25 @@ def download_attachment(att_id: str, recipient: str):
             attachments_store.pop(att_id, None)
             entry = None
     if not entry:
+        # Try disk fallback for persisted uploads
+        path = os.path.join(ATT_DIR, f"{att_id}.bin")
+        if os.path.exists(path):
+            try:
+                with open(path, 'rb') as f:
+                    blob_bytes = f.read()
+                import base64
+                blob_b64 = base64.b64encode(blob_bytes).decode()
+                # No metadata available besides att_id; return minimal structure
+                return {
+                    "att_id": att_id,
+                    "blob": blob_b64,
+                    "name": None,
+                    "size": len(blob_bytes),
+                    "from": None,
+                    "to": recipient,
+                }
+            except Exception:
+                raise HTTPException(status_code=404, detail="Not found")
         raise HTTPException(status_code=404, detail="Not found")
     if entry.get("to") != recipient:
         raise HTTPException(status_code=403, detail="Not authorized for this attachment")
@@ -304,6 +341,33 @@ def download_attachment(att_id: str, recipient: str):
         "from": entry["from"],
         "to": entry["to"],
     }
+
+
+@app.get('/download/raw/{att_id}')
+def download_attachment_raw(att_id: str, recipient: str):
+    # Stream raw bytes for clients that prefer direct binary download
+    with attachments_lock:
+        entry = attachments_store.get(att_id)
+    path = None
+    if entry:
+        if entry.get('to') != recipient:
+            raise HTTPException(status_code=403, detail='Not authorized for this attachment')
+        path = entry.get('path')
+    # fallback to disk path
+    disk_path = os.path.join(ATT_DIR, f"{att_id}.bin")
+    if not path and os.path.exists(disk_path):
+        path = disk_path
+    if not path or not os.path.exists(path):
+        raise HTTPException(status_code=404, detail='Not found')
+    def iterfile():
+        with open(path, 'rb') as f:
+            while True:
+                chunk = f.read(8192)
+                if not chunk:
+                    break
+                yield chunk
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(iterfile(), media_type='application/octet-stream')
 
 
 @app.get("/inbox/{recipient_key}")

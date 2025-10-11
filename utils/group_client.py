@@ -62,6 +62,17 @@ class GroupClient:
         r.raise_for_status()
         return r.json()
 
+    def upload_attachment(self, group_id: str, file_bytes: bytes) -> dict:
+        """Upload a raw attachment blob to the groups backend. The server will return {id, size}.
+
+        Notes: the server accepts the raw bytes in the request body and computes the sha256 id.
+        """
+        params = {"group_id": group_id, "user_id": self.app.my_pub_hex}
+        # POST raw bytes in the body
+        r = requests.post(f"{self.app.SERVER_URL}/groups/attachments/upload", params=params, data=file_bytes, verify=self.app.SERVER_CERT, timeout=60)
+        r.raise_for_status()
+        return r.json()
+
     def get_channel_meta(self, channel_id: str) -> dict:
         r = requests.get(f"{self.app.SERVER_URL}/groups/channels/meta", params={"channel_id": channel_id, "user_id": self.app.my_pub_hex}, verify=self.app.SERVER_CERT, timeout=10)
         r.raise_for_status()

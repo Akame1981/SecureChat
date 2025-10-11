@@ -9,9 +9,13 @@ from gui.identicon import generate_identicon
 import threading
 from utils.recipients import get_recipient_name
 from tkinter import messagebox
+import os
+from tkinter import filedialog
+from gui.tooltip import ToolTip
+from PIL import Image, ImageEnhance
 
 from utils.group_manager import GroupManager
-from utils.db import store_my_group_key
+from utils.db import store_my_group_key, load_my_group_key
 
 
 class GroupsPanel(ctk.CTkFrame):
@@ -119,6 +123,107 @@ class GroupsPanel(ctk.CTkFrame):
                                       fg_color=self.theme.get("button_send", "#4a90e2"),
                                       hover_color=self.theme.get("button_send_hover", "#357ABD"))
         self.send_btn.pack(side="left")
+        # Attachment button for groups (mirrors DM flow)
+        try:
+            from PIL import Image, ImageEnhance
+            attach_path = "gui/src/images/attach_btn.png"
+            if attach_path and os.path.exists(attach_path):
+                a_img = Image.open(attach_path).resize((28,28), Image.Resampling.LANCZOS)
+            else:
+                a_img = ImageEnhance.Brightness(Image.new('RGBA', (28,28), (120,120,120))).enhance(0.5)
+            attach_icon = ctk.CTkImage(light_image=a_img, dark_image=a_img, size=(28,28))
+            attach_btn = ctk.CTkLabel(input_frame, image=attach_icon, text="", fg_color="transparent")
+            attach_btn.image = attach_icon
+            attach_btn.pack(side="left", padx=(6,4))
+
+            def _do_attach_group(_=None):
+                if not self.selected_group_id or not self.selected_channel_id:
+                    try:
+                        self.app.notifier.show("Select a channel first", type_="warning")
+                    except Exception:
+                        pass
+                    return
+                paths = tk.filedialog.askopenfilenames(title="Select files to send to group")
+                for p in paths:
+                    if not p:
+                        continue
+                    try:
+                        sz = os.path.getsize(p)
+                        max_size = 10 * 1024 * 1024  # 10MB guard for groups
+                        if sz > max_size:
+                            try:
+                                self.app.notifier.show(f"Skip {os.path.basename(p)} (>10MB)", type_="warning")
+                            except Exception:
+                                pass
+                            continue
+                        with open(p, 'rb') as f:
+                            data = f.read()
+                        # Show placeholder immediately
+                        human = self.gm.app.chat_manager._human_size(len(data)) if hasattr(self.gm.app, 'chat_manager') else f"{len(data)} bytes"
+                        placeholder = f"[Attachment] {os.path.basename(p)} ({human})"
+                        ts = __import__('time').time()
+                        # Create deterministic id for placeholder
+                        import hashlib
+                        att_id = hashlib.sha256(data).hexdigest()
+                        meta = {"name": os.path.basename(p), "size": len(data), "att_id": att_id, "type": "file"}
+                        # Save locally in attachment store
+                        try:
+                            from utils.attachments import store_attachment
+                            store_attachment(data, getattr(self.app, 'pin', ''))
+                        except Exception:
+                            pass
+                        # Append placeholder message UI
+                        self._append_message("You", placeholder, ts)
+
+                        # Background upload and send
+                        def _bg():
+                            try:
+                                # Upload raw encrypted blob to groups backend; GroupClient will compute id
+                                uploaded = self.gm.client.upload_attachment(self.selected_group_id, data)
+                                aid = uploaded.get('id') if isinstance(uploaded, dict) else None
+                                if not aid:
+                                    try:
+                                        self.app.notifier.show(f"Upload failed for {os.path.basename(p)}", type_="error")
+                                    except Exception:
+                                        pass
+                                    return
+                                # Send group message with attachment metadata (the message text can be empty or a caption)
+                                from utils.group_crypto import encrypt_text_with_group_key
+                                # Load my stored group key
+                                from utils.db import load_my_group_key
+                                loaded = load_my_group_key(self.app.pin, self.selected_group_id)
+                                if not loaded:
+                                    try:
+                                        self.app.notifier.show("No group key available", type_="error")
+                                    except Exception:
+                                        pass
+                                    return
+                                key, kv = loaded
+                                # Build envelope as in recipient flow: ATTACH:{{json}}
+                                import json as _json
+                                envelope = {"type": "file", "name": os.path.basename(p), "att_id": aid, "size": len(data)}
+                                plaintext = "ATTACH:" + _json.dumps(envelope, separators=(',', ':'))
+                                ct_b64, nonce_b64 = encrypt_text_with_group_key(plaintext, key)
+                                # Send via group manager client
+                                self.gm.client.send_message(self.selected_group_id, self.selected_channel_id, ct_b64, nonce_b64, kv, timestamp=ts)
+                            except Exception as e:
+                                try:
+                                    self.app.notifier.show(f"Attachment send failed: {e}", type_="error")
+                                except Exception:
+                                    pass
+
+                        threading.Thread(target=_bg, daemon=True).start()
+                    except Exception as e:
+                        print('Group attach error', e)
+                        try:
+                            self.app.notifier.show('Attachment error', type_='error')
+                        except Exception:
+                            pass
+
+            attach_btn.bind('<Button-1>', _do_attach_group)
+            ToolTip(attach_btn, 'Send attachment to channel')
+        except Exception:
+            pass
         # Disable send until a channel is selected
         try:
             self.send_btn.configure(state="disabled")
@@ -498,23 +603,27 @@ class GroupsPanel(ctk.CTkFrame):
 
         self._run_bg(work, done)
 
-    def _append_message(self, sender: str, text: str, ts: float | None = None):
-        # Simple message card; use app.create_message_bubble if desired later
-        bubble = ctk.CTkFrame(self.messages, fg_color=self.theme.get("bubble_other", "#2a2a3a"), corner_radius=10)
-        bubble.pack(fill="x", padx=8, pady=4)
-        # Format timestamp
-        stamp = ""
+    def _append_message(self, sender: str, text: str, ts: float | None = None, attachment_meta: dict | None = None):
         try:
-            if ts:
-                stamp = datetime.fromtimestamp(float(ts)).strftime("%H:%M")
+            # Use central styling logic so attachments render inline where supported
+            from gui.message_styling import create_message_bubble
+            create_message_bubble(self.messages, sender, text, self.app.my_pub_hex, self.app.pin, app=self.app, timestamp=ts, attachment_meta=attachment_meta)
         except Exception:
+            # Fallback to simple rendering
+            bubble = ctk.CTkFrame(self.messages, fg_color=self.theme.get("bubble_other", "#2a2a3a"), corner_radius=10)
+            bubble.pack(fill="x", padx=8, pady=4)
             stamp = ""
-        display = self._resolve_sender_display(sender)
-        header = f"{display}  {stamp}" if stamp else display
-        ctk.CTkLabel(bubble, text=header, font=("Segoe UI", 11, "bold"),
-                     text_color=self.theme.get("sidebar_text", "white")).pack(anchor="w", padx=8, pady=(6, 0))
-        ctk.CTkLabel(bubble, text=text, font=("Segoe UI", 12),
-                     text_color=self.theme.get("sidebar_text", "white"), wraplength=800, justify="left").pack(anchor="w", padx=8, pady=(0, 8))
+            try:
+                if ts:
+                    stamp = datetime.fromtimestamp(float(ts)).strftime("%H:%M")
+            except Exception:
+                stamp = ""
+            display = self._resolve_sender_display(sender)
+            header = f"{display}  {stamp}" if stamp else display
+            ctk.CTkLabel(bubble, text=header, font=("Segoe UI", 11, "bold"),
+                         text_color=self.theme.get("sidebar_text", "white")).pack(anchor="w", padx=8, pady=(6, 0))
+            ctk.CTkLabel(bubble, text=text, font=("Segoe UI", 12),
+                         text_color=self.theme.get("sidebar_text", "white"), wraplength=800, justify="left").pack(anchor="w", padx=8, pady=(0, 8))
 
     def _open_channel_menu(self, event, channel_id: str, channel_name: str, btn_widget):
         try:
