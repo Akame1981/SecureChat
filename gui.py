@@ -220,12 +220,38 @@ class WhisprApp(ctk.CTk):
         # Optional drag & drop for attachments (requires tkinterdnd2)
         try:
             from tkinterdnd2 import DND_FILES  # type: ignore
-            try:
-                self.drop_target_register(DND_FILES)
-                self.dnd_bind('<<Drop>>', self._on_file_drop)
-            except Exception as e:
-                print("Drag&Drop register failed", e)
+            # Only attempt registration if the runtime actually added the
+            # drag & drop methods to tkinter widgets. Custom Tk derivatives
+            # like CustomTkinter may not have been patched or may not be
+            # compatible with the tkdnd extension; avoid raising AttributeError.
+            if hasattr(self, 'drop_target_register') and callable(getattr(self, 'drop_target_register')) and hasattr(self, 'dnd_bind') and callable(getattr(self, 'dnd_bind')):
+                try:
+                    self.drop_target_register(DND_FILES)
+                    self.dnd_bind('<<Drop>>', self._on_file_drop)
+                except Exception as e:
+                    # If registration fails (native tkdnd missing or other),
+                    # log once and continue without DnD support.
+                    print("Drag&Drop register failed:", e)
+            else:
+                # Best-effort: the tkinterdnd2 package sometimes requires using
+                # its Tk wrapper class or loading the native tkdnd package.
+                # We try to call the module's internal loader if available,
+                # but don't fail startup if it doesn't work on this platform.
+                try:
+                    import tkinterdnd2.TkinterDnD as _td  # type: ignore
+                    try:
+                        _td._require(self)
+                        if hasattr(self, 'drop_target_register') and callable(getattr(self, 'drop_target_register')):
+                            self.drop_target_register(DND_FILES)
+                            self.dnd_bind('<<Drop>>', self._on_file_drop)
+                    except Exception as e:
+                        # Native support couldn't be loaded; fallback silently.
+                        print("Drag&Drop: native tkdnd not available:", e)
+                except Exception:
+                    # No further action — DnD not available in this environment.
+                    pass
         except Exception:
+            # tkinterdnd2 isn't installed; that's fine — app will run without DnD.
             pass
 
     def _post_key_init(self):
