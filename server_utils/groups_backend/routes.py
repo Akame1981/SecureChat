@@ -683,8 +683,10 @@ def download_attachment(att_id: str, group_id: str = None, user_id: Optional[str
             raise HTTPException(status_code=404, detail='Attachment not found')
 
         path = os.path.join(ATT_DIR, f"{att_id}.bin")
-        if not os.path.exists(path):
-            raise HTTPException(status_code=404, detail='Attachment not found')
+        real = os.path.realpath(path)
+        if not real.startswith(os.path.realpath(ATT_DIR)):
+            raise HTTPException(status_code=404, detail="Attachment not found")
+
         def iterfile():
             with open(path, 'rb') as f:
                 while True:
