@@ -4,6 +4,7 @@ import time
 import asyncio
 import json
 import os
+import re
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -268,6 +269,9 @@ def upload_attachment(att: AttachmentUpload):
         raise HTTPException(status_code=400, detail="Invalid signature")
     if att.size > ATTACHMENT_MAX_SIZE:
         raise HTTPException(status_code=413, detail="Attachment too large")
+    # Sanitize att.sha256 to prevent path traversal and invalid IDs
+    if not isinstance(att.sha256, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", att.sha256):
+        raise HTTPException(status_code=400, detail="Invalid attachment id")
     import base64, hashlib, time as _time
     try:
         blob_bytes = base64.b64decode(att.blob)
@@ -279,7 +283,8 @@ def upload_attachment(att: AttachmentUpload):
     now = _time.time()
     with attachments_lock:
         # Persist raw blob to disk for durability and lazy download
-        path = os.path.join(ATT_DIR, f"{att.sha256}.bin")
+        safe_name = att.sha256.lower()
+        path = os.path.join(ATT_DIR, f"{safe_name}.bin")
         if not os.path.exists(path):
             try:
                 tmp = path + '.tmp'
@@ -291,7 +296,7 @@ def upload_attachment(att: AttachmentUpload):
             except Exception:
                 # If disk write fails, still keep in-memory store as fallback
                 pass
-        attachments_store[att.sha256] = {
+        attachments_store[safe_name] = {
             "from": att.from_,
             "to": att.to,
             "enc_pub": att.enc_pub,
