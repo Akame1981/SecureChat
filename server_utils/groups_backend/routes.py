@@ -7,6 +7,7 @@ import hashlib
 from fastapi.responses import StreamingResponse
 import secrets
 import time
+import re
 
 from .db import SessionLocal, init_db, Group, GroupMember, Channel, GroupMessage, ChannelMeta
 from .schemas import (
@@ -675,6 +676,11 @@ def download_attachment(att_id: str, group_id: str = None, user_id: Optional[str
             if not group_id or not user_id:
                 raise HTTPException(status_code=401, detail='Authentication required')
             _require_member(db, group_id, user_id)
+
+        # Validate att_id strictly: must be the sha256 hex (64 lowercase hex chars).
+        # Reject any other format to avoid path injection or unexpected file access.
+        if not isinstance(att_id, str) or not re.fullmatch(r"[0-9a-f]{64}", att_id):
+            raise HTTPException(status_code=404, detail='Attachment not found')
 
         path = os.path.join(ATT_DIR, f"{att_id}.bin")
         if not os.path.exists(path):

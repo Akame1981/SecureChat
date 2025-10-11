@@ -486,6 +486,14 @@ class GroupsPanel(ctk.CTkFrame):
         # Open the dedicated Group Settings dialog for the selected group
         if not self.selected_group_id:
             return
+        # Prevent opening group settings while main Settings panel/window is open
+        if getattr(self.app, 'settings_open', False):
+            try:
+                if hasattr(self.app, 'notifier'):
+                    self.app.notifier.show('Close Settings before opening Group Settings', type_='warning')
+            except Exception:
+                pass
+            return
         try:
             GroupSettingsDialog(self, self.app, self.gm, self.selected_group_id, self.theme)
         except Exception as e:
