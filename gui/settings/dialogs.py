@@ -9,7 +9,29 @@ class CTkConfirmDialog(ctk.CTkToplevel):
         self.geometry("350x150")
         self.configure(bg="#1e1e2f")
         self.transient(parent)
-        self.grab_set()
+        # Try grabbing input for modal behavior. On some Linux WMs this can
+        # fail with "grab failed: window not viewable" if the parent isn't
+        # currently mapped. Try once and schedule a retry if needed.
+        try:
+            try:
+                self.grab_set()
+            except Exception:
+                try:
+                    if getattr(parent, "winfo_viewable", None) and not parent.winfo_viewable():
+                        def _retry():
+                            try:
+                                if getattr(self, "winfo_exists", None) and self.winfo_exists():
+                                    self.grab_set()
+                            except Exception:
+                                pass
+                        try:
+                            self.after(150, _retry)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
         self.resizable(False, False)
 
         self.result = False
@@ -41,7 +63,26 @@ class CTkDialog(ctk.CTkToplevel):
         self.geometry("350x150")
         self.configure(bg="#1e1e2f")
         self.transient(parent)
-        self.grab_set()
+        try:
+            try:
+                self.grab_set()
+            except Exception:
+                try:
+                    if getattr(parent, "winfo_viewable", None) and not parent.winfo_viewable():
+                        def _retry():
+                            try:
+                                if getattr(self, "winfo_exists", None) and self.winfo_exists():
+                                    self.grab_set()
+                            except Exception:
+                                pass
+                        try:
+                            self.after(150, _retry)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
         self.resizable(False, False)
 
         self.result = None

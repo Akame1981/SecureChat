@@ -107,10 +107,26 @@ class CustomColorPicker(ctk.CTkToplevel):
         # bind hex edits
         self.hex_entry.bind('<KeyRelease>', lambda e: self._hex_edited())
 
-        # Modal
+        # Modal: try grabbing input, but avoid crashing if parent isn't viewable
         try:
             self.transient(master)
-            self.grab_set()
+            try:
+                self.grab_set()
+            except Exception:
+                try:
+                    if getattr(master, "winfo_viewable", None) and not master.winfo_viewable():
+                        def _retry():
+                            try:
+                                if getattr(self, "winfo_exists", None) and self.winfo_exists():
+                                    self.grab_set()
+                            except Exception:
+                                pass
+                        try:
+                            self.after(150, _retry)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
         except Exception:
             pass
 

@@ -55,7 +55,31 @@ class PinDialog(ctk.CTkToplevel):
         self.resizable(False, False)
         win_bg = theme.get("background", "#1f1f2e")
         self.configure(fg_color=win_bg)
-        self.grab_set()
+        # Try to grab focus for modal behavior. On some Linux WMs this can
+        # fail with "grab failed: window not viewable" if the parent isn't
+        # currently mapped. Attempt once and, if parent is not viewable,
+        # schedule a single retry shortly after.
+        try:
+            try:
+                self.grab_set()
+            except Exception:
+                try:
+                    parent = getattr(self, 'master', None) or getattr(self, 'parent', None)
+                    if getattr(parent, "winfo_viewable", None) and not parent.winfo_viewable():
+                        def _retry():
+                            try:
+                                if getattr(self, "winfo_exists", None) and self.winfo_exists():
+                                    self.grab_set()
+                            except Exception:
+                                pass
+                        try:
+                            self.after(150, _retry)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
         title_color = theme.get("text", "white")
         placeholder_color = theme.get("placeholder_text", "gray70")
         self.label = ctk.CTkLabel(self, text=title, font=("Segoe UI", 16, "bold"),
