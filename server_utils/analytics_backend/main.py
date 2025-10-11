@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .routes import auth as auth_routes
 from .routes import stats as stats_routes
+from server_utils.groups_backend import routes as groups_routes
 from .core.config import get_settings
 
 """Whispr Analytics Backend
@@ -27,6 +28,8 @@ app.add_middleware(
 
 app.include_router(auth_routes.router)
 app.include_router(stats_routes.router)
+# Expose groups management endpoints under /api (so frontend can call /api/groups/...)
+app.include_router(groups_routes.router, prefix="/api")
 
 @app.get('/health')
 async def health():

@@ -485,3 +485,50 @@ def set_group_public(group_id: str, is_public: bool, user_id: str):
         return {"is_public": bool(g.is_public)}
     finally:
         db.close()
+
+
+# ----- Admin / management endpoints -----
+@router.get("/public/list")
+def list_all_public_groups(query: Optional[str] = None, limit: int = 200):
+    """Return all public groups (for admin/management UI). Supports optional case-insensitive name filter."""
+    db = SessionLocal()
+    try:
+        q = db.query(Group).filter(Group.is_public == True)
+        if query:
+            pattern = f"%{query.lower()}%"
+            from sqlalchemy import func
+            q = q.filter(func.lower(Group.name).like(pattern))
+        q = q.order_by(Group.created_at.desc()).limit(int(limit))
+        items = [
+            {
+                "id": g.id,
+                "name": g.name,
+                "owner_id": g.owner_id,
+                "invite_code": g.invite_code,
+                "key_version": int(g.key_version or 1),
+                "created_at": g.created_at,
+            }
+            for g in q.all()
+        ]
+        return {"groups": items}
+    finally:
+        db.close()
+
+
+@router.delete("/delete")
+def delete_group(group_id: str, user_id: str):
+    """Delete a group and its associated data. Only owner/admin may delete."""
+    db = SessionLocal()
+    try:
+        g = db.query(Group).filter(Group.id == group_id).first()
+        if not g:
+            raise HTTPException(status_code=404, detail="Group not found")
+        actor = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.user_id == user_id).first()
+        if not actor or actor.role not in ("owner", "admin"):
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        # Deleting the group will cascade to channels, messages, members due to FK ondelete
+        db.delete(g)
+        db.commit()
+        return {"status": "deleted"}
+    finally:
+        db.close()
