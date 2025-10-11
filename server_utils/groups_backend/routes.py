@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header, status
 from typing import Optional
 import secrets
 import time
@@ -516,16 +516,39 @@ def list_all_public_groups(query: Optional[str] = None, limit: int = 200):
 
 
 @router.delete("/delete")
-def delete_group(group_id: str, user_id: str):
-    """Delete a group and its associated data. Only owner/admin may delete."""
+def delete_group(group_id: str, user_id: Optional[str] = None, authorization: Optional[str] = Header(None)):
+    """Delete a group and its associated data.
+
+    If `user_id` is supplied, require that the actor be owner/admin; if omitted
+    this call is treated as an administrative action (for example from the
+    analytics/admin UI) and will delete the group without member permission checks.
+    """
     db = SessionLocal()
     try:
         g = db.query(Group).filter(Group.id == group_id).first()
         if not g:
             raise HTTPException(status_code=404, detail="Group not found")
-        actor = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.user_id == user_id).first()
-        if not actor or actor.role not in ("owner", "admin"):
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        # If an Authorization header with a bearer token is present and decodes
+        # to the configured admin username, allow deletion as an admin action.
+        # Otherwise, if a user_id is provided enforce owner/admin membership.
+        from server_utils.analytics_backend.core.security import decode_token
+        from server_utils.analytics_backend.core.config import get_settings
+
+        settings = get_settings()
+        is_admin_token = False
+        if authorization and authorization.lower().startswith('bearer '):
+            token = authorization.split()[1]
+            sub = decode_token(token)
+            if sub and sub == settings.admin_username:
+                is_admin_token = True
+
+        if not is_admin_token:
+            # Require explicit user_id and membership check for non-admins
+            if not user_id:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+            actor = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.user_id == user_id).first()
+            if not actor or actor.role not in ("owner", "admin"):
+                raise HTTPException(status_code=403, detail="Insufficient permissions")
         # Deleting the group will cascade to channels, messages, members due to FK ondelete
         db.delete(g)
         db.commit()
