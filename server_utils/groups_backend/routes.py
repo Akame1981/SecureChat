@@ -498,6 +498,32 @@ def rekey_group(group_id: str, user_id: str):
         db.close()
 
 
+@router.post('/members/transfer_owner')
+def transfer_owner(group_id: str, new_owner_user_id: str, user_id: str):
+    """Transfer ownership of the group to another existing member. Only current owner may transfer."""
+    db = SessionLocal()
+    try:
+        g = db.query(Group).filter(Group.id == group_id).first()
+        if not g:
+            raise HTTPException(status_code=404, detail="Group not found")
+        actor = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.user_id == user_id).first()
+        if not actor or actor.role != 'owner':
+            raise HTTPException(status_code=403, detail="Only the owner may transfer ownership")
+        target = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.user_id == new_owner_user_id).first()
+        if not target:
+            raise HTTPException(status_code=404, detail="Target user not a member")
+        # Demote current owner to admin
+        actor.role = 'admin'
+        # Promote target to owner
+        target.role = 'owner'
+        # Update group's owner_id
+        g.owner_id = new_owner_user_id
+        db.commit()
+        return {"status": "transferred", "new_owner": new_owner_user_id}
+    finally:
+        db.close()
+
+
 @router.post("/public/set")
 def set_group_public(group_id: str, is_public: bool, user_id: str):
     """Owner/Admin can toggle whether a group is publicly discoverable/joinable without approval."""
