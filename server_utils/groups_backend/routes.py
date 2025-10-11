@@ -187,7 +187,9 @@ def create_channel(req: CreateChannelRequest, user_id: str):
     db = SessionLocal()
     try:
         gm = _require_member(db, req.group_id, user_id)
-        # Any member can create channel; permission model can be extended later
+        # Only the group owner may create channels
+        if gm.role != "owner":
+            raise HTTPException(status_code=403, detail="Only the group owner can create channels")
         ch = Channel(group_id=req.group_id, name=req.name, type=req.type or "text")
         db.add(ch)
         db.commit()
