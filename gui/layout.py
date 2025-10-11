@@ -46,19 +46,53 @@ class WhisprUILayout:
             pin=app.pin,
             theme_colors=theme
         )
-        # Toggle button to switch between Recipients and Groups
+        # Modern toggle to switch between Recipients (DMs) and Groups
         try:
-            toggle_frame = ctk.CTkFrame(app.sidebar, fg_color="transparent")
-            toggle_frame.pack(side="top", fill="x", padx=8, pady=(6, 0))
-            btn_fg = theme.get("sidebar_button", "#4a90e2")
-            btn_hover = theme.get("sidebar_button_hover", "#357ABD")
-            # Two small buttons: DMs and Groups
-            row = ctk.CTkFrame(toggle_frame, fg_color="transparent")
-            row.pack(fill="x")
-            ctk.CTkButton(row, text="DMs", width=100, fg_color=btn_fg, hover_color=btn_hover,
-                          command=lambda: getattr(app, 'show_direct_messages', lambda: None)()).pack(side="left", padx=(0, 6), pady=4)
-            ctk.CTkButton(row, text="Groups", width=100, fg_color=btn_fg, hover_color=btn_hover,
-                          command=lambda: getattr(app, 'show_groups_panel', lambda: None)()).pack(side="left", padx=(6, 0), pady=4)
+            toggle_bg = theme.get("toggle_bg", "#1f2230")
+            toggle_active = theme.get("toggle_active", theme.get("sidebar_button", "#4a90e2"))
+            toggle_inactive_text = theme.get("muted_text", "gray70")
+
+            toggle_frame = ctk.CTkFrame(app.sidebar, fg_color=toggle_bg, corner_radius=12)
+            toggle_frame.pack(side="top", fill="x", padx=12, pady=(6, 8))
+
+            def make_toggle_button(parent, text, is_active=False, cmd=None):
+                fg = toggle_active if is_active else "transparent"
+                txt_col = theme.get("sidebar_text", "white") if is_active else toggle_inactive_text
+                btn = ctk.CTkButton(parent, text=text, width=100, height=36, corner_radius=10,
+                                    fg_color=fg, hover_color=theme.get("sidebar_button_hover", "#357ABD"),
+                                    text_color=txt_col, command=cmd)
+                return btn
+
+            # Create buttons and an update function to switch styles
+            def _show_dms():
+                try:
+                    getattr(app, 'show_direct_messages', lambda: None)()
+                except Exception:
+                    pass
+                # style update
+                try:
+                    dms_btn.configure(fg_color=toggle_active, text_color=theme.get("sidebar_text", "white"))
+                    groups_btn.configure(fg_color="transparent", text_color=toggle_inactive_text)
+                except Exception:
+                    pass
+
+            def _show_groups():
+                try:
+                    getattr(app, 'show_groups_panel', lambda: None)()
+                except Exception:
+                    pass
+                try:
+                    groups_btn.configure(fg_color=toggle_active, text_color=theme.get("sidebar_text", "white"))
+                    dms_btn.configure(fg_color="transparent", text_color=toggle_inactive_text)
+                except Exception:
+                    pass
+
+            # Default to recipients view active
+            dms_btn = make_toggle_button(toggle_frame, "DMs", is_active=True, cmd=_show_dms)
+            dms_btn.pack(side="left", padx=(8, 6), pady=6)
+
+            groups_btn = make_toggle_button(toggle_frame, "Groups", is_active=False, cmd=_show_groups)
+            groups_btn.pack(side="left", padx=(6, 8), pady=6)
         except Exception:
             pass
 
