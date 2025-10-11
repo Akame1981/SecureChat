@@ -72,6 +72,11 @@ class GroupsPanel(ctk.CTkFrame):
 
         # Groups list
         self.groups_list = ctk.CTkScrollableFrame(left, fg_color=self.theme.get("sidebar_bg", "#2a2a3a"))
+        try:
+            from .._mousewheel import bind_mousewheel_to_scrollable
+            bind_mousewheel_to_scrollable(self.groups_list)
+        except Exception:
+            pass
         self.groups_list.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
         # Right: channels (left) + messages (right)
@@ -105,12 +110,22 @@ class GroupsPanel(ctk.CTkFrame):
         body.pack(fill="both", expand=True)
 
         self.channels_list = ctk.CTkScrollableFrame(body, fg_color=self.theme.get("background", "#2e2e3f"), width=220)
+        try:
+            from .._mousewheel import bind_mousewheel_to_scrollable
+            bind_mousewheel_to_scrollable(self.channels_list)
+        except Exception:
+            pass
         self.channels_list.pack(side="left", fill="y", padx=(10, 6), pady=(0, 10))
 
         center = ctk.CTkFrame(body, fg_color="transparent")
         center.pack(side="left", fill="both", expand=True)
 
         self.messages = ctk.CTkScrollableFrame(center, fg_color=self.theme.get("background", "#2e2e3f"), corner_radius=10)
+        try:
+            from .._mousewheel import bind_mousewheel_to_scrollable
+            bind_mousewheel_to_scrollable(self.messages)
+        except Exception:
+            pass
         self.messages.pack(fill="both", expand=True, padx=10, pady=10)
 
         input_frame = ctk.CTkFrame(center, fg_color="transparent")

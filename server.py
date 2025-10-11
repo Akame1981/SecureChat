@@ -140,20 +140,48 @@ async def send_message(msg: Message):
         "signature": msg.signature,
         "timestamp": msg.timestamp or now
     }
-
     if REDIS_AVAILABLE:
         key = f"rate:{msg.from_}"
-        r.zremrangebyscore(key, 0, now - 1)
-        if r.zcard(key) >= MAX_MESSAGES_PER_SECOND:
-            raise HTTPException(status_code=429, detail="Rate limit exceeded")
-        r.zadd(key, {str(now): now})
-        r.expire(key, 2)
+        # Clean up old timestamps
+        try:
+            r.zremrangebyscore(key, 0, now - 1)
+        except Exception:
+            pass
+        # Enforce rate limit only if configured (>0)
+        if MAX_MESSAGES_PER_SECOND > 0:
+            try:
+                if r.zcard(key) >= MAX_MESSAGES_PER_SECOND:
+                    raise HTTPException(status_code=429, detail="Rate limit exceeded")
+            except Exception:
+                # If redis zcard fails, fall back to allowing (avoid breaking the API)
+                pass
+        try:
+            r.zadd(key, {str(now): now})
+        except Exception:
+            pass
+        try:
+            r.expire(key, 2)
+        except Exception:
+            pass
 
         inbox_key = f"inbox:{msg.to}"
         encoded = base64.b64encode(str(stored_msg).encode()).decode()
-        r.rpush(inbox_key, encoded)
-        r.ltrim(inbox_key, -MAX_MESSAGES_PER_RECIPIENT, -1)
-        r.expire(inbox_key, MESSAGE_TTL)
+        try:
+            r.rpush(inbox_key, encoded)
+        except Exception:
+            pass
+        # Trim stored messages only if a positive limit is set
+        if MAX_MESSAGES_PER_RECIPIENT > 0:
+            try:
+                r.ltrim(inbox_key, -MAX_MESSAGES_PER_RECIPIENT, -1)
+            except Exception:
+                pass
+        # Apply TTL only if configured (>0)
+        if MESSAGE_TTL > 0:
+            try:
+                r.expire(inbox_key, MESSAGE_TTL)
+            except Exception:
+                pass
 
         try:
             import datetime, math, json
@@ -174,12 +202,12 @@ async def send_message(msg: Message):
             pipe.execute()
         except Exception:
             pass
-
     else:
         with store_lock:
             timestamps = rate_limit_store.get(msg.from_, [])
             timestamps = [t for t in timestamps if now - t < 1.0]
-            if len(timestamps) >= MAX_MESSAGES_PER_SECOND:
+            # Enforce rate limit only if configured (>0)
+            if MAX_MESSAGES_PER_SECOND > 0 and len(timestamps) >= MAX_MESSAGES_PER_SECOND:
                 raise HTTPException(status_code=429, detail="Rate limit exceeded")
             timestamps.append(now)
             rate_limit_store[msg.from_] = timestamps
@@ -187,7 +215,9 @@ async def send_message(msg: Message):
             if msg.to not in messages_store:
                 messages_store[msg.to] = []
             messages_store[msg.to].append(stored_msg)
-            messages_store[msg.to] = messages_store[msg.to][-MAX_MESSAGES_PER_RECIPIENT:]
+            # Trim only if a positive per-recipient limit is configured
+            if MAX_MESSAGES_PER_RECIPIENT > 0:
+                messages_store[msg.to] = messages_store[msg.to][-MAX_MESSAGES_PER_RECIPIENT:]
 
     try:
         size_bytes = len(base64.b64decode(msg.message))
