@@ -9,6 +9,36 @@ from utils.crypto import is_strong_pin, load_key
 class PinDialog(ctk.CTkToplevel):
     def __init__(self, parent, title="Enter PIN", new_pin=False):
         super().__init__(parent)
+        # Try to keep this dialog above all other application windows.
+        try:
+            self.attributes("-topmost", True)
+        except Exception:
+            try:
+                self.wm_attributes("-topmost", True)
+            except Exception:
+                pass
+        try:
+            self.lift()
+        except Exception:
+            pass
+        try:
+            # Give focus to the dialog so it appears above other apps
+            self.focus_force()
+        except Exception:
+            pass
+
+        # Center the dialog on the screen after geometry is set
+        try:
+            self.update_idletasks()
+            w = self.winfo_width()
+            h = self.winfo_height()
+            sw = self.winfo_screenwidth()
+            sh = self.winfo_screenheight()
+            x = int((sw - w) / 2)
+            y = int((sh - h) / 2)
+            self.geometry(f"{w}x{h}+{x}+{y}")
+        except Exception:
+            pass
         self.parent = parent
         self.new_pin = new_pin
         self.pin = None
