@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Header, status
+from fastapi import APIRouter, HTTPException, Header, status, Body, File, UploadFile, Request
+import base64
 from typing import Optional
 import json
 import os
@@ -571,7 +572,7 @@ os.makedirs(ATT_DIR, exist_ok=True)
 
 
 @router.post('/attachments/upload')
-def upload_attachment(group_id: str, user_id: str, file: bytes):
+async def upload_attachment(group_id: str, user_id: str, request: Request, file: bytes = Body(None), upload_file: UploadFile = File(None)):
     """Accept an already-encrypted attachment blob from a group member and store it.
 
     The client is expected to encrypt attachments end-to-end. The server stores the raw
@@ -581,16 +582,54 @@ def upload_attachment(group_id: str, user_id: str, file: bytes):
     try:
         # membership check
         _require_member(db, group_id, user_id)
-        h = hashlib.sha256(file).hexdigest()
+        data = None
+        # 1) direct Body param (synchronous clients may bind to 'file')
+        if file is not None:
+            data = file
+        # 2) multipart UploadFile
+        elif upload_file is not None:
+            try:
+                data = await upload_file.read()
+            except Exception:
+                data = None
+        # 3) JSON payload with base64 blob (compat with recipient uploader which used JSON)
+        if data is None:
+            ctype = request.headers.get('content-type', '')
+            if 'application/json' in ctype:
+                try:
+                    body = await request.json()
+                    # support keys: blob, file_b64, file, blob_b64
+                    for k in ('blob', 'file_b64', 'file', 'blob_b64'):
+                        if isinstance(body, dict) and body.get(k):
+                            try:
+                                data = base64.b64decode(body.get(k))
+                                break
+                            except Exception:
+                                data = None
+                except Exception:
+                    data = None
+        # 4) raw body fallback (some clients POST raw bytes without binding to param)
+        if data is None:
+            try:
+                raw = await request.body()
+                if raw:
+                    data = raw
+            except Exception:
+                data = None
+
+        if not data:
+            raise HTTPException(status_code=400, detail="No file provided")
+
+        h = hashlib.sha256(data).hexdigest()
         path = os.path.join(ATT_DIR, f"{h}.bin")
         if not os.path.exists(path):
             tmp = path + '.tmp'
             with open(tmp, 'wb') as f:
-                f.write(file)
+                f.write(data)
                 try: f.flush(); os.fsync(f.fileno())
                 except Exception: pass
             os.replace(tmp, path)
-        return {"id": h, "size": len(file)}
+        return {"id": h, "size": len(data)}
     finally:
         db.close()
 
