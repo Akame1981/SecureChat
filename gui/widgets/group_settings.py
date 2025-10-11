@@ -1,5 +1,6 @@
 import customtkinter as ctk
 import tkinter as tk
+from tkinter import messagebox
 
 
 class GroupSettingsDialog(ctk.CTkToplevel):
@@ -128,6 +129,30 @@ class GroupSettingsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(right_col, text='Members', font=('Roboto', 12, 'bold')).pack(anchor='w', padx=8, pady=(6,4))
         self.members_frame = ctk.CTkScrollableFrame(right_col, fg_color=self.theme.get('background', '#2e2e3f'), width=300)
         self.members_frame.pack(fill='both', expand=True, padx=8, pady=6)
+
+        # Owner transfer / delete actions (below members)
+        actions_card = ctk.CTkFrame(right_col, fg_color=self.theme.get('input_bg', '#2e2e3f'), corner_radius=8)
+        actions_card.pack(fill='x', padx=8, pady=(6,8))
+        ac = ctk.CTkFrame(actions_card, fg_color='transparent')
+        ac.pack(fill='x', padx=8, pady=8)
+        ctk.CTkLabel(ac, text='Ownership & Admin').pack(anchor='w')
+        # Transfer owner dropdown
+        self._transfer_var = tk.StringVar(value='')
+        try:
+            self._transfer_menu = ctk.CTkOptionMenu(ac, values=[], variable=self._transfer_var, width=220)
+            self._transfer_menu.pack(anchor='w', pady=(6,0))
+            ctk.CTkButton(ac, text='Transfer Ownership', width=180, command=self._do_transfer_owner).pack(anchor='w', pady=(8,0))
+        except Exception:
+            # Fallback to a simple entry if optionmenu not available
+            self._transfer_entry = ctk.CTkEntry(ac, textvariable=self._transfer_var, width=220)
+            self._transfer_entry.pack(anchor='w', pady=(6,0))
+            ctk.CTkButton(ac, text='Transfer Ownership', width=180, command=self._do_transfer_owner).pack(anchor='w', pady=(8,0))
+
+        # Delete group (owners/admins)
+        try:
+            ctk.CTkButton(ac, text='Delete Group', width=180, fg_color='#d9534f', hover_color='#c9302c', command=self._do_delete_group).pack(anchor='w', pady=(12,0))
+        except Exception:
+            pass
 
         # Footer actions
         footer = ctk.CTkFrame(self, fg_color='transparent')
@@ -281,6 +306,51 @@ class GroupSettingsDialog(ctk.CTkToplevel):
             ctk.CTkLabel(row, text=m.get("role", "member"), fg_color="#3b3b52", corner_radius=8, width=70).pack(side="left", padx=6)
             ctk.CTkButton(row, text="Ban", width=60,
                           command=lambda uid=m.get("user_id"): self._ban_member(uid)).pack(side="right", padx=6)
+        # Populate transfer dropdown values (exclude owner)
+        try:
+            vals = [m.get('user_id') for m in members if m.get('role') != 'owner']
+            if getattr(self, '_transfer_menu', None):
+                try:
+                    self._transfer_menu.configure(values=vals)
+                except Exception:
+                    # Some CTk versions require reconstructing the menu
+                    pass
+            elif getattr(self, '_transfer_entry', None):
+                # nothing to do; entry already editable
+                pass
+            # Prefill with first member if available
+            if vals:
+                self._transfer_var.set(vals[0])
+        except Exception:
+            pass
+
+    def _do_transfer_owner(self):
+        new_owner = (self._transfer_var.get() or '').strip()
+        if not new_owner:
+            return
+        try:
+            # Call client transfer API
+            self.gm.client.transfer_owner(self.gid, new_owner)
+            self.app.notifier.show('Ownership transferred', type_='success')
+            # Reload members to reflect new roles
+            self._load_members()
+        except Exception as e:
+            self.app.notifier.show(f'Transfer failed: {e}', type_='error')
+
+    def _do_delete_group(self):
+        try:
+            # Confirm
+            ok = messagebox.askyesno('Delete Group', 'Are you sure you want to delete this group? This cannot be undone.')
+            if not ok:
+                return
+            self.gm.client.delete_group(self.gid)
+            self.app.notifier.show('Group deleted', type_='success')
+            try:
+                self.destroy()
+            except Exception:
+                pass
+        except Exception as e:
+            self.app.notifier.show(f'Delete failed: {e}', type_='error')
 
     def _ban_member(self, user_id: str):
         try:

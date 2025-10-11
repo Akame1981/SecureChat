@@ -127,6 +127,20 @@ class GroupClient:
         r.raise_for_status()
         return r.json()
 
+    def transfer_owner(self, group_id: str, new_owner_user_id: str) -> dict:
+        params = {"group_id": group_id, "user_id": self.app.my_pub_hex}
+        payload = {"new_owner_user_id": new_owner_user_id}
+        r = requests.post(f"{self.app.SERVER_URL}/groups/members/transfer_owner", params=params, json=payload, verify=self.app.SERVER_CERT, timeout=10)
+        r.raise_for_status()
+        return r.json()
+
+    def delete_group(self, group_id: str) -> dict:
+        # DELETE with query params
+        params = {"group_id": group_id, "user_id": self.app.my_pub_hex}
+        r = requests.delete(f"{self.app.SERVER_URL}/groups/delete", params=params, verify=self.app.SERVER_CERT, timeout=10)
+        r.raise_for_status()
+        return r.json()
+
     def discover_public(self, query: str | None = None, limit: int = 50) -> dict:
         params = {"limit": limit}
         if query:
