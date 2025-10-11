@@ -119,10 +119,84 @@ class GroupsPanel(ctk.CTkFrame):
                                   fg_color=self.theme.get("input_bg", "#2e2e3f"),
                                   text_color=self.theme.get("input_text", "white"))
         self.input.pack(side="left", expand=True, fill="x", padx=(0, 6))
-        self.send_btn = ctk.CTkButton(input_frame, text="Send", command=self._send,
-                                      fg_color=self.theme.get("button_send", "#4a90e2"),
-                                      hover_color=self.theme.get("button_send_hover", "#357ABD"))
-        self.send_btn.pack(side="left")
+        # Send button as an icon (match DM UI)
+        try:
+            from PIL import Image
+            send_img_path = "gui/src/images/send_btn.png"
+            if os.path.exists(send_img_path):
+                _send_img = Image.open(send_img_path).resize((40, 40), Image.Resampling.LANCZOS)
+            else:
+                _send_img = Image.new('RGBA', (40, 40), (100, 100, 100, 255))
+            send_icon = ctk.CTkImage(light_image=_send_img, dark_image=_send_img, size=(40, 40))
+            # darker hover variant
+            try:
+                enhancer = ImageEnhance.Brightness(_send_img)
+                _send_hover = enhancer.enhance(0.7)
+            except Exception:
+                _send_hover = _send_img
+            send_hover_icon = ctk.CTkImage(light_image=_send_hover, dark_image=_send_hover, size=(40, 40))
+
+            self.send_btn = ctk.CTkLabel(input_frame, image=send_icon, text="", fg_color="transparent")
+            self.send_btn.image = send_icon
+            self.send_btn.hover_image = send_hover_icon
+            self.send_btn.pack(side="left")
+
+            def _on_send_click(event=None):
+                # Respect selection state and delegate to existing _send()
+                if not self.selected_group_id or not self.selected_channel_id:
+                    try:
+                        self.app.notifier.show("Select a channel first", type_="warning")
+                    except Exception:
+                        pass
+                    return
+                try:
+                    self._send()
+                except Exception as e:
+                    try:
+                        self.app.notifier.show(f"Send failed: {e}", type_="error")
+                    except Exception:
+                        pass
+
+            self.send_btn.bind("<Button-1>", _on_send_click)
+            # Hover swap
+            def _on_enter(e):
+                try:
+                    self.send_btn.configure(image=self.send_btn.hover_image)
+                except Exception:
+                    pass
+
+            def _on_leave(e):
+                try:
+                    self.send_btn.configure(image=self.send_btn.image)
+                except Exception:
+                    pass
+
+            self.send_btn.bind("<Enter>", _on_enter)
+            self.send_btn.bind("<Leave>", _on_leave)
+            # track enabled state
+            self._send_enabled = True
+            def _set_send_enabled(enabled: bool):
+                self._send_enabled = bool(enabled)
+                try:
+                    if not enabled:
+                        # dim icon when disabled
+                        try:
+                            dim = ImageEnhance.Brightness(_send_img).enhance(0.5)
+                            self.send_btn.configure(image=ctk.CTkImage(light_image=dim, dark_image=dim, size=(40,40)))
+                        except Exception:
+                            pass
+                    else:
+                        self.send_btn.configure(image=self.send_btn.image)
+                except Exception:
+                    pass
+
+            self._set_send_enabled = _set_send_enabled
+        except Exception:
+            # Fallback to plain button
+            self.send_btn = ctk.CTkButton(input_frame, text="Send", command=self._send,
+                                          fg_color=self.theme.get("button_send", "#4a90e2"),
+                                          hover_color=self.theme.get("button_send_hover", "#357ABD"))
+            self.send_btn.pack(side="left")
         # Attachment button for groups (mirrors DM flow)
         try:
             from PIL import Image, ImageEnhance
@@ -227,7 +301,11 @@ class GroupsPanel(ctk.CTkFrame):
             pass
         # Disable send until a channel is selected
         try:
-            self.send_btn.configure(state="disabled")
+            # use unified enable/disable helper
+            if hasattr(self, '_set_send_enabled'):
+                self._set_send_enabled(False)
+            else:
+                self.send_btn.configure(state="disabled")
         except Exception:
             pass
         # Enter key sends message
@@ -567,7 +645,10 @@ class GroupsPanel(ctk.CTkFrame):
         self.selected_channel_id = channel_id
         # Enable send button and set placeholder
         try:
-            self.send_btn.configure(state="normal")
+            if hasattr(self, '_set_send_enabled'):
+                self._set_send_enabled(True)
+            else:
+                self.send_btn.configure(state="normal")
             self.input.configure(placeholder_text=f"Message #{channel_name}")
         except Exception:
             pass
