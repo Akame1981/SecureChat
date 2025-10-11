@@ -1,5 +1,6 @@
 import re
 import customtkinter as ctk
+import tkinter as tk
 
 
 def render_text_attachment(bubble_frame, filename, ext, content, wrap_len, side_anchor, prev_same, theme):
@@ -17,8 +18,26 @@ def render_text_attachment(bubble_frame, filename, ext, content, wrap_len, side_
     preview_lines = 12
     total_lines = content.count('\n') + 1
     collapsed = True
+
+    # Container holds line numbers gutter + text box
+    container = ctk.CTkFrame(bubble_frame, fg_color="transparent")
+    container.pack(anchor=side_anchor, padx=10, pady=(4 if not prev_same else 2, 4), fill="x")
+
+    # Line numbers gutter (tk.Text for simpler fixed-width rendering)
+    ln_bg = theme.get('preview_bg', '#23272e') if theme else '#23272e'
+    ln_fg = theme.get('muted_text', '#9aa0a6') if theme else '#9aa0a6'
+    line_numbers = tk.Text(container, width=5, padx=6, bd=0, highlightthickness=0, bg=ln_bg, fg=ln_fg, font=("Roboto Mono", 11))
+    # populate numbers
+    try:
+        nums = "\n".join(str(i) for i in range(1, total_lines + 1))
+        line_numbers.insert("1.0", nums)
+    except Exception:
+        pass
+    line_numbers.configure(state='disabled')
+    line_numbers.pack(side='left', fill='y')
+
     textbox = ctk.CTkTextbox(
-        bubble_frame,
+        container,
         width=wrap_len,
         height=min(preview_lines * 18, 320),
         font=("Roboto Mono", 11),
@@ -85,20 +104,91 @@ def render_text_attachment(bubble_frame, filename, ext, content, wrap_len, side_
         pass
 
     textbox.configure(state="disabled")
-    textbox.pack(anchor=side_anchor, padx=10, pady=(4 if not prev_same else 2, 4), fill="x")
+    textbox.pack(side='left', fill='both', expand=True)
+
+    # --- Synchronize scrolling between textbox and line_numbers gutter ---
+    def _sync_ln_from_text(first, last):
+        try:
+            # first is a string fraction like '0.0'
+            line_numbers.yview_moveto(first)
+        except Exception:
+            pass
+
+    def _sync_text_from_ln(first, last):
+        try:
+            textbox.yview_moveto(first)
+        except Exception:
+            pass
+
+    # Set yscrollcommand callbacks
+    try:
+        textbox.configure(yscrollcommand=_sync_ln_from_text)
+    except Exception:
+        pass
+    try:
+        line_numbers.configure(yscrollcommand=_sync_text_from_ln)
+    except Exception:
+        pass
+
+    # Mouse wheel bindings (cross-platform)
+    def _on_mousewheel(event, widget_src, widget_target):
+        try:
+            if hasattr(event, 'num') and event.num in (4, 5):
+                # X11 scroll
+                delta = -1 if event.num == 4 else 1
+            else:
+                # Windows/Mac
+                delta = -1 * int(event.delta / 120)
+            widget_src.yview_scroll(delta, 'units')
+            widget_target.yview_scroll(delta, 'units')
+            return 'break'
+        except Exception:
+            return None
+
+    try:
+        textbox.bind('<MouseWheel>', lambda e: _on_mousewheel(e, textbox, line_numbers))
+        textbox.bind('<Button-4>', lambda e: _on_mousewheel(e, textbox, line_numbers))
+        textbox.bind('<Button-5>', lambda e: _on_mousewheel(e, textbox, line_numbers))
+    except Exception:
+        pass
+    try:
+        line_numbers.bind('<MouseWheel>', lambda e: _on_mousewheel(e, line_numbers, textbox))
+        line_numbers.bind('<Button-4>', lambda e: _on_mousewheel(e, line_numbers, textbox))
+        line_numbers.bind('<Button-5>', lambda e: _on_mousewheel(e, line_numbers, textbox))
+    except Exception:
+        pass
 
     # Expand/collapse button
-    def _make_toggle(textbox_ref, total_lines_ref, preview_lines_ref):
+    def _make_toggle(textbox_ref, line_numbers_ref, total_lines_ref, preview_lines_ref):
         collapsed_local = True
 
         def toggle():
             nonlocal collapsed_local
             if collapsed_local:
-                textbox_ref.configure(height=min(total_lines_ref * 18, 600))
+                new_h = min(total_lines_ref * 18, 600)
+                textbox_ref.configure(height=new_h)
+                # approximate lines for gutter
+                try:
+                    ln_lines = min(total_lines_ref, max(3, int(new_h / 18)))
+                    line_numbers_ref.configure(state='normal')
+                    line_numbers_ref.delete('1.0', 'end')
+                    line_numbers_ref.insert('1.0', "\n".join(str(i) for i in range(1, total_lines_ref + 1)))
+                    line_numbers_ref.configure(state='disabled')
+                except Exception:
+                    pass
                 btn.configure(text="Collapse")
                 collapsed_local = False
             else:
-                textbox_ref.configure(height=min(preview_lines_ref * 18, 320))
+                new_h = min(preview_lines_ref * 18, 320)
+                textbox_ref.configure(height=new_h)
+                try:
+                    ln_lines = min(total_lines_ref, max(3, int(new_h / 18)))
+                    line_numbers_ref.configure(state='normal')
+                    line_numbers_ref.delete('1.0', 'end')
+                    line_numbers_ref.insert('1.0', "\n".join(str(i) for i in range(1, total_lines_ref + 1)))
+                    line_numbers_ref.configure(state='disabled')
+                except Exception:
+                    pass
                 btn.configure(text="Expand")
                 collapsed_local = True
 
@@ -112,7 +202,7 @@ def render_text_attachment(bubble_frame, filename, ext, content, wrap_len, side_
         font=("Roboto", 10),
         command=None
     )
-    btn_command = _make_toggle(textbox, total_lines, preview_lines)
+    btn_command = _make_toggle(textbox, line_numbers, total_lines, preview_lines)
     try:
         btn.configure(command=btn_command)
     except Exception:
