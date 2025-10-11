@@ -14,6 +14,7 @@ import hashlib
 from collections import OrderedDict
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from utils.text_file_utils import is_text_file
 
 # Thread pool for background image/attachment work
 _IMAGE_EXECUTOR = ThreadPoolExecutor(max_workers=3)
@@ -246,60 +247,133 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
 
     # Quick image-attachment hint (extension-based) so we can adjust caption/text placement
     is_image_attachment = False
+    is_text_attachment = False
+    text_attachment_content = None
     if attachment_meta and isinstance(attachment_meta, dict) and attachment_meta.get('type', 'file') == 'file':
         nm = attachment_meta.get('name', '')
-        if isinstance(nm, str) and nm.lower().split('.')[-1] in ('png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'):
+        ext = nm.lower().split('.')[-1] if isinstance(nm, str) and '.' in nm else ''
+        if ext in ('png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'):
             is_image_attachment = True
+        else:
+            # Try to detect text/code file
+            blob_b64 = attachment_meta.get('file_b64') or attachment_meta.get('blob')
+            raw = None
+            att_id = attachment_meta.get('att_id')
+            if att_id and not blob_b64:
+                try:
+                    raw = load_attachment(att_id, pin)
+                except Exception:
+                    raw = None
+            elif blob_b64:
+                try:
+                    raw = base64.b64decode(blob_b64)
+                except Exception:
+                    raw = None
+            if raw is not None and nm:
+                if is_text_file(nm, raw):
+                    is_text_attachment = True
+                    # Limit preview size for performance
+                    try:
+                        text_attachment_content = raw.decode('utf-8', errors='replace')
+                        if len(text_attachment_content) > 10000:
+                            text_attachment_content = text_attachment_content[:10000] + '\n... (truncated)'
+                    except Exception:
+                        text_attachment_content = None
 
-    # Message text
-    # Use a lightweight label instead of a Text/Textbox for performance while
-    # keeping the same look. Copying is provided via Ctrl+C and the context menu.
-    try:
-        msg_widget = ctk.CTkLabel(
+    # Message text or text attachment preview
+    if is_text_attachment and text_attachment_content is not None:
+        # Collapsible/expandable CTkTextbox for text/code files
+        preview_lines = 12
+        total_lines = text_attachment_content.count('\n') + 1
+        collapsed = True
+        textbox = ctk.CTkTextbox(
             bubble_frame,
-            text=processed_text,
-            wraplength=wrap_len,
-            justify=("left" if align_both_left else ("right" if is_you else "left")),
-            text_color=text_color,
-            font=("Roboto", 12),
-            fg_color='transparent'
+            width=wrap_len,
+            height=min(preview_lines * 18, 320),
+            font=("Roboto Mono", 11),
+            fg_color="#23272e",
+            text_color="#e5e5e5",
+            border_width=1,
+            border_color="#444"
         )
-        # Make clicks focus the label so key bindings like Ctrl+C work
-        msg_widget.bind('<Button-1>', lambda e=None: msg_widget.focus_set())
+        textbox.insert("1.0", text_attachment_content)
+        textbox.configure(state="disabled")
+        textbox.pack(anchor=side_anchor, padx=10, pady=(4 if not prev_same else 2, 4), fill="x")
+        bubble_frame.msg_label = textbox
+        bubble_frame._msg_is_textbox = True
 
-        def _copy_label_text(event=None):
+        # Expand/collapse button
+        def toggle_expand():
+            nonlocal collapsed
+            if collapsed:
+                textbox.configure(height=min(total_lines * 18, 600))
+                expand_btn.configure(text="Collapse")
+                collapsed = False
+            else:
+                textbox.configure(height=min(preview_lines * 18, 320))
+                expand_btn.configure(text="Expand")
+                collapsed = True
+
+        expand_btn = ctk.CTkButton(
+            bubble_frame,
+            text="Expand" if total_lines > preview_lines else "Full View",
+            width=80,
+            height=22,
+            font=("Roboto", 10),
+            command=toggle_expand
+        )
+        expand_btn.pack(anchor=side_anchor, padx=10, pady=(0, 4))
+        if total_lines <= preview_lines:
+            expand_btn.configure(state="disabled")
+    else:
+        # Use a lightweight label instead of a Text/Textbox for performance while
+        # keeping the same look. Copying is provided via Ctrl+C and the context menu.
+        try:
+            msg_widget = ctk.CTkLabel(
+                bubble_frame,
+                text=processed_text,
+                wraplength=wrap_len,
+                justify=("left" if align_both_left else ("right" if is_you else "left")),
+                text_color=text_color,
+                font=("Roboto", 12),
+                fg_color='transparent'
+            )
+            # Make clicks focus the label so key bindings like Ctrl+C work
+            msg_widget.bind('<Button-1>', lambda e=None: msg_widget.focus_set())
+
+            def _copy_label_text(event=None):
+                try:
+                    txt = processed_text
+                    bubble_frame.clipboard_clear()
+                    bubble_frame.clipboard_append(txt)
+                except Exception:
+                    pass
+                return 'break'
+
+            msg_widget.bind('<Control-c>', _copy_label_text)
+            msg_widget.bind('<Control-C>', _copy_label_text)
+            msg_widget.pack(anchor=side_anchor, padx=10, pady=(4 if not prev_same else 2, 4))
+            bubble_frame.msg_label = msg_widget  # maintain attribute name for compatibility
+            bubble_frame._msg_is_textbox = False
+        except Exception:
+            # Extremely defensive fallback to a native tkinter Label if CTkLabel fails
+            lbl = tk.Label(
+                bubble_frame,
+                text=processed_text,
+                wraplength=wrap_len,
+                justify=("left" if align_both_left else ("right" if is_you else "left")),
+                fg='white' if is_you else text_other,
+                font=("Roboto", 12),
+                bg='SystemButtonFace'
+            )
             try:
-                txt = processed_text
-                bubble_frame.clipboard_clear()
-                bubble_frame.clipboard_append(txt)
+                lbl.bind('<Button-1>', lambda e=None: lbl.focus_set())
+                lbl.bind('<Control-c>', lambda e=None: (bubble_frame.clipboard_clear(), bubble_frame.clipboard_append(processed_text), 'break'))
             except Exception:
                 pass
-            return 'break'
-
-        msg_widget.bind('<Control-c>', _copy_label_text)
-        msg_widget.bind('<Control-C>', _copy_label_text)
-        msg_widget.pack(anchor=side_anchor, padx=10, pady=(4 if not prev_same else 2, 4))
-        bubble_frame.msg_label = msg_widget  # maintain attribute name for compatibility
-        bubble_frame._msg_is_textbox = False
-    except Exception:
-        # Extremely defensive fallback to a native tkinter Label if CTkLabel fails
-        lbl = tk.Label(
-            bubble_frame,
-            text=processed_text,
-            wraplength=wrap_len,
-            justify=("left" if align_both_left else ("right" if is_you else "left")),
-            fg='white' if is_you else text_other,
-            font=("Roboto", 12),
-            bg='SystemButtonFace'
-        )
-        try:
-            lbl.bind('<Button-1>', lambda e=None: lbl.focus_set())
-            lbl.bind('<Control-c>', lambda e=None: (bubble_frame.clipboard_clear(), bubble_frame.clipboard_append(processed_text), 'break'))
-        except Exception:
-            pass
-        lbl.pack(anchor=side_anchor, padx=10, pady=(4 if not prev_same else 2, 4))
-        bubble_frame.msg_label = lbl
-        bubble_frame._msg_is_textbox = False
+            lbl.pack(anchor=side_anchor, padx=10, pady=(4 if not prev_same else 2, 4))
+            bubble_frame.msg_label = lbl
+            bubble_frame._msg_is_textbox = False
 
     # If this message references an attachment ID but doesn't include inline data,
     # it's likely going to be fetched/decoded asynchronously. In that case hide
