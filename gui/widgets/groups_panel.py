@@ -307,6 +307,12 @@ class GroupsPanel(ctk.CTkFrame):
                                 ct_b64, nonce_b64 = encrypt_text_with_group_key(plaintext, key)
                                 # Send via group manager client
                                 self.gm.client.send_message(self.selected_group_id, self.selected_channel_id, ct_b64, nonce_b64, kv, timestamp=ts)
+                                # Update last seen timestamp so poller doesn't re-fetch and duplicate this message
+                                try:
+                                    key = (self.selected_group_id, self.selected_channel_id)
+                                    self._last_ts[key] = max(self._last_ts.get(key, 0) or 0, ts)
+                                except Exception:
+                                    pass
                             except Exception as e:
                                 try:
                                     self.app.notifier.show(f"Attachment send failed: {e}", type_="error")
@@ -567,8 +573,18 @@ class GroupsPanel(ctk.CTkFrame):
         if not txt or not self.selected_group_id or not self.selected_channel_id:
             return
         try:
-            self.gm.send_text(self.selected_group_id, self.selected_channel_id, txt)
-            self._append_message("You", txt)
+            import time
+            ts = time.time()
+            # send with explicit timestamp so we can suppress duplicate from fetch
+            self.gm.send_text(self.selected_group_id, self.selected_channel_id, txt, timestamp=ts)
+            # append locally with the same timestamp
+            self._append_message("You", txt, ts)
+            # update last seen timestamp for this (group,channel) to avoid fetching the same message
+            try:
+                key = (self.selected_group_id, self.selected_channel_id)
+                self._last_ts[key] = max(self._last_ts.get(key, 0) or 0, ts)
+            except Exception:
+                pass
             self.input.delete(0, tk.END)
         except Exception as e:
             # Attempt key-version recovery on 409 errors
@@ -583,8 +599,15 @@ class GroupsPanel(ctk.CTkFrame):
                         key = decrypt_group_key_for_me(my["encrypted_group_key"], self.app.private_key)
                         store_my_group_key(self.app.pin, self.selected_group_id, key, kv)
                         # Retry once
-                        self.gm.send_text(self.selected_group_id, self.selected_channel_id, txt)
-                        self._append_message("You", txt)
+                        import time
+                        ts = time.time()
+                        self.gm.send_text(self.selected_group_id, self.selected_channel_id, txt, timestamp=ts)
+                        self._append_message("You", txt, ts)
+                        try:
+                            key = (self.selected_group_id, self.selected_channel_id)
+                            self._last_ts[key] = max(self._last_ts.get(key, 0) or 0, ts)
+                        except Exception:
+                            pass
                         self.input.delete(0, tk.END)
                         self.app.notifier.show("Recovered new group key", type_="success")
                         return
