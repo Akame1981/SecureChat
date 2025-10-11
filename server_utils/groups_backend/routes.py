@@ -1,5 +1,9 @@
 from fastapi import APIRouter, HTTPException, Header, status
 from typing import Optional
+import json
+import os
+import hashlib
+from fastapi.responses import StreamingResponse
 import secrets
 import time
 
@@ -319,6 +323,7 @@ def send_group_message(req: SendGroupMessageRequest):
             sender_id=req.sender_id,
             ciphertext=req.ciphertext,
             nonce=req.nonce,
+            attachment_meta=(json.dumps(req.attachment_meta) if req.attachment_meta else None),
             key_version=req.key_version,
             timestamp=req.timestamp or time.time(),
         )
@@ -353,6 +358,7 @@ def fetch_group_messages(req: FetchGroupMessagesRequest, user_id: str):
                     "sender_id": m.sender_id,
                     "ciphertext": m.ciphertext,
                     "nonce": m.nonce,
+                    "_attachment_json": m.attachment_meta,
                     "key_version": m.key_version,
                     "timestamp": m.timestamp,
                 }
@@ -555,5 +561,73 @@ def delete_group(group_id: str, user_id: Optional[str] = None, authorization: Op
         db.delete(g)
         db.commit()
         return {"status": "deleted"}
+    finally:
+        db.close()
+
+
+# Attachment storage directory (raw encrypted blobs sent by clients)
+ATT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/attachments'))
+os.makedirs(ATT_DIR, exist_ok=True)
+
+
+@router.post('/attachments/upload')
+def upload_attachment(group_id: str, user_id: str, file: bytes):
+    """Accept an already-encrypted attachment blob from a group member and store it.
+
+    The client is expected to encrypt attachments end-to-end. The server stores the raw
+    bytes under a deterministic sha256 filename and returns the attachment id.
+    """
+    db = SessionLocal()
+    try:
+        # membership check
+        _require_member(db, group_id, user_id)
+        h = hashlib.sha256(file).hexdigest()
+        path = os.path.join(ATT_DIR, f"{h}.bin")
+        if not os.path.exists(path):
+            tmp = path + '.tmp'
+            with open(tmp, 'wb') as f:
+                f.write(file)
+                try: f.flush(); os.fsync(f.fileno())
+                except Exception: pass
+            os.replace(tmp, path)
+        return {"id": h, "size": len(file)}
+    finally:
+        db.close()
+
+
+@router.get('/attachments/{att_id}')
+def download_attachment(att_id: str, group_id: str = None, user_id: Optional[str] = None, authorization: Optional[str] = Header(None)):
+    """Stream back the raw attachment blob if the requester is a group member or an admin token.
+
+    If group_id and user_id are omitted, an admin bearer token (analytics) is required.
+    """
+    db = SessionLocal()
+    try:
+        is_admin_token = False
+        if authorization and authorization.lower().startswith('bearer '):
+            from server_utils.analytics_backend.core.security import decode_token
+            from server_utils.analytics_backend.core.config import get_settings
+            settings = get_settings()
+            token = authorization.split()[1]
+            sub = decode_token(token)
+            if sub and sub == settings.admin_username:
+                is_admin_token = True
+
+        if not is_admin_token:
+            if not group_id or not user_id:
+                raise HTTPException(status_code=401, detail='Authentication required')
+            _require_member(db, group_id, user_id)
+
+        path = os.path.join(ATT_DIR, f"{att_id}.bin")
+        if not os.path.exists(path):
+            raise HTTPException(status_code=404, detail='Attachment not found')
+        def iterfile():
+            with open(path, 'rb') as f:
+                while True:
+                    chunk = f.read(8192)
+                    if not chunk:
+                        break
+                    yield chunk
+        return StreamingResponse(iterfile(), media_type='application/octet-stream')
     finally:
         db.close()

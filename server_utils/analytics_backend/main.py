@@ -10,8 +10,6 @@ from .core.config import get_settings
 IMPORTANT: Run from repository root so the import path includes 'server_utils'.
 Example:
     uvicorn server_utils.analytics_backend.main:app --port 8001 --reload
-or
-    python run_analytics.py
 """
 
 app = FastAPI(title="Whispr Analytics API", version="0.1.0")

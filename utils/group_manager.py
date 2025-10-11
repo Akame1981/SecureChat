@@ -9,6 +9,7 @@ from .group_crypto import (
     encrypt_text_with_group_key,
     decrypt_text_with_group_key,
 )
+import json
 from .db import store_my_group_key, load_my_group_key
 
 
@@ -77,11 +78,20 @@ class GroupManager:
                 pt = decrypt_text_with_group_key(m.get("ciphertext"), m.get("nonce"), key)
             except Exception:
                 continue
+            # Attachments: backend returns optional _attachment_json string
+            att = None
+            try:
+                aj = m.get("_attachment_json") if isinstance(m, dict) else None
+                if aj:
+                    att = json.loads(aj) if isinstance(aj, str) else aj
+            except Exception:
+                att = None
             out.append({
                 "id": m.get("id"),
                 "sender_id": m.get("sender_id"),
                 "text": pt,
                 "timestamp": m.get("timestamp"),
+                "attachment_meta": att,
             })
         return out
 

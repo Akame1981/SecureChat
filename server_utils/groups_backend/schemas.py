@@ -56,6 +56,7 @@ class SendGroupMessageRequest(BaseModel):
     nonce: str
     key_version: int
     timestamp: Optional[float] = None
+    attachment_meta: Optional[dict] = None
 
 
 class FetchGroupMessagesRequest(BaseModel):

@@ -82,6 +82,7 @@ class GroupMessage(Base):
     sender_id = Column(String, nullable=False)  # sender enc pub hex
     ciphertext = Column(Text, nullable=False)
     nonce = Column(Text, nullable=False)
+    attachment_meta = Column(Text, nullable=True)
     key_version = Column(Integer, default=1)
     timestamp = Column(Float, default=lambda: time.time(), index=True)
 
