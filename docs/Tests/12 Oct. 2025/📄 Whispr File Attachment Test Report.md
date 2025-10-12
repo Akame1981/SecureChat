@@ -58,3 +58,39 @@ Ensure that file attachments are sent, rendered, and persisted correctly for bot
 | Message persistence | Sender’s message not stored | ✅ |
 
 ---
+
+
+# 📄 Whispr File Attachment Test Report (Updated)
+
+## 🧪 Test Case
+
+**Test Name:** File Test — Sending `.py` file between users
+
+**Goal:**  
+Verify that file attachments render and persist correctly for both sender and receiver in real-time and after reload.
+
+---
+
+## ✅ Expected Behavior
+
+- Both users see the attached `.py` file rendered immediately.
+- File viewer displays filename, size, and download/view buttons.
+- File message persists correctly after reloading the chat.
+
+---
+
+## ⚙️ Test Execution (Post-Fix)
+
+**Scenario:** User 2 sends `server.py` to User 1.
+
+| Step                 | User 1                           | User 2                           |
+| -------------------- | -------------------------------- | -------------------------------- |
+| Send event           | Sometimes renders file correctly | Sometimes renders file correctly |
+| Reload               | Sometimes message renders        | Sometimes message disappears     |
+| Frequency of success | ~60–70% both render fine         | 30–40% one or both fail          |
+|                      |                                  |                                  |
+
+---
+
+
+

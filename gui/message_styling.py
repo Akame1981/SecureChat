@@ -352,20 +352,56 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
         if attachment_meta and isinstance(attachment_meta, dict):
             att_id = attachment_meta.get('att_id')
             has_inline = bool(attachment_meta.get('file_b64') or attachment_meta.get('blob'))
-            # If we have an att_id but no inline blob, assume lazy fetch and hide text
+            # If we have an att_id but no inline blob, assume lazy fetch.
+            # Show a compact filename+size caption instead of clearing to avoid
+            # blank bubbles when lazy download fails or is slow. For image
+            # attachments we still prefer to hide text (image preview will be
+            # added later and a caption inserted), but for other file types
+            # keep a visible caption.
             if att_id and not has_inline:
-                try:
-                    # replace visible text with empty string to show only bubble bg
-                    bubble_frame.msg_label.configure(text="")
-                except Exception:
+                    # Build a small caption from name/size when available
+                    name = attachment_meta.get('name') if attachment_meta else None
+                    size = attachment_meta.get('size') if attachment_meta else None
+                    caption = None
                     try:
-                        # fallback for tk.Label
-                        bubble_frame.msg_label.configure(text=" ")
+                        if name and size:
+                            caption = f"{name} ({_human_size(int(size))})"
+                        elif name:
+                            caption = name
                     except Exception:
-                        pass
+                        caption = None
+
+                    # If this looks like an image, leave the text empty so
+                    # the image UI can take its place; otherwise show caption.
+                    if is_image_attachment:
+                        try:
+                            bubble_frame.msg_label.configure(text="")
+                        except Exception:
+                            try:
+                                bubble_frame.msg_label.configure(text=" ")
+                            except Exception:
+                                pass
+                    else:
+                        if caption:
+                            try:
+                                bubble_frame.msg_label.configure(text=caption, font=("Roboto", 10, "italic"))
+                            except Exception:
+                                try:
+                                    bubble_frame.msg_label.configure(text=caption)
+                                except Exception:
+                                    pass
+                        else:
+                            # No metadata available: fallback to a neutral placeholder
+                            try:
+                                bubble_frame.msg_label.configure(text="[Attachment]")
+                            except Exception:
+                                try:
+                                    bubble_frame.msg_label.configure(text=" ")
+                                except Exception:
+                                    pass
     except Exception:
         pass
-        bubble_frame._msg_is_textbox = False
+    bubble_frame._msg_is_textbox = False
 
     # If this appears to be an image attachment, replace the large placeholder text with a compact caption
     try:
@@ -638,6 +674,29 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
                                         print('Image menu setup failed', e)
 
                                     bubble_frame._attachment_image = img_label
+                                    # Ensure a small caption exists even for images (helps when
+                                    # image preview cannot be fetched later). Add a compact
+                                    # caption below the image if name/size available.
+                                    try:
+                                        if attachment_meta and isinstance(attachment_meta, dict):
+                                            nm = attachment_meta.get('name')
+                                            sz = attachment_meta.get('size')
+                                            cap = None
+                                            try:
+                                                if nm and sz:
+                                                    cap = f"{nm} ({_human_size(int(sz))})"
+                                                elif nm:
+                                                    cap = nm
+                                            except Exception:
+                                                cap = None
+                                            if cap:
+                                                try:
+                                                    cap_lbl = ctk.CTkLabel(bubble_frame, text=cap, text_color=text_color, font=("Roboto", 9, "italic"))
+                                                    cap_lbl.pack(anchor=side_anchor, padx=10, pady=(0,6))
+                                                except Exception:
+                                                    pass
+                                    except Exception:
+                                        pass
                                 except Exception:
                                     pass
 
