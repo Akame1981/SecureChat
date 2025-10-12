@@ -201,22 +201,35 @@ class GroupSettingsDialog(ctk.CTkToplevel):
     def _hydrate_public_and_name(self):
         """Initialize current is_public and name using list_groups (cheap and available)."""
         try:
-            data = self.gm.list_groups()
-            groups = data.get("groups", [])
-            me = next((g for g in groups if g.get("id") == self.gid), None)
-            if me:
-                self.is_public_var.set(bool(me.get("is_public")))
-                self.name_var.set(me.get("name") or "")
-                # server_distribute may be provided in GroupInfo; if not, default False
+            # Prefer authoritative per-group info endpoint if available
+            try:
+                info = self.gm.client.get_group_info(self.gid)
+                self.is_public_var.set(bool(info.get('is_public', False)))
+                self.name_var.set(info.get('name') or '')
                 try:
-                    self.server_dist_var.set(bool(me.get("server_distribute", False)))
+                    self.server_dist_var.set(bool(info.get('server_distribute', False)))
                 except Exception:
                     self.server_dist_var.set(False)
-                # server_store_history may be provided in GroupInfo; if not, default False
                 try:
-                    self.server_store_hist_var.set(bool(me.get("server_store_history", False)))
+                    self.server_store_hist_var.set(bool(info.get('server_store_history', False)))
                 except Exception:
                     self.server_store_hist_var.set(False)
+            except Exception:
+                # fallback to list_groups if info endpoint is unavailable
+                data = self.gm.list_groups()
+                groups = data.get("groups", [])
+                me = next((g for g in groups if g.get("id") == self.gid), None)
+                if me:
+                    self.is_public_var.set(bool(me.get("is_public")))
+                    self.name_var.set(me.get("name") or "")
+                    try:
+                        self.server_dist_var.set(bool(me.get("server_distribute", False)))
+                    except Exception:
+                        self.server_dist_var.set(False)
+                    try:
+                        self.server_store_hist_var.set(bool(me.get("server_store_history", False)))
+                    except Exception:
+                        self.server_store_hist_var.set(False)
         except Exception:
             pass
 

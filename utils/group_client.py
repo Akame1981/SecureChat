@@ -115,6 +115,11 @@ class GroupClient:
         r.raise_for_status()
         return r.json()
 
+    def get_group_info(self, group_id: str) -> dict:
+        r = requests.get(f"{self.app.SERVER_URL}/groups/info", params={"group_id": group_id, "user_id": self.app.my_pub_hex}, verify=self.app.SERVER_CERT, timeout=10)
+        r.raise_for_status()
+        return r.json()
+
     def update_member_key(self, group_id: str, user_id: str, encrypted_key_b64: str, key_version: int) -> dict:
         params = {"group_id": group_id, "user_id": user_id, "encrypted_key_b64": encrypted_key_b64, "key_version": key_version}
         r = requests.post(f"{self.app.SERVER_URL}/groups/members/keys/update", params=params, verify=self.app.SERVER_CERT, timeout=10)

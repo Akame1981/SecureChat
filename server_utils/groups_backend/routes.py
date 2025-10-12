@@ -49,6 +49,7 @@ def create_group(req: CreateGroupRequest):
             invite_code=invite_code,
             key_version=1,
             server_distribute=False,
+            server_store_history=False,
         )
         db.add(g)
         db.flush()
@@ -166,6 +167,31 @@ def list_groups(user_id: str):
             for g in q.all()
         ]
         return ListGroupsResponse(groups=groups)
+    finally:
+        db.close()
+
+
+@router.get('/info')
+def get_group_info(group_id: str, user_id: str):
+    db = SessionLocal()
+    try:
+        g = db.query(Group).filter(Group.id == group_id).first()
+        if not g:
+            raise HTTPException(status_code=404, detail='Group not found')
+        # Confirm membership for private groups
+        if not g.is_public:
+            gm = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.user_id == user_id, GroupMember.pending == False).first()
+            if not gm:
+                raise HTTPException(status_code=403, detail='Not a group member')
+        return {
+            'id': g.id,
+            'name': g.name,
+            'is_public': bool(g.is_public),
+            'server_distribute': bool(g.server_distribute),
+            'server_store_history': bool(getattr(g, 'server_store_history', False)),
+            'owner_id': g.owner_id,
+            'key_version': int(g.key_version or 1),
+        }
     finally:
         db.close()
 
