@@ -13,7 +13,6 @@ import os
 from tkinter import filedialog
 from gui.tooltip import ToolTip
 from PIL import Image, ImageEnhance
-import imghdr
 import io
 
 from utils.group_manager import GroupManager
