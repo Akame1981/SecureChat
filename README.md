@@ -13,7 +13,7 @@
 
 **Whispr** is a feature-rich, end-to-end encrypted (E2EE) messaging platform with voice calls, file sharing, group chats, and real-time communication. Zero-knowledge architecture ensures the server never sees your plaintext—all encryption happens client-side.
 
-[Quick Start](#-quick-start) • [Features](#-features) • [Documentation](docs/) • [Server Setup](docs/setup-server.md)
+[Quick Start](#-quick-start) • [Features](#-features) • [Documentation](docs/) • [Server Setup](updates/0e9b1e05f9c97128512ac8a69bd4e62c9c44fddd/docs/setup-server.md)
 
 </div>
 
@@ -62,7 +62,7 @@ python gui.py
 3. Set your username
 4. Start chatting!
 
-> 💡 **Tip**: The client defaults to the public server. For privacy, [run your own server](docs/setup-server.md).
+> 💡 **Tip**: The client defaults to the public server. For privacy, [run your own server](updates/0e9b1e05f9c97128512ac8a69bd4e62c9c44fddd/docs/setup-server.md).
 
 ### Server Deployment
 
