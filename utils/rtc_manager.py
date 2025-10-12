@@ -1,4 +1,3 @@
-
 import asyncio
 import json
 import ssl
@@ -12,7 +11,7 @@ from aiortc import RTCPeerConnection, RTCSessionDescription
 from aiortc.rtcconfiguration import RTCConfiguration, RTCIceServer
 from aiortc.contrib.media import MediaPlayer
 
-from utils.rtc_media import AudioPlayer, TkVideoRenderer
+from utils.rtc_media import AudioPlayer, TkVideoRenderer, MicrophoneSDTrack
 from utils.crypto import encrypt_message, decrypt_message
 
 
@@ -35,10 +34,34 @@ class RTCManager:
         self.current_call = None  # type: Optional[CallState]
         self._remote_pub_hex = None  # type: Optional[str]
         self._sent_leave = False
+        # Selected devices (None = default)
+        self._mic_device = None
+        self._speaker_device = None
+        self._camera_device = None
 
     def _run_loop(self):
         asyncio.set_event_loop(self._loop)
         self._loop.run_forever()
+
+    def _notify(self, msg: str, type_: str = "info"):
+        try:
+            if hasattr(self.app, 'after') and hasattr(self.app, 'notifier'):
+                self.app.after(0, self.app.notifier.show, msg, type_)
+            elif hasattr(self.app, 'notifier'):
+                # Best effort without after
+                self.app.notifier.show(msg, type_)
+        except Exception:
+            pass
+
+    # ---- Device selection API ----
+    def set_mic_device(self, device):
+        self._mic_device = device
+
+    def set_speaker_device(self, device):
+        self._speaker_device = device
+
+    def set_camera_device(self, path: str | None):
+        self._camera_device = path
 
     def _server_ws_url(self) -> str:
         base = self.app.SERVER_URL.rstrip('/')
@@ -93,15 +116,36 @@ class RTCManager:
         self._remote_pub_hex = remote_pub_hex
 
         # Local media (microphone + optional camera)
+        # Local microphone capture (try PulseAudio, then ALSA)
+        mic_added = False
         try:
             player = MediaPlayer('default', format='pulse')  # Linux PulseAudio
             if player.audio:
                 pc.addTrack(player.audio)
+                mic_added = True
         except Exception:
-            pass
+            mic_added = False
+        if not mic_added:
+            try:
+                player = MediaPlayer('default', format='alsa')  # ALSA fallback
+                if player.audio:
+                    pc.addTrack(player.audio)
+                    mic_added = True
+            except Exception:
+                mic_added = False
+        if not mic_added:
+            try:
+                mic = MicrophoneSDTrack(on_warning=lambda m: self._notify(m, "warning"), device=self._mic_device)
+                pc.addTrack(mic)  # Fallback mic via sounddevice
+                mic_added = True
+            except Exception:
+                mic_added = False
+        if not mic_added:
+            self._notify("Microphone not available. The other side may not hear you.", "warning")
         # Try attach default camera on Linux (/dev/video0)
         try:
-            cam = MediaPlayer('/dev/video0', format='v4l2')
+            cam_path = self._camera_device or '/dev/video0'
+            cam = MediaPlayer(cam_path, format='v4l2')
             if cam.video:
                 pc.addTrack(cam.video)
         except Exception:
@@ -112,7 +156,7 @@ class RTCManager:
         def on_track(track):
             if track.kind == 'audio':
                 try:
-                    player = AudioPlayer()
+                    player = AudioPlayer(on_warning=lambda m: self._notify(m, "warning"), device=self._speaker_device)
                     player.start(self._loop, track)
                 except Exception:
                     pass
@@ -229,14 +273,35 @@ class RTCManager:
         config = RTCConfiguration(iceServers=[RTCIceServer(urls=["stun:stun.l.google.com:19302"])])
         pc = RTCPeerConnection(configuration=config)
         self._remote_pub_hex = remote_pub_hex
+        # Local microphone capture (PulseAudio then ALSA)
+        mic_added = False
         try:
             player = MediaPlayer('default', format='pulse')
             if player.audio:
                 pc.addTrack(player.audio)
+                mic_added = True
         except Exception:
-            pass
+            mic_added = False
+        if not mic_added:
+            try:
+                player = MediaPlayer('default', format='alsa')
+                if player.audio:
+                    pc.addTrack(player.audio)
+                    mic_added = True
+            except Exception:
+                mic_added = False
+        if not mic_added:
+            try:
+                mic = MicrophoneSDTrack(on_warning=lambda m: self._notify(m, "warning"), device=self._mic_device)
+                pc.addTrack(mic)
+                mic_added = True
+            except Exception:
+                mic_added = False
+        if not mic_added:
+            self._notify("Microphone not available. The other side may not hear you.", "warning")
         try:
-            cam = MediaPlayer('/dev/video0', format='v4l2')
+            cam_path = self._camera_device or '/dev/video0'
+            cam = MediaPlayer(cam_path, format='v4l2')
             if cam.video:
                 pc.addTrack(cam.video)
         except Exception:
@@ -246,7 +311,7 @@ class RTCManager:
         def on_track(track):
             if track.kind == 'audio':
                 try:
-                    player = AudioPlayer()
+                    player = AudioPlayer(on_warning=lambda m: self._notify(m, "warning"), device=self._speaker_device)
                     player.start(self._loop, track)
                 except Exception:
                     pass
