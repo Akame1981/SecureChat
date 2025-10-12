@@ -187,3 +187,52 @@ Both users should:
 
 ---
 
+# 📄 Whispr File Attachment Test Report (v5 — Final)
+
+## ✅ Summary
+
+**Feature:** File Attachments (Send, Receive, Persist)  
+**Status:** ✅ **Stable and Verified**  
+**Test Date:** 2025-10-12  
+**Tester:** Oktay Mehmed  
+**Build:** Post-Fix #4 (Final)
+
+---
+
+## 🧪 Test Overview
+
+**Goal:**  
+Ensure reliable file attachment handling for both sender and receiver — covering real-time rendering, reload, restart, and persistence.
+
+**Test Users:**
+- **User 1:** Receiver  
+- **User 2:** Sender  
+
+**Test File:** `server.py` (random Python script, ~2 KB)
+
+---
+
+## ⚙️ Test Steps and Results
+
+| Step | Expected Behavior | Result |
+|------|--------------------|--------|
+| User 2 sends `server.py` | Both clients immediately render file viewer with name + preview | ✅ Pass |
+| Reload User 1 | Viewer persists (file still visible) | ✅ Pass |
+| Reload User 2 | Viewer persists (file still visible) | ✅ Pass |
+| Restart both clients | Message still present and rendered identically | ✅ Pass |
+| Send multiple files quickly | All files render and persist correctly | ✅ Pass |
+
+---
+
+## 🧩 Final Observations
+
+| Area | Description | Result |
+|------|--------------|--------|
+| **Frontend (Rendering)** | File viewer now appears instantly for both users | ✅ Stable |
+| **Frontend (Persistence)** | Messages survive reload/restart correctly | ✅ Stable |
+| **Backend Sync** | Messages broadcast and stored correctly | ✅ Stable |
+| **Local DB/Cache** | Message added properly to sender and receiver cache | ✅ Stable |
+| **Optimistic Rendering** | Content + name included in initial render | ✅ Stable |
+
+---
+
