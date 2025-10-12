@@ -12,8 +12,10 @@ from utils.chat_storage import (
 )
 from utils.db import query_messages_before, has_older_messages
 from utils.crypto import decrypt_message, verify_signature, decrypt_blob
-from utils.network import fetch_messages, send_message
+from utils.network import fetch_messages, send_message, send_attachment
 from utils.attachment_envelope import parse_attachment_envelope
+from utils.attachments import store_attachment
+import json
 from utils.outbox import flush_outbox, has_outbox, append_outbox_message
 from utils.recipients import get_recipient_name, ensure_recipient_exists
 try:
@@ -52,6 +54,8 @@ class ChatManager:
         threading.Thread(target=self.send_loop, daemon=True).start()
         # Decryption worker pool for CPU-bound tasks
         self._proc_pool = ProcessPoolExecutor(max_workers=2)
+        # Threshold (bytes) above which plaintext messages are sent as .txt attachments
+        self.ATTACHMENT_FALLBACK_THRESHOLD = 100 * 1024  # 100 KB
 
     # --------------- Utility ---------------
     @staticmethod
@@ -422,20 +426,48 @@ class ChatManager:
                 # Preserve the timestamp used for local render/save when available
                 ts = item.get("ts", time.time())
 
-                success = send_message(
-                    self.app,
-                    to_pub=recipient_pub,
-                    signing_pub=self.app.signing_pub_hex,
-                    text=text,
-                    signing_key=self.app.signing_key,
-                    enc_pub=self.app.my_pub_hex
-                )
+                # Attachment fallback: if the queued item is an attachment send, handle via send_attachment
+                if item.get("attachment"):
+                    try:
+                        fname = item.get("filename")
+                        data = item.get("data")
+                        ok = send_attachment(
+                            self.app,
+                            to_pub=recipient_pub,
+                            signing_pub=self.app.signing_pub_hex,
+                            filename=fname,
+                            data=data,
+                            signing_key=self.app.signing_key,
+                            enc_pub=self.app.my_pub_hex,
+                        )
+                    except Exception as e:
+                        print(f"[chat_manager] send_attachment exception: {e}")
+                        ok = False
+                    success = ok
+                else:
+                    success = send_message(
+                        self.app,
+                        to_pub=recipient_pub,
+                        signing_pub=self.app.signing_pub_hex,
+                        text=text,
+                        signing_key=self.app.signing_key,
+                        enc_pub=self.app.my_pub_hex
+                    )
 
                 # We already saved and displayed optimistically in send();
                 # On failure, queue to outbox for retry.
                 if not success:
                     try:
-                        append_outbox_message(recipient_pub, text, self.app.pin, timestamp=ts)
+                        # For attachments we enqueue the ATTACH envelope into outbox so flush_outbox can resend properly
+                        if item.get("attachment"):
+                            # envelope should have been persisted locally by send(); recreate small ATTACH: envelope text
+                            env = item.get("envelope")
+                            if env is None:
+                                # fallback: construct minimal envelope
+                                env = {"type": "file", "name": item.get("filename"), "att_id": item.get("att_id"), "sha256": item.get("att_id"), "size": len(item.get("data") or b"")}
+                            append_outbox_message(recipient_pub, "ATTACH:" + json.dumps(env, separators=(',', ':')), self.app.pin, timestamp=ts)
+                        else:
+                            append_outbox_message(recipient_pub, text, self.app.pin, timestamp=ts)
                         # Optional gentle notice; avoid blocking UX
                         try:
                             self.app.notifier.show("Offline: message queued", type_="warning")
@@ -461,6 +493,41 @@ class ChatManager:
             return
         recipient_pub = self.app.recipient_pub_hex
         ts = time.time()
+
+        # If message is extremely large, send as attachment to avoid GUI/X11 rendering crashes
+        try:
+            size_bytes = len(text.encode('utf-8'))
+        except Exception:
+            size_bytes = len(text)
+        if size_bytes > getattr(self, 'ATTACHMENT_FALLBACK_THRESHOLD', 100*1024):
+            # Prepare attachment data
+            fname = f"message_{int(ts)}.txt"
+            data = text.encode('utf-8')
+            # Store local encrypted attachment for persistence
+            try:
+                att_id = store_attachment(data, getattr(self.app, 'pin', ''))
+            except Exception:
+                att_id = None
+
+            # Save placeholder message pointing to attachment instead of full text
+            placeholder = f"[File sent: {fname} ({self._human_size(size_bytes)})]"
+            try:
+                save_message(recipient_pub, "You", placeholder, self.app.pin, timestamp=ts, attachment={"type": "file", "name": fname, "att_id": att_id, "size": size_bytes})
+            except Exception as e:
+                print(f"[chat_manager] save_message (attachment) failed: {e}")
+            try:
+                self._append_cache(recipient_pub, {"sender": "You", "text": placeholder, "timestamp": ts, "_attachment": {"type": "file", "name": fname, "att_id": att_id, "size": size_bytes}})
+            except Exception:
+                pass
+            if self.app.recipient_pub_hex == recipient_pub:
+                try:
+                    self.app.after(0, self._display_message_virtualized, self.app.my_pub_hex, placeholder, ts, {"type": "file", "name": fname, "att_id": att_id, "size": size_bytes})
+                except Exception:
+                    pass
+
+            # Enqueue attachment send item for background worker
+            self.send_queue.put({"attachment": True, "filename": fname, "data": data, "to_pub": recipient_pub, "ts": ts, "att_id": att_id, "envelope": {}})
+            return
 
         # Optimistic local render and persistence
         try:

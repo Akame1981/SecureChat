@@ -8,6 +8,8 @@ from typing import List, Dict
 from utils.db import get_connection
 from utils.chat_storage import save_message
 from utils.network import send_message
+from utils.network import send_attachment
+import json
 
 _lock = threading.RLock()
 
@@ -92,14 +94,30 @@ def flush_outbox(app, max_batch: int = 10):
             for (row_id, to_pub, text, ts, attempts) in rows:
                 ok = False
                 try:
-                    ok = send_message(
-                        app,
-                        to_pub=to_pub,
-                        signing_pub=app.signing_pub_hex,
-                        text=text,
-                        signing_key=app.signing_key,
-                        enc_pub=app.my_pub_hex,
-                    )
+                    # If outbox text is an ATTACH: envelope, attempt to resend via send_attachment
+                    ok = False
+                    if isinstance(text, str) and text.startswith("ATTACH:"):
+                        try:
+                            env = json.loads(text[len("ATTACH:"):])
+                            # Attempt to load local attachment blob if present
+                            att_id = env.get('att_id') or env.get('sha256')
+                            fname = env.get('name') or env.get('file_name') or 'attachment.bin'
+                            data = None
+                            if att_id:
+                                try:
+                                    from utils.attachments import load_attachment
+                                    data = load_attachment(att_id, getattr(app, 'pin', ''))
+                                except Exception:
+                                    data = None
+                            if data is not None:
+                                ok = send_attachment(app, to_pub=to_pub, signing_pub=app.signing_pub_hex, filename=fname, data=data, signing_key=app.signing_key, enc_pub=app.my_pub_hex)
+                            else:
+                                # No local blob available, fall back to sending the small envelope via send_message
+                                ok = send_message(app, to_pub=to_pub, signing_pub=app.signing_pub_hex, text=text, signing_key=app.signing_key, enc_pub=app.my_pub_hex)
+                        except Exception:
+                            ok = send_message(app, to_pub=to_pub, signing_pub=app.signing_pub_hex, text=text, signing_key=app.signing_key, enc_pub=app.my_pub_hex)
+                    else:
+                        ok = send_message(app, to_pub=to_pub, signing_pub=app.signing_pub_hex, text=text, signing_key=app.signing_key, enc_pub=app.my_pub_hex)
                 except Exception as e:
                     print(f"[outbox] exception sending queued message: {e}")
                     ok = False
