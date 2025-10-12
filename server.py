@@ -6,6 +6,8 @@ import json
 import os
 import re
 from typing import Optional
+import sqlite3
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from nacl.public import PrivateKey
@@ -122,6 +124,96 @@ attachments_lock = threading.Lock()
 ATT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'server_utils', 'data', 'attachments'))
 os.makedirs(ATT_DIR, exist_ok=True)
 
+# Persistent server inbox (SQLite)
+DB_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'server_utils', 'data'))
+os.makedirs(DB_DIR, exist_ok=True)
+DB_PATH = os.path.join(DB_DIR, 'server_inbox.db')
+
+
+def _init_db():
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender TEXT NOT NULL,
+                recipient TEXT NOT NULL,
+                enc_pub TEXT,
+                message TEXT,
+                signature TEXT,
+                timestamp REAL,
+                delivered INTEGER DEFAULT 0
+            )
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_recipient_delivered ON messages(recipient, delivered, timestamp)")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _insert_message_db(sender: str, recipient: str, enc_pub: str, message: str, signature: str, timestamp: float) -> int:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO messages (sender, recipient, enc_pub, message, signature, timestamp, delivered) VALUES (?,?,?,?,?,?,0)",
+            (sender, recipient, enc_pub, message, signature, timestamp),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def _fetch_undelivered(recipient: str, since: float = 0.0) -> list:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, sender, enc_pub, message, signature, timestamp FROM messages WHERE recipient=? AND delivered=0 AND timestamp>? ORDER BY timestamp ASC",
+            (recipient, since),
+        )
+        rows = cur.fetchall()
+        results = []
+        for row in rows:
+            mid, sender, enc_pub, message, signature, ts = row
+            results.append({
+                "id": mid,
+                "from": sender,
+                "enc_pub": enc_pub,
+                "message": message,
+                "signature": signature,
+                "timestamp": ts,
+            })
+        return results
+    finally:
+        conn.close()
+
+
+def _mark_delivered(ids: list[int]):
+    if not ids:
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        # Delete messages that have been delivered
+        q = f"DELETE FROM messages WHERE id IN ({','.join('?' for _ in ids)})"
+        cur.execute(q, ids)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# Initialize DB on startup
+try:
+    _init_db()
+except Exception:
+    # If DB init fails, continue running with in-memory fallback
+    pass
+
 
 def verify_signature(sender_hex, message_b64, signature_b64):
     try:
@@ -178,6 +270,19 @@ async def send_message(msg: Message):
             encoded = base64.b64encode(str(stored_msg).encode()).decode()
         try:
             # Store for recipient
+            # Before pushing to redis, persist to sqlite so there's a canonical durable copy
+            try:
+                db_id = _insert_message_db(msg.from_, msg.to, msg.enc_pub, msg.message, msg.signature, stored_msg["timestamp"])
+                # attach id to the JSON we push into redis so clients can reference it
+                try:
+                    push_obj = dict(stored_msg)
+                    push_obj["id"] = db_id
+                    encoded = base64.b64encode(json.dumps(push_obj, separators=(',', ':'), ensure_ascii=False).encode()).decode()
+                except Exception:
+                    pass
+            except Exception:
+                # DB insert failed; continue and push to redis as before
+                pass
             r.rpush(inbox_key, encoded)
             # Also store a copy for the sender so they can fetch the canonical
             # server-stored message (helps when optimistic local save failed).
@@ -243,6 +348,11 @@ async def send_message(msg: Message):
             # Trim only if a positive per-recipient limit is configured
             if MAX_MESSAGES_PER_RECIPIENT > 0:
                 messages_store[msg.to] = messages_store[msg.to][-MAX_MESSAGES_PER_RECIPIENT:]
+        # persist to sqlite for in-memory fallback
+        try:
+            _insert_message_db(msg.from_, msg.to, msg.enc_pub, msg.message, msg.signature, stored_msg["timestamp"])
+        except Exception:
+            pass
 
     try:
         size_bytes = len(base64.b64decode(msg.message))
@@ -277,6 +387,21 @@ async def send_message(msg: Message):
             # Include recipient so clients (especially the sender) can
             # associate the message with the correct conversation.
             payload['to'] = msg.to
+            # Try to include DB id if available
+            try:
+                if 'id' not in payload:
+                    # attempt to look up id by unique tuple
+                    conn = sqlite3.connect(DB_PATH)
+                    try:
+                        cur = conn.cursor()
+                        cur.execute("SELECT id FROM messages WHERE sender=? AND recipient=? AND timestamp=? LIMIT 1", (msg.from_, msg.to, stored_msg['timestamp']))
+                        row = cur.fetchone()
+                        if row:
+                            payload['id'] = row[0]
+                    finally:
+                        conn.close()
+            except Exception:
+                pass
             for ws in conns:
                 try:
                     await ws.send_json(payload)
@@ -439,27 +564,41 @@ def download_attachment_raw(att_id: str, recipient: str):
 def get_inbox(recipient_key: str, since: Optional[float] = Query(0)):
     msgs = []
 
-    if REDIS_AVAILABLE:
-        inbox_key = f"inbox:{recipient_key}"
-        encoded_msgs = r.lrange(inbox_key, 0, -1)
-        r.delete(inbox_key)
+    # First, fetch durable undelivered messages from SQLite
+    try:
+        db_msgs = _fetch_undelivered(recipient_key, since)
+        if db_msgs:
+            msgs.extend(db_msgs)
+            # mark them delivered as they are being handed to the client
+            _mark_delivered([m['id'] for m in db_msgs])
+    except Exception:
+        # DB failure - fall back to existing stores
+        pass
 
-        for em in encoded_msgs:
-            try:
-                raw = base64.b64decode(em).decode()
-            except Exception:
-                continue
-            try:
-                decoded = json.loads(raw)
-            except Exception:
-                # Skip entries that are not valid JSON (do not eval)
-                continue
-            if decoded.get("timestamp", 0) > since:
-                msgs.append(decoded)
+    if REDIS_AVAILABLE:
+        try:
+            inbox_key = f"inbox:{recipient_key}"
+            encoded_msgs = r.lrange(inbox_key, 0, -1)
+            r.delete(inbox_key)
+
+            for em in encoded_msgs:
+                try:
+                    raw = base64.b64decode(em).decode()
+                except Exception:
+                    continue
+                try:
+                    decoded = json.loads(raw)
+                except Exception:
+                    # Skip entries that are not valid JSON (do not eval)
+                    continue
+                if decoded.get("timestamp", 0) > since:
+                    msgs.append(decoded)
+        except Exception:
+            pass
     else:
         with store_lock:
             stored = messages_store.get(recipient_key, [])
-            msgs = [m for m in stored if m.get("timestamp", 0) > since]
+            msgs.extend([m for m in stored if m.get("timestamp", 0) > since])
             messages_store[recipient_key] = []
 
     msgs.sort(key=lambda x: x.get("timestamp", 0))
@@ -480,6 +619,26 @@ async def websocket_endpoint(websocket: WebSocket, recipient_key: str):
             bucket = set()
             active_ws[recipient_key] = bucket
         bucket.add(websocket)
+    # After adding to active connections, attempt to push any undelivered messages
+    try:
+        pending = _fetch_undelivered(recipient_key, 0)
+        if pending:
+            # send in timestamp order
+            pending.sort(key=lambda x: x.get('timestamp', 0))
+            for m in pending:
+                try:
+                    payload = dict(m)
+                    payload['to'] = recipient_key
+                    await websocket.send_json(payload)
+                except Exception:
+                    pass
+            # Mark them delivered
+            try:
+                _mark_delivered([m['id'] for m in pending])
+            except Exception:
+                pass
+    except Exception:
+        pass
     try:
         while True:
             try:
@@ -507,6 +666,24 @@ async def websocket_endpoint_query(websocket: WebSocket, recipient: str):
             bucket = set()
             active_ws[recipient_key] = bucket
         bucket.add(websocket)
+    # Push any undelivered DB messages to this new connection
+    try:
+        pending = _fetch_undelivered(recipient_key, 0)
+        if pending:
+            pending.sort(key=lambda x: x.get('timestamp', 0))
+            for m in pending:
+                try:
+                    payload = dict(m)
+                    payload['to'] = recipient_key
+                    await websocket.send_json(payload)
+                except Exception:
+                    pass
+            try:
+                _mark_delivered([m['id'] for m in pending])
+            except Exception:
+                pass
+    except Exception:
+        pass
     try:
         while True:
             try:
