@@ -441,7 +441,7 @@ Special thanks to the cryptography and privacy communities for inspiration.
 
 *Whispr: Speak freely, stay encrypted.*
 
-[⬆ Back to Top](#-whispr)
+[⬆ Back to Top](https://github.com/Akame1981/Whispr)
 
 </div>
 
