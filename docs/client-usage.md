@@ -210,7 +210,7 @@ Delete `data/keypair.bin` (irreversible) → relaunch → set new PIN (new keys 
 
 - [Architecture Deep Dive](architecture.md)
 - [Server Documentation](server-documentation.md)
-- [Server Setup Guide](updates/0e9b1e05f9c97128512ac8a69bd4e62c9c44fddd/docs/setup-server.md)
+- [Server Setup Guide](docs/setup-server.md)
 - PyNaCl Docs: <https://pynacl.readthedocs.io/>
 
 ---

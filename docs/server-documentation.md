@@ -276,4 +276,4 @@ curl http://localhost:8000/public-key
 
 For client documentation, see [docs/client-usage.md](client-usage.md).
 
-For server setup, see [docs/setup-server.md](updates/0e9b1e05f9c97128512ac8a69bd4e62c9c44fddd/docs/setup-server.md).
+For server setup, see [docs/setup-server.md](docs/setup-server.md).
