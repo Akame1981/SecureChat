@@ -241,13 +241,26 @@ def render_text_attachment(bubble_frame, filename, ext, content, wrap_len, side_
             try:
                 top = tk.Toplevel(bubble_frame)
                 top.title(filename)
-                top.geometry('800x600')
-                txt = tk.Text(top, wrap='word')
-                txt.insert('1.0', content)
-                txt.configure(state='disabled')
-                txt.pack(fill='both', expand=True)
-                btn_close = ctk.CTkButton(top, text='Close', command=top.destroy)
-                btn_close.pack(pady=6)
+                top.geometry('900x700')
+                # Use the same renderer used elsewhere for code/text attachments so
+                # the viewer is consistent (syntax highlighting, gutter, expand).
+                try:
+                    # Wrap length: leave some padding from window width
+                    wrap_len_full = 860
+                    # render_text_attachment will create its own controls inside the Toplevel
+                    render_text_attachment(top, filename, ext, content, wrap_len_full, 'n', False, theme, show_expand=False)
+                except Exception:
+                    # Fallback to a plain Text widget if the renderer fails
+                    txt = tk.Text(top, wrap='word')
+                    txt.insert('1.0', content)
+                    txt.configure(state='disabled')
+                    txt.pack(fill='both', expand=True)
+                # Add a Close button for convenience
+                try:
+                    btn_close = ctk.CTkButton(top, text='Close', command=top.destroy)
+                    btn_close.pack(pady=6)
+                except Exception:
+                    pass
             except Exception:
                 try:
                     messagebox.showinfo('Attachment', 'Unable to open full view')
