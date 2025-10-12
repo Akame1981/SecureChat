@@ -4,7 +4,7 @@ import tkinter as tk
 from datetime import datetime, date
 from utils.recipients import get_recipient_name
 import base64
-from utils.attachments import load_attachment, AttachmentNotFound
+from utils.attachments import load_attachment, AttachmentNotFound, store_attachment
 import requests, base64 as _b64
 from tkinter import filedialog, messagebox
 from gui.identicon import generate_identicon
@@ -263,8 +263,27 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
             if att_id and not blob_b64:
                 try:
                     raw = load_attachment(att_id, pin)
-                except Exception:
+                except AttachmentNotFound:
                     raw = None
+                    # Try to fetch from server and persist locally
+                    try:
+                        if app and hasattr(app, 'SERVER_URL') and hasattr(app, 'my_pub_hex'):
+                            import requests as _req, base64 as _b64
+                            r = _req.get(f"{app.SERVER_URL}/download/{att_id}", params={"recipient": app.my_pub_hex}, verify=getattr(app, 'SERVER_CERT', None), timeout=20)
+                            if r.ok:
+                                data = r.json()
+                                blob_b64 = data.get('blob')
+                                if blob_b64:
+                                    try:
+                                        raw = _b64.b64decode(blob_b64)
+                                        try:
+                                            store_attachment(raw, getattr(app, 'pin', pin))
+                                        except Exception:
+                                            pass
+                                    except Exception:
+                                        raw = None
+                    except Exception:
+                        raw = None
             elif blob_b64:
                 try:
                     raw = base64.b64decode(blob_b64)
@@ -466,6 +485,24 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
                     raw = load_attachment(att_id, app.pin)
                 except AttachmentNotFound:
                     raw = None
+                    try:
+                        if app and hasattr(app, 'SERVER_URL') and hasattr(app, 'my_pub_hex'):
+                            import requests as _req, base64 as _b64
+                            r = _req.get(f"{app.SERVER_URL}/download/{att_id}", params={"recipient": app.my_pub_hex}, verify=getattr(app, 'SERVER_CERT', None), timeout=20)
+                            if r.ok:
+                                data = r.json()
+                                blob_b64 = data.get('blob')
+                                if blob_b64:
+                                    try:
+                                        raw = _b64.b64decode(blob_b64)
+                                        try:
+                                            store_attachment(raw, getattr(app, 'pin', app.pin))
+                                        except Exception:
+                                            pass
+                                    except Exception:
+                                        raw = None
+                    except Exception:
+                        raw = None
             if raw is None:
                 # Try inline blob if present
                 blob_b64 = img_meta.get('file_b64') or img_meta.get('blob')
@@ -835,7 +872,7 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
                         try:
                             raw = load_attachment(att_id, app.pin)
                         except AttachmentNotFound:
-                            # Try lazy fetch from server
+                            raw = None
                             try:
                                 # If this attachment belongs to a group, use the groups attachments endpoint (streaming bytes).
                                 group_id = attachment_meta.get('group_id') if isinstance(attachment_meta, dict) else None
@@ -843,6 +880,10 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
                                     r = requests.get(f"{app.SERVER_URL}/groups/attachments/{att_id}", params={"group_id": group_id, "user_id": app.my_pub_hex}, verify=app.SERVER_CERT, timeout=30)
                                     if r.ok:
                                         raw = r.content
+                                        try:
+                                            store_attachment(raw, app.pin)
+                                        except Exception:
+                                            pass
                                     else:
                                         messagebox.showerror("Attachment", f"Download failed: {r.status_code}")
                                         return
@@ -856,6 +897,10 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
                                             messagebox.showerror("Attachment", "Server returned no data")
                                             return
                                         raw = _b64.b64decode(blob_b64)
+                                        try:
+                                            store_attachment(raw, app.pin)
+                                        except Exception:
+                                            pass
                                     else:
                                         messagebox.showerror("Attachment", f"Download failed: {r.status_code}")
                                         return

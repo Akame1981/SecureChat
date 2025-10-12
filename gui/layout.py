@@ -268,6 +268,12 @@ class WhisprUILayout:
                             continue
                         with open(p, 'rb') as f:
                             data = f.read()
+                        # Persist locally so optimistic UI can render blob immediately
+                        try:
+                            store_attachment(data, app.pin)
+                        except Exception:
+                            pass
+
                         # Show placeholder immediately (non-blocking UX) then send in background
                         import threading
                         from utils.attachments import store_attachment

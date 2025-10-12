@@ -505,6 +505,12 @@ class WhisprApp(ctk.CTk):
                         continue
                     with open(path,'rb') as f:
                         blob = f.read()
+                    # Persist locally so optimistic UI can render the blob immediately
+                    try:
+                        from utils.attachments import store_attachment
+                        store_attachment(blob, self.pin)
+                    except Exception:
+                        pass
                     placeholder = f"[Attachment] {os.path.basename(path)} ({self.chat_manager._human_size(len(blob))})"
                     ts = _time.time()
                     import hashlib

@@ -128,7 +128,26 @@ def start_ws_client(app):
                 # Parsing failed; fall back to raw plaintext
                 attachment_meta = None
 
-            save_message(sender_enc, name, save_text, app.pin, timestamp=ts, attachment=attachment_meta)
+            # Determine which conversation this message belongs to. If server
+            # included a 'to' field and it matches our own pub, treat this as
+            # an incoming message for that conversation. If the message was
+            # sent by us (we are the sender) the server will include 'to'
+            # so we save under that conversation to persist the sender's copy.
+            conv_pub = sender_enc
+            try:
+                if isinstance(data, dict) and data.get('to'):
+                    # If the 'to' field equals our public key, conv_pub should be sender_enc
+                    # otherwise the message should be saved under the 'to' pub_hex so the sender
+                    # can see their own sent message in that conversation.
+                    to_field = data.get('to')
+                    if to_field and to_field != app.my_pub_hex:
+                        conv_pub = to_field
+                    else:
+                        conv_pub = sender_enc
+            except Exception:
+                conv_pub = sender_enc
+
+            save_message(conv_pub, name, save_text, app.pin, timestamp=ts, attachment=attachment_meta)
             # If this is a call invite, surface a dialog
             if isinstance(plaintext, str) and plaintext.startswith("CALL:"):
                 import json as _json

@@ -252,10 +252,16 @@ async def send_message(msg: Message):
             pass
 
     try:
+        # Broadcast to recipient and also to sender (if sender has active WS)
         with active_ws_lock:
-            conns = list(active_ws.get(msg.to, []))
+            to_conns = set(active_ws.get(msg.to, set()))
+            from_conns = set(active_ws.get(msg.from_, set()))
+            conns = list(to_conns.union(from_conns))
         if conns:
-            payload = stored_msg
+            payload = dict(stored_msg)
+            # Include recipient so clients (especially the sender) can
+            # associate the message with the correct conversation.
+            payload['to'] = msg.to
             for ws in conns:
                 try:
                     await ws.send_json(payload)

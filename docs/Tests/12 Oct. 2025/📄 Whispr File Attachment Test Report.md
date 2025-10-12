@@ -60,7 +60,7 @@ Ensure that file attachments are sent, rendered, and persisted correctly for bot
 ---
 
 
-# 📄 Whispr File Attachment Test Report (Updated)
+# 📄 Whispr File Attachment Test Report (v2)
 
 ## 🧪 Test Case
 
@@ -93,4 +93,49 @@ Verify that file attachments render and persist correctly for both sender and re
 ---
 
 
+
+# 📄 Whispr File Attachment Test Report (v3)
+
+## 🧪 Test Case
+
+**Test Name:** File Test — Sending `.py` file between users (Post-Fix #2)
+
+**Goal:**  
+Validate that file attachments render consistently for both users in real time, after reload, and after full app restart.
+
+---
+
+## ✅ Expected Behavior
+
+- Both users immediately see:
+  - File name
+  - File text preview viewer
+- File attachment persists across reloads and restarts.
+
+---
+
+## ⚙️ Test Execution (After Latest Fix)
+
+**Scenario:** User 2 sends `server.py` to User 1.
+
+| Step                   | User 1                                           | User 2                                           |
+| ---------------------- | ------------------------------------------------ | ------------------------------------------------ |
+| Immediately after send | File name rendered, **text viewer not rendered** | File name rendered, **text viewer not rendered** |
+| Reload chat            | Nothing changes                                  | Message disappears completely                    |
+| Restart full app       | File viewer and name rendered correctly          | Only file name rendered, no text viewer          |
+
+---
+
+## 🧩 Updated Observations
+
+### 🔸 Rendering Differences by State
+- **Real-time:** Name visible → message partially parsed.
+- **Reload:** Sender’s message missing → DB retrieval or local cache mismatch.
+- **Full Restart:** Renderer works → means data exists in persistent storage, but front-end didn’t hydrate correctly on reload.
+
+### 🔸 Attachment Viewer Issue
+- Viewer appears only when the app fully resets → likely `file.content` or blob not being loaded until full hydration.  
+- Name always visible → file metadata (`name`, `att_id`) is correct, but the text data or link to fetch it isn’t available immediately.
+
+---
 
