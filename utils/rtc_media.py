@@ -3,9 +3,6 @@ from __future__ import annotations
 import asyncio
 import threading
 
-import numpy as np
-import sounddevice as sd
-
 try:
     from PIL import Image, ImageTk
 except Exception:  # pillow optional for video rendering
@@ -22,23 +19,46 @@ class AudioPlayer:
         self._task = None
 
     async def _runner(self, track):
-        # Lazy create stream with parameters from frames if available
-        self._stream = sd.OutputStream(samplerate=self._sample_rate, channels=1, dtype="int16")
-        self._stream.start()
+        # Lazy import to avoid crashing when PortAudio is missing
         try:
-            while True:
-                frame = await track.recv()
-                pcm = frame.to_ndarray(format="s16", layout="mono")
+            import sounddevice as sd  # type: ignore
+        except Exception:
+            sd = None  # type: ignore
+
+        if sd is None:
+            # Consume frames to keep pipeline flowing, but no playback
+            try:
+                while True:
+                    _ = await track.recv()
+            except Exception:
+                pass
+            return
+
+        # Try to start playback; if it fails, fall back to dropping frames
+        try:
+            self._stream = sd.OutputStream(samplerate=self._sample_rate, channels=1, dtype="int16")
+            self._stream.start()
+            try:
+                while True:
+                    frame = await track.recv()
+                    pcm = frame.to_ndarray(format="s16", layout="mono")
+                    try:
+                        self._stream.write(pcm)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            finally:
                 try:
-                    self._stream.write(pcm)
+                    self._stream.stop()
+                    self._stream.close()
                 except Exception:
                     pass
         except Exception:
-            pass
-        finally:
+            # Playback init failed (likely PortAudio not found); drop frames
             try:
-                self._stream.stop()
-                self._stream.close()
+                while True:
+                    _ = await track.recv()
             except Exception:
                 pass
 

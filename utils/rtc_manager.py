@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import asyncio
 import json
@@ -35,6 +34,7 @@ class RTCManager:
         self._ws_lock = threading.Lock()
         self.current_call = None  # type: Optional[CallState]
         self._remote_pub_hex = None  # type: Optional[str]
+        self._sent_leave = False
 
     def _run_loop(self):
         asyncio.set_event_loop(self._loop)
@@ -71,10 +71,20 @@ class RTCManager:
 
     def _ws_send(self, payload: dict):
         async def _send():
-            ws = await websockets.connect(self._server_ws_url(), ssl=self._ssl_context()) if self._ws is None or self._ws.closed else self._ensure_ws()
+            ws = await self._ensure_ws_async()
             await ws.send(json.dumps(payload))
             return ws
         return asyncio.run_coroutine_threadsafe(_send(), self._loop).result()
+
+    def _ws_send_nowait(self, payload: dict):
+        async def _send():
+            ws = await self._ensure_ws_async()
+            await ws.send(json.dumps(payload))
+        # Fire-and-forget; don't block the caller/UI thread
+        try:
+            asyncio.run_coroutine_threadsafe(_send(), self._loop)
+        except Exception:
+            pass
 
     def start_call(self, remote_pub_hex: str, remote_video_label) -> str:
         call_id = str(uuid.uuid4())
@@ -129,7 +139,11 @@ class RTCManager:
             enc = encrypt_message(json.dumps(payload), remote_pub_hex)
             await ws.send(json.dumps({"type": "signal", "call_id": call_id, "payload": {"enc": enc}}))
 
-        asyncio.run_coroutine_threadsafe(_do_offer(), self._loop).result()
+        # Schedule offer task without blocking the UI
+        try:
+            asyncio.run_coroutine_threadsafe(_do_offer(), self._loop)
+        except Exception:
+            pass
 
         self.current_call = CallState(call_id=call_id, pc=pc, remote_video_label=remote_video_label)
         # Spawn listener
@@ -188,11 +202,27 @@ class RTCManager:
                         except Exception:
                             pass
                     elif data.get('type') == 'peer-leave':
+                        # Remote left: gracefully close our PC, but do not send 'leave' back
+                        try:
+                            await pc.close()
+                        except Exception:
+                            pass
+                        # Notify UI (non-blocking)
+                        try:
+                            if hasattr(self.app, 'notifier'):
+                                self.app.after(0, self.app.notifier.show, "Peer left the call", "info")
+                        except Exception:
+                            pass
+                        # Clear current call state
+                        self.current_call = None
                         break
             except Exception:
                 pass
 
-        asyncio.run_coroutine_threadsafe(_listen(), self._loop)
+        try:
+            asyncio.run_coroutine_threadsafe(_listen(), self._loop)
+        except Exception:
+            pass
 
     def answer_call(self, call_id: str, remote_video_label, remote_pub_hex: str):
         # Prepare new RTCPeerConnection to answer
@@ -231,10 +261,8 @@ class RTCManager:
         self.current_call = CallState(call_id=call_id, pc=pc, remote_video_label=remote_video_label)
         self._spawn_listener(call_id, pc)
         # Ensure we are joined to the room so we can receive signals
-        try:
-            self._ws_send({"type": "join", "call_id": call_id})
-        except Exception:
-            pass
+        # Join room without blocking
+        self._ws_send_nowait({"type": "join", "call_id": call_id})
 
     def hangup(self):
         st = self.current_call
@@ -246,10 +274,17 @@ class RTCManager:
             except Exception:
                 pass
             try:
-                await self._ws_send({"type": "leave", "call_id": st.call_id})
+                if not self._sent_leave:
+                    self._sent_leave = True
+                    ws = await self._ensure_ws_async()
+                    await ws.send(json.dumps({"type": "leave", "call_id": st.call_id}))
             except Exception:
                 pass
-        asyncio.run_coroutine_threadsafe(_close(), self._loop).result()
+        # Close without blocking UI
+        try:
+            asyncio.run_coroutine_threadsafe(_close(), self._loop)
+        except Exception:
+            pass
         if st.on_close:
             try:
                 st.on_close()
