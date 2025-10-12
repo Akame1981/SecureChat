@@ -18,3 +18,7 @@ msgpack
 websocket-client
 websockets
 sqlcipher3-wheels
+aiortc
+av
+sounddevice
+numpy

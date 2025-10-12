@@ -51,6 +51,10 @@ except ImportError:
 active_ws = {}
 active_ws_lock = threading.Lock()
 
+# --- Simple WebRTC signaling state (in-memory) ---
+signal_rooms: dict[str, set] = {}
+signal_lock = threading.Lock()
+
 try:
     from server_utils.analytics_backend.services.event_collector import register_message, register_attachment  # type: ignore
     ANALYTICS_ENABLED = True
@@ -497,4 +501,69 @@ async def websocket_endpoint_query(websocket: WebSocket, recipient: str):
                 bucket.remove(websocket)
             if not bucket and recipient_key in active_ws:
                 active_ws.pop(recipient_key, None)
+
+
+# --- Basic WebRTC signaling over WebSocket ---
+# Rooms are created per call_id; clients send JSON {type, call_id, payload}
+# Types: "join", "signal" (relay SDP/ICE), "leave"
+@app.websocket("/signal")
+async def rtc_signaling(websocket: WebSocket):
+    await websocket.accept()
+    room_id = None
+    try:
+        while True:
+            msg = await websocket.receive_text()
+            try:
+                data = json.loads(msg)
+            except Exception:
+                continue
+            mtype = data.get("type")
+            if mtype == "join":
+                rid = str(data.get("call_id"))
+                if not rid:
+                    continue
+                room_id = rid
+                with signal_lock:
+                    peers = signal_rooms.get(rid)
+                    if not peers:
+                        peers = set()
+                        signal_rooms[rid] = peers
+                    peers.add(websocket)
+                # Notify others that a new peer joined
+                await _rtc_broadcast(rid, {"type": "peer-join"}, exclude=websocket)
+            elif mtype == "signal":
+                rid = str(data.get("call_id"))
+                payload = data.get("payload")
+                if not rid:
+                    continue
+                await _rtc_broadcast(rid, {"type": "signal", "payload": payload}, exclude=websocket)
+            elif mtype == "leave":
+                rid = str(data.get("call_id"))
+                await _rtc_broadcast(rid, {"type": "peer-leave"}, exclude=websocket)
+                # Removal handled in finally
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if room_id:
+            with signal_lock:
+                peers = signal_rooms.get(room_id, set())
+                if websocket in peers:
+                    peers.remove(websocket)
+                if not peers and room_id in signal_rooms:
+                    signal_rooms.pop(room_id, None)
+
+
+async def _rtc_broadcast(room_id: str, payload: dict, exclude: WebSocket | None = None):
+    try:
+        with signal_lock:
+            peers = list(signal_rooms.get(room_id, set()))
+        for ws in peers:
+            if exclude is not None and ws is exclude:
+                continue
+            try:
+                await ws.send_text(json.dumps(payload))
+            except Exception:
+                pass
+    except Exception:
+        pass
 

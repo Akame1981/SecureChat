@@ -118,6 +118,36 @@ class WhisprUILayout:
                                      hover_color=theme.get("button_send_hover", "#357ABD"))
         app.copy_btn.grid(row=0, column=1, padx=5, pady=10)
 
+        # Call button (starts a WebRTC call)
+        def _start_call():
+            if not app.recipient_pub_hex:
+                try:
+                    app.notifier.show("Select a recipient first", type_="warning")
+                except Exception:
+                    pass
+                return
+            try:
+                from utils.rtc_manager import RTCManager
+                from gui.call_window import CallWindow
+                if not hasattr(app, 'rtc'):
+                    app.rtc = RTCManager(app)
+                cw = CallWindow(app, title="Calling…")
+                try:
+                    app.rtc.start_call(app.recipient_pub_hex, cw.video_label)
+                except Exception as e:
+                    print("call start error", e)
+                    try:
+                        app.notifier.show("Call failed", type_="error")
+                    except Exception:
+                        pass
+            except Exception as e:
+                print("RTC init error", e)
+
+        app.call_btn = ctk.CTkButton(pub_frame, text="Call", command=_start_call,
+                                      fg_color=theme.get("button_send", "#4a90e2"),
+                                      hover_color=theme.get("button_send_hover", "#357ABD"))
+        app.call_btn.grid(row=0, column=3, padx=5, pady=10)
+
 
         # --- Public Key Tooltip ---
         def update_pub_label(event=None):
@@ -285,7 +315,7 @@ class WhisprUILayout:
 
         # --- Server Status ---
         app.server_status = ctk.CTkLabel(pub_frame, text="●", font=("Roboto", 16),
-                                        text_color=theme.get("server_offline", "red"))
+                                         text_color=theme.get("server_offline", "red"))
         # Moved to column 2 after removing the settings button
         app.server_status.grid(row=0, column=2, padx=5)
 

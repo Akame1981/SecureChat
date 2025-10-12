@@ -16,6 +16,10 @@ from utils.network import fetch_messages, send_message
 from utils.attachment_envelope import parse_attachment_envelope
 from utils.outbox import flush_outbox, has_outbox, append_outbox_message
 from utils.recipients import get_recipient_name, ensure_recipient_exists
+try:
+    from gui.call_invite import CallInviteWindow
+except Exception:
+    CallInviteWindow = None  # type: ignore
 
 
 class ChatManager:
@@ -331,6 +335,26 @@ class ChatManager:
 
                     msg_text = plaintext
                     attachment_meta = None
+                    # Detect call invites
+                    if plaintext.startswith("CALL:"):
+                        try:
+                            invite = json.loads(plaintext[5:])
+                            call_id = str(invite.get('call_id'))
+                            if call_id:
+                                # Show incoming call dialog on UI thread
+                                from_name = get_recipient_name(sender_pub, self.app.pin) or sender_pub
+                                def _show_invite():
+                                    try:
+                                        if CallInviteWindow:
+                                            CallInviteWindow(self.app, from_name, call_id, sender_pub)
+                                    except Exception as _e:
+                                        print("invite dialog error", _e)
+                                try:
+                                    self.app.after(0, _show_invite)
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
                     if plaintext.startswith("ATTACH:"):
                         placeholder, meta = parse_attachment_envelope(plaintext)
                         if placeholder and meta:

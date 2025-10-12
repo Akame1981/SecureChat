@@ -21,6 +21,7 @@ except ImportError:  # graceful fallback
 from utils.crypto import decrypt_message, verify_signature
 from utils.chat_storage import save_message
 from utils.recipients import get_recipient_name, ensure_recipient_exists
+# Lazy import in handler to avoid hard dependency if GUI components change
 
 
 def _candidate_ws_urls(http_url: str, recipient_key: str):
@@ -112,6 +113,25 @@ def start_ws_client(app):
                 except Exception:
                     name = sender_enc
             save_message(sender_enc, name, plaintext, app.pin, timestamp=ts)
+            # If this is a call invite, surface a dialog
+            if isinstance(plaintext, str) and plaintext.startswith("CALL:"):
+                import json as _json
+                try:
+                    inv = _json.loads(plaintext[5:])
+                    cid = str(inv.get('call_id'))
+                    if cid:
+                        def _open_invite():
+                            try:
+                                from gui.call_invite import CallInviteWindow
+                                CallInviteWindow(app, name or sender_enc, cid, sender_enc)
+                            except Exception as _e:
+                                print("invite dialog error", _e)
+                        try:
+                            app.after(0, _open_invite)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
             if hasattr(app, 'chat_manager'):
                 try:
                     app.chat_manager._append_cache(sender_enc, {"sender": name, "text": plaintext, "timestamp": ts})

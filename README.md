@@ -34,7 +34,7 @@ For detailed instructions on **setting up the server**, including HTTPS, self-si
 | Rate Limiting | 10 msgs/sec | Abuse prevention |
 | Analytics | Optional backend + dashboard | Auto-disable if absent |
 | Packaging | PyInstaller aware | Manual build notes |
-| Planned | Offline/groups/calls | See roadmap (file sharing and WebSocket push implemented) |
+| Planned | Offline/groups/calls | Calls beta (WebRTC audio), file sharing and WebSocket push implemented |
 
 Additional conveniences:
 
@@ -139,6 +139,25 @@ python -m venv venv
 pip install -r requirements.txt
 uvicorn server:app --port 8000 --reload  # in one terminal
 python gui.py                            # in another
+### WebRTC Calling (beta)
+
+- Server exposes a simple signaling WebSocket at `/signal` used only to relay SDP/ICE between peers; payloads are E2E-encrypted with the recipient's public key.
+- Client adds a Call button in the chat header. Click to start an audio-only call. The callee receives an in-app invite dialog.
+- Media: aiortc + PulseAudio (Linux). Video rendering is basic and optional. Dependencies: `aiortc`, `av`, `sounddevice`, `numpy`.
+
+If you run into PortAudio/PulseAudio install issues on Linux, install system packages first:
+
+```bash
+sudo apt-get install -y libportaudio2 libavdevice-dev libavfilter-dev libopus-dev libvpx-dev
+```
+
+Then reinstall Python deps:
+
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
 ```
 
 Run analytics stack (optional):
