@@ -112,7 +112,23 @@ def start_ws_client(app):
                             pass
                 except Exception:
                     name = sender_enc
-            save_message(sender_enc, name, plaintext, app.pin, timestamp=ts)
+            # If this is an ATTACH: envelope, parse it so we save/display a
+            # friendly placeholder and attachment metadata (same behavior as
+            # the polling/fetch path). Otherwise save the raw plaintext.
+            attachment_meta = None
+            save_text = plaintext
+            try:
+                if isinstance(plaintext, str) and plaintext.startswith('ATTACH:'):
+                    from utils.attachment_envelope import parse_attachment_envelope
+                    placeholder, meta = parse_attachment_envelope(plaintext)
+                    if placeholder and meta:
+                        save_text = placeholder
+                        attachment_meta = meta
+            except Exception:
+                # Parsing failed; fall back to raw plaintext
+                attachment_meta = None
+
+            save_message(sender_enc, name, save_text, app.pin, timestamp=ts, attachment=attachment_meta)
             # If this is a call invite, surface a dialog
             if isinstance(plaintext, str) and plaintext.startswith("CALL:"):
                 import json as _json
@@ -134,12 +150,14 @@ def start_ws_client(app):
                     pass
             if hasattr(app, 'chat_manager'):
                 try:
-                    app.chat_manager._append_cache(sender_enc, {"sender": name, "text": plaintext, "timestamp": ts})
+                    app.chat_manager._append_cache(sender_enc, {"sender": name, "text": save_text, "timestamp": ts, "_attachment": attachment_meta})
                 except Exception:
                     pass
             if app.recipient_pub_hex == sender_enc:
                 try:
-                    app.after(0, app.display_message, sender_enc, plaintext, ts)
+                    # Ensure attachment_meta is forwarded to the UI so the
+                    # message bubble can render attachments immediately.
+                    app.after(0, app.display_message, sender_enc, save_text, ts, attachment_meta)
                 except Exception:
                     pass
         except Exception:
