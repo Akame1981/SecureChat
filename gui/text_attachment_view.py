@@ -1,6 +1,7 @@
 import re
 import customtkinter as ctk
 import tkinter as tk
+from tkinter import messagebox
 
 
 def render_text_attachment(bubble_frame, filename, ext, content, wrap_len, side_anchor, prev_same, theme, show_expand: bool = True):
@@ -18,7 +19,11 @@ def render_text_attachment(bubble_frame, filename, ext, content, wrap_len, side_
         pass
 
     preview_lines = 12
-    total_lines = content.count('\n') + 1
+    # Protect against extremely large attachments: cap the number of lines
+    MAX_ATTACHMENT_LINES = 10000
+    total_lines_raw = content.count('\n') + 1
+    total_lines = min(total_lines_raw, MAX_ATTACHMENT_LINES)
+    truncated_lines = total_lines_raw > MAX_ATTACHMENT_LINES
     collapsed = True
 
     # Container holds line numbers gutter + text box
@@ -31,7 +36,11 @@ def render_text_attachment(bubble_frame, filename, ext, content, wrap_len, side_
     line_numbers = tk.Text(container, width=5, padx=6, bd=0, highlightthickness=0, bg=ln_bg, fg=ln_fg, font=("Roboto Mono", 11))
     # populate numbers
     try:
-        nums = "\n".join(str(i) for i in range(1, total_lines + 1))
+        # Only generate up to the capped number of lines to avoid OOM/timeouts.
+        nums_gen = (str(i) for i in range(1, total_lines + 1))
+        nums = "\n".join(nums_gen)
+        if truncated_lines:
+            nums = nums + "\n..."
         line_numbers.insert("1.0", nums)
     except Exception:
         pass
@@ -174,7 +183,12 @@ def render_text_attachment(bubble_frame, filename, ext, content, wrap_len, side_
                     ln_lines = min(total_lines_ref, max(3, int(new_h / 18)))
                     line_numbers_ref.configure(state='normal')
                     line_numbers_ref.delete('1.0', 'end')
-                    line_numbers_ref.insert('1.0', "\n".join(str(i) for i in range(1, total_lines_ref + 1)))
+                    # Rebuild the gutter up to the capped number
+                    nums_gen = (str(i) for i in range(1, total_lines_ref + 1))
+                    nums = "\n".join(nums_gen)
+                    if total_lines_raw > total_lines_ref:
+                        nums = nums + "\n..."
+                    line_numbers_ref.insert('1.0', nums)
                     line_numbers_ref.configure(state='disabled')
                 except Exception:
                     pass
@@ -220,5 +234,30 @@ def render_text_attachment(bubble_frame, filename, ext, content, wrap_len, side_
                 btn.configure(state="disabled")
             except Exception:
                 pass
+
+    # If content was truncated due to line cap, offer a Full view button to open entire content safely
+    if truncated_lines:
+        def _open_full_attachment():
+            try:
+                top = tk.Toplevel(bubble_frame)
+                top.title(filename)
+                top.geometry('800x600')
+                txt = tk.Text(top, wrap='word')
+                txt.insert('1.0', content)
+                txt.configure(state='disabled')
+                txt.pack(fill='both', expand=True)
+                btn_close = ctk.CTkButton(top, text='Close', command=top.destroy)
+                btn_close.pack(pady=6)
+            except Exception:
+                try:
+                    messagebox.showinfo('Attachment', 'Unable to open full view')
+                except Exception:
+                    pass
+
+        try:
+            full_btn = ctk.CTkButton(bubble_frame, text='Open full', width=80, height=22, command=_open_full_attachment)
+            full_btn.pack(anchor=side_anchor, padx=10, pady=(0,4))
+        except Exception:
+            pass
 
     return textbox, btn

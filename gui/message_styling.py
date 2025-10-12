@@ -25,6 +25,9 @@ _image_cache_lock = threading.Lock()
 # Maximum image dimension we'll allow before downsampling to avoid
 # exhausting X11 resources or creating invalid pixmaps.
 MAX_IMAGE_DIM = 4000
+# Maximum characters to render inline in a message bubble. Longer messages
+# will be truncated and a "View full" button will open a scrollable viewer.
+MAX_MESSAGE_CHARS = 20000
 
 
 def _human_size(n: int) -> str:
@@ -320,9 +323,19 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
         # Use a lightweight label instead of a Text/Textbox for performance while
         # keeping the same look. Copying is provided via Ctrl+C and the context menu.
         try:
+            # Truncate extremely long messages to avoid huge widget/pixmap allocations
+            inline_text = processed_text
+            is_truncated = False
+            try:
+                if isinstance(inline_text, str) and len(inline_text) > MAX_MESSAGE_CHARS:
+                    inline_text = inline_text[:MAX_MESSAGE_CHARS] + '\n... (truncated)'
+                    is_truncated = True
+            except Exception:
+                pass
+
             msg_widget = ctk.CTkLabel(
                 bubble_frame,
-                text=processed_text,
+                text=inline_text,
                 wraplength=wrap_len,
                 justify=("left" if align_both_left else ("right" if is_you else "left")),
                 text_color=text_color,
@@ -346,6 +359,31 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
             msg_widget.pack(anchor=side_anchor, padx=10, pady=(4 if not prev_same else 2, 4))
             bubble_frame.msg_label = msg_widget  # maintain attribute name for compatibility
             bubble_frame._msg_is_textbox = False
+            # If truncated, provide a button to view the full message in a separate viewer
+            if is_truncated:
+                def _open_full_view(full_text=processed_text):
+                    try:
+                        top = tk.Toplevel(app if app is not None else bubble_frame)
+                        top.title('Full message')
+                        top.geometry('800x600')
+                        txt = tk.Text(top, wrap='word')
+                        txt.insert('1.0', full_text)
+                        txt.configure(state='disabled')
+                        txt.pack(fill='both', expand=True)
+                        # Provide a simple close button
+                        btn = ctk.CTkButton(top, text='Close', command=top.destroy)
+                        btn.pack(pady=6)
+                    except Exception:
+                        try:
+                            messagebox.showinfo('Message', 'Unable to open full message viewer')
+                        except Exception:
+                            pass
+
+                try:
+                    view_btn = ctk.CTkButton(bubble_frame, text='View full', width=80, height=26, command=_open_full_view)
+                    view_btn.pack(anchor=side_anchor, padx=10, pady=(0,6))
+                except Exception:
+                    pass
         except Exception:
             # Extremely defensive fallback to a native tkinter Label if CTkLabel fails
             lbl = tk.Label(
