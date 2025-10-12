@@ -289,9 +289,17 @@ class GroupsPanel(ctk.CTkFrame):
                                     return
                                 # Send group message with attachment metadata (the message text can be empty or a caption)
                                 from utils.group_crypto import encrypt_text_with_group_key
-                                # Load my stored group key
+                                # Load my stored group key; if missing, try to fetch it from server
                                 from utils.db import load_my_group_key
                                 loaded = load_my_group_key(self.app.pin, self.selected_group_id)
+                                if not loaded:
+                                    try:
+                                        # Attempt auto-fetch via GroupManager helper
+                                        ensure = getattr(self.gm, "_ensure_have_group_key", None)
+                                        if callable(ensure):
+                                            loaded = ensure(self.selected_group_id)
+                                    except Exception:
+                                        loaded = None
                                 if not loaded:
                                     try:
                                         self.app.notifier.show("No group key available", type_="error")

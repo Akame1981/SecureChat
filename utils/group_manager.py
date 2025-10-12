@@ -56,7 +56,10 @@ class GroupManager:
 
     # ----- Messages -----
     def send_text(self, group_id: str, channel_id: str, plaintext: str, timestamp: Optional[float] = None) -> Dict:
+        # Ensure we have a group key locally; fetch from server if missing
         loaded = load_my_group_key(self.app.pin, group_id)
+        if not loaded:
+            loaded = self._ensure_have_group_key(group_id)
         if not loaded:
             raise RuntimeError("No group key for this group")
         key, kv = loaded
@@ -66,6 +69,9 @@ class GroupManager:
     def fetch_messages(self, group_id: str, channel_id: str, since: Optional[float] = None, limit: int = 200) -> List[Dict]:
         loaded = load_my_group_key(self.app.pin, group_id)
         if not loaded:
+            loaded = self._ensure_have_group_key(group_id)
+        if not loaded:
+            # Still no key: cannot decrypt or send. Return empty list gracefully.
             return []
         key, kv = loaded
         res = self.client.fetch_messages(group_id, channel_id, since, limit)
@@ -111,3 +117,21 @@ class GroupManager:
             ek = encrypt_group_key_for_member(key, uid)
             self.client.update_member_key(group_id, uid, ek, new_version)
         return new_version
+
+    # ----- Helpers -----
+    def _ensure_have_group_key(self, group_id: str) -> tuple[bytes, int] | None:
+        """If local key is missing, try to fetch my encrypted group key from the server and store it.
+
+        Returns (key, key_version) if available, else None.
+        """
+        try:
+            info = self.client.get_member_keys(group_id)
+            kv = int(info.get("key_version", 1))
+            my_entry = next((m for m in info.get("members", []) if m.get("user_id") == self.app.my_pub_hex), None)
+            if my_entry and my_entry.get("encrypted_group_key"):
+                key = decrypt_group_key_for_me(my_entry["encrypted_group_key"], self.app.private_key)
+                store_my_group_key(self.app.pin, group_id, key, kv)
+                return key, kv
+        except Exception:
+            pass
+        return None
