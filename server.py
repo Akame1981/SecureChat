@@ -262,6 +262,7 @@ async def send_message(msg: Message):
             pass
 
         inbox_key = f"inbox:{msg.to}"
+        db_inserted_id = None
         # Store as JSON to avoid unsafe eval on retrieval
         try:
             encoded = base64.b64encode(json.dumps(stored_msg, separators=(',', ':'), ensure_ascii=False).encode()).decode()
@@ -272,11 +273,11 @@ async def send_message(msg: Message):
             # Store for recipient
             # Before pushing to redis, persist to sqlite so there's a canonical durable copy
             try:
-                db_id = _insert_message_db(msg.from_, msg.to, msg.enc_pub, msg.message, msg.signature, stored_msg["timestamp"])
+                db_inserted_id = _insert_message_db(msg.from_, msg.to, msg.enc_pub, msg.message, msg.signature, stored_msg["timestamp"])
                 # attach id to the JSON we push into redis so clients can reference it
                 try:
                     push_obj = dict(stored_msg)
-                    push_obj["id"] = db_id
+                    push_obj["id"] = db_inserted_id
                     encoded = base64.b64encode(json.dumps(push_obj, separators=(',', ':'), ensure_ascii=False).encode()).decode()
                 except Exception:
                     pass
@@ -348,9 +349,10 @@ async def send_message(msg: Message):
             # Trim only if a positive per-recipient limit is configured
             if MAX_MESSAGES_PER_RECIPIENT > 0:
                 messages_store[msg.to] = messages_store[msg.to][-MAX_MESSAGES_PER_RECIPIENT:]
-        # persist to sqlite for in-memory fallback
+        # persist to sqlite for in-memory fallback and capture id
+        db_inserted_id = None
         try:
-            _insert_message_db(msg.from_, msg.to, msg.enc_pub, msg.message, msg.signature, stored_msg["timestamp"])
+            db_inserted_id = _insert_message_db(msg.from_, msg.to, msg.enc_pub, msg.message, msg.signature, stored_msg["timestamp"])
         except Exception:
             pass
 
@@ -389,7 +391,9 @@ async def send_message(msg: Message):
             payload['to'] = msg.to
             # Try to include DB id if available
             try:
-                if 'id' not in payload:
+                if db_inserted_id is not None:
+                    payload['id'] = db_inserted_id
+                elif 'id' not in payload:
                     # attempt to look up id by unique tuple
                     conn = sqlite3.connect(DB_PATH)
                     try:
@@ -402,11 +406,28 @@ async def send_message(msg: Message):
                         conn.close()
             except Exception:
                 pass
+
+            delivered_to_recipient = False
             for ws in conns:
                 try:
                     await ws.send_json(payload)
+                    # If this ws is a connection for the recipient, mark delivered
+                    try:
+                        with active_ws_lock:
+                            to_bucket = set(active_ws.get(msg.to, set()))
+                        if ws in to_bucket:
+                            delivered_to_recipient = True
+                    except Exception:
+                        pass
                 except Exception:
                     pass
+
+            # If pushed to a recipient WS, delete durable row to avoid later duplicate delivery
+            try:
+                if delivered_to_recipient and db_inserted_id is not None:
+                    _mark_delivered([db_inserted_id])
+            except Exception:
+                pass
     except Exception as e:
         print(f"WS push failed: {e}")
 
