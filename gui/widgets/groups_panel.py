@@ -101,12 +101,35 @@ class GroupsPanel(ctk.CTkFrame):
                           hover_color=self.theme.get("sidebar_button_hover", "#357ABD")).pack(side="right", padx=6)
         except Exception:
             pass
+        # Key management helpers (initially hidden, toggled on select)
+        self._btn_fetch_key = ctk.CTkButton(top, text="Fetch Key", command=self._fetch_my_group_key,
+                      fg_color=self.theme.get("sidebar_button", "#4a90e2"),
+                      hover_color=self.theme.get("sidebar_button_hover", "#357ABD"))
+        self._btn_distribute_key = ctk.CTkButton(top, text="Distribute Key", command=self._distribute_group_key,
+                      fg_color=self.theme.get("sidebar_button", "#4a90e2"),
+                      hover_color=self.theme.get("sidebar_button_hover", "#357ABD"))
+        # Pack to the right but keep them hidden by default
+        try:
+            self._btn_distribute_key.pack_forget()
+            self._btn_fetch_key.pack_forget()
+        except Exception:
+            pass
+
         ctk.CTkButton(top, text="Settings", command=self._open_group_settings,
                       fg_color=self.theme.get("button_send", "#4a90e2"),
                       hover_color=self.theme.get("button_send_hover", "#357ABD")).pack(side="right", padx=6)
         ctk.CTkButton(top, text="New Channel", command=self._create_channel,
                       fg_color=self.theme.get("button_send", "#4a90e2"),
                       hover_color=self.theme.get("button_send_hover", "#357ABD")).pack(side="right", padx=6)
+        # Pack key buttons to the far right (after other controls) but hidden
+        try:
+            self._btn_distribute_key.pack(side="right", padx=6)
+            self._btn_fetch_key.pack(side="right", padx=6)
+            # Immediately hide them; we'll toggle visibility later
+            self._btn_distribute_key.pack_forget()
+            self._btn_fetch_key.pack_forget()
+        except Exception:
+            pass
 
         # Body split: channels list (left) and messages (right)
         body = ctk.CTkFrame(right, fg_color="transparent")
@@ -652,6 +675,62 @@ class GroupsPanel(ctk.CTkFrame):
         # Highlight selected group in the left list
         self._highlight_group_item(group_id)
         self.group_title.configure(text=f"{group_name}")
+        # Try to ensure I have the group key (non-admin path). If still missing, inform the user.
+        try:
+            def work_fetch_key():
+                try:
+                    # Already have key?
+                    from utils.db import load_my_group_key
+                    if load_my_group_key(self.app.pin, group_id):
+                        return True
+                    # Try to fetch from server
+                    ensure = getattr(self.gm, '_ensure_have_group_key', None)
+                    if callable(ensure):
+                        return bool(ensure(group_id))
+                    return False
+                except Exception:
+                    return False
+            def done_have_key(ok: bool):
+                try:
+                    if not ok:
+                        self.app.notifier.show('Waiting for group key. Ask an admin/owner to distribute the key to you.', type_='warning')
+                except Exception:
+                    pass
+            self._run_bg(work_fetch_key, done_have_key)
+        except Exception:
+            pass
+        # If I'm admin/owner, proactively reconcile member keys so everyone (including me) has a key
+        try:
+            is_admin = callable(getattr(self.gm, 'is_admin_or_owner', None)) and self.gm.is_admin_or_owner(group_id)
+            # Toggle key management buttons based on role
+            try:
+                # Always show Fetch Key for members; but only when a group is selected
+                if hasattr(self, '_btn_fetch_key'):
+                    self._btn_fetch_key.pack(side='right', padx=6)
+                if hasattr(self, '_btn_distribute_key'):
+                    if is_admin:
+                        self._btn_distribute_key.pack(side='right', padx=6)
+                    else:
+                        self._btn_distribute_key.pack_forget()
+            except Exception:
+                pass
+
+            if is_admin:
+                # Run in background to avoid UI block
+                def work():
+                    try:
+                        return self.gm.reconcile_member_keys(group_id)
+                    except Exception:
+                        return 0
+                def done(n):
+                    try:
+                        if n:
+                            self.app.notifier.show(f"Distributed group key to {n} member(s)", type_='info')
+                    except Exception:
+                        pass
+                self._run_bg(work, done)
+        except Exception:
+            pass
         self._load_channels(group_id)
         # stop any previous polling
         if self._poll_job:
@@ -721,6 +800,50 @@ class GroupsPanel(ctk.CTkFrame):
             elif chans:
                 self._select_channel(chans[0].get("id"), chans[0].get("name"))
 
+        self._run_bg(work, done)
+
+    def _fetch_my_group_key(self):
+        if not self.selected_group_id:
+            return
+        gid = self.selected_group_id
+        def work():
+            try:
+                from utils.db import load_my_group_key
+                if load_my_group_key(self.app.pin, gid):
+                    return True
+                ensure = getattr(self.gm, '_ensure_have_group_key', None)
+                if callable(ensure):
+                    return bool(ensure(gid))
+                return False
+            except Exception:
+                return False
+        def done(ok: bool):
+            try:
+                if ok:
+                    self.app.notifier.show('Group key fetched and stored', type_='success')
+                else:
+                    self.app.notifier.show('No key available yet. Ask an admin/owner to distribute the key to you.', type_='warning')
+            except Exception:
+                pass
+        self._run_bg(work, done)
+
+    def _distribute_group_key(self):
+        if not self.selected_group_id:
+            return
+        gid = self.selected_group_id
+        def work():
+            try:
+                return int(self.gm.reconcile_member_keys(gid) or 0)
+            except Exception:
+                return 0
+        def done(n: int):
+            try:
+                if n:
+                    self.app.notifier.show(f'Distributed group key to {n} member(s)', type_='success')
+                else:
+                    self.app.notifier.show('No members required updates or insufficient permissions', type_='info')
+            except Exception:
+                pass
         self._run_bg(work, done)
 
     def _select_channel(self, channel_id: str, channel_name: str):

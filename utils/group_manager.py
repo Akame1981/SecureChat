@@ -135,3 +135,43 @@ class GroupManager:
         except Exception:
             pass
         return None
+
+    def is_admin_or_owner(self, group_id: str) -> bool:
+        try:
+            info = self.client.get_my_role(group_id)
+            role = (info or {}).get("role")
+            return role in ("owner", "admin")
+        except Exception:
+            return False
+
+    def reconcile_member_keys(self, group_id: str) -> int:
+        """Owner/Admin: ensure all members have the current encrypted group key.
+
+        Returns the number of members updated.
+        """
+        try:
+            if not self.is_admin_or_owner(group_id):
+                return 0
+            loaded = load_my_group_key(self.app.pin, group_id)
+            if not loaded:
+                # Try to fetch my own key first
+                loaded = self._ensure_have_group_key(group_id)
+            if not loaded:
+                return 0
+            key, kv = loaded
+            info = self.client.get_member_keys(group_id)
+            updated = 0
+            for m in (info.get("members", []) if isinstance(info, dict) else []):
+                uid = m.get("user_id")
+                m_kv = int(m.get("key_version", 0) or 0)
+                has_key = bool(m.get("encrypted_group_key"))
+                if uid and (not has_key or m_kv != int(kv)):
+                    try:
+                        ek = encrypt_group_key_for_member(key, uid)
+                        self.client.update_member_key(group_id, uid, ek, int(kv))
+                        updated += 1
+                    except Exception:
+                        pass
+            return updated
+        except Exception:
+            return 0
