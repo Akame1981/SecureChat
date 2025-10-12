@@ -62,7 +62,8 @@ python gui.py
 3. Set your username
 4. Start chatting!
 
-> 💡 **Tip**: The client defaults to the public server. For privacy, [run your own server](docs/setup-server.md).
+> 
+> 💡 **Tip**: Learn more about how to use the app in [docs/client-usage](docs/client-usage)
 
 ### Server Deployment
 
@@ -207,6 +208,9 @@ Whispr/
     ├── architecture.md       # Technical deep-dive
     └── client-usage.md       # User manual
 ```
+
+
+
 
 ---
 
