@@ -13,7 +13,7 @@
 
 **Whispr** is a feature-rich, end-to-end encrypted (E2EE) messaging platform with voice calls, file sharing, group chats, and real-time communication. Zero-knowledge architecture ensures the server never sees your plaintext—all encryption happens client-side.
 
-[Quick Start](#-quick-start) • [Features](#-features) • [Documentation](docs/) • [Server Setup](updates/0e9b1e05f9c97128512ac8a69bd4e62c9c44fddd/docs/setup-server.md)
+[Quick Start](#-quick-start) • [Features](#-features) • [Documentation](docs/) • [Server Setup](docs/setup-server.md)
 
 </div>
 
@@ -62,7 +62,7 @@ python gui.py
 3. Set your username
 4. Start chatting!
 
-> 💡 **Tip**: The client defaults to the public server. For privacy, [run your own server](updates/0e9b1e05f9c97128512ac8a69bd4e62c9c44fddd/docs/setup-server.md).
+> 💡 **Tip**: The client defaults to the public server. For privacy, [run your own server](docs/setup-server.md).
 
 ### Server Deployment
 
@@ -361,22 +361,6 @@ pip install -r requirements.txt
 
 ---
 
-## 📊 Performance & Scaling
-
-### Client Performance
-- **Startup Time**: ~2-3 seconds
-- **Message Encryption**: <10ms per message
-- **Database Query**: <50ms for 1000 messages
-- **Memory Usage**: ~50-100 MB
-
-### Server Scaling
-- **Without Redis**: ~100 concurrent users
-- **With Redis**: ~10,000+ concurrent users
-- **Message Throughput**: ~1,000 msg/sec (single instance)
-- **Horizontal Scaling**: Load balance multiple servers with shared Redis
-
----
-
 ## ❓ FAQ
 
 **Q: Is it safe?**  
@@ -439,7 +423,8 @@ We welcome contributions! Here's how:
 - ✅ Add docstrings to new functions
 - ✅ Test cryptographic changes thoroughly
 - ✅ Update documentation for new features
-- ✅ Maintain backward compatibility when possible
+- ✅ Maintain backward compatibility when possible\
+- ✅Make tests documented in [docs/tests](docs/Tests)
 - ❌ Don't weaken security or encryption
 - ❌ Don't introduce proprietary dependencies
 
@@ -450,7 +435,7 @@ All PRs require:
 - Code passes basic security review
 - No obvious bugs or crashes
 - Documentation updates if needed
-- Tests documented in [docs/tests](docs/Tests)
+-
 
 ### Areas We Need Help
 
@@ -462,6 +447,17 @@ All PRs require:
 - 🔒 Security auditing
 
 ---
+
+## 📸 Screenshots
+
+Coming soon (themes, recipient panel, PIN dialog, analytics dashboard).
+
+
+
+
+---
+
+
 
 ## 🙏 Acknowledgments
 
@@ -501,38 +497,6 @@ Special thanks to the cryptography and privacy communities for inspiration.
 
 ---
 
-## 🛠 Tech Stack
-
-Backend: FastAPI, optional Redis
-Client: Tkinter (`customtkinter`), Pillow, QR Code
-Crypto: PyNaCl (SealedBox, SecretBox, SigningKey), Scrypt KDF
-Extras: Requests, SQLAlchemy (future use), JWT (analytics auth), Passlib
-Analytics Frontend: Next.js, React, Recharts, Tailwind
-
----
-
-
-## 📸 Screenshots
-
-Coming soon (themes, recipient panel, PIN dialog, analytics dashboard).
-
----
 
 
 
-
-
-
-
-
----
-
-## 📬 Contact
-
-Author: **Akame1981**  
-Issues / discussions via **GitHub Issues**.
-
----
-
-
-**Stay tuned!** More secure and user-friendly features are on the way. 🚀
