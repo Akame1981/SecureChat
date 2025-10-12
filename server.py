@@ -163,7 +163,12 @@ def _insert_message_db(sender: str, recipient: str, enc_pub: str, message: str, 
             (sender, recipient, enc_pub, message, signature, timestamp),
         )
         conn.commit()
-        return cur.lastrowid
+        rid = cur.lastrowid
+        try:
+            print(f"[server][DB insert] id={rid} from={sender} to={recipient} ts={timestamp}", flush=True)
+        except Exception:
+            pass
+        return rid
     finally:
         conn.close()
 
@@ -203,6 +208,10 @@ def _mark_delivered(ids: list[int]):
         q = f"DELETE FROM messages WHERE id IN ({','.join('?' for _ in ids)})"
         cur.execute(q, ids)
         conn.commit()
+        try:
+            print(f"[server][DB delete] deleted ids={ids}", flush=True)
+        except Exception:
+            pass
     finally:
         conn.close()
 
@@ -285,13 +294,17 @@ async def send_message(msg: Message):
                 # DB insert failed; continue and push to redis as before
                 pass
             r.rpush(inbox_key, encoded)
-            # Also store a copy for the sender so they can fetch the canonical
-            # server-stored message (helps when optimistic local save failed).
             try:
-                sender_inbox = f'inbox:{msg.from_}'
-                r.rpush(sender_inbox, encoded)
+                print(f"[server][redis push] to={msg.to} encoded_len={len(encoded)} db_id={db_inserted_id}", flush=True)
             except Exception:
                 pass
+            # Also store a copy for the sender so they can fetch the canonical
+            # server-stored message (helps when optimistic local save failed).
+                try:
+                    sender_inbox = f'inbox:{msg.from_}'
+                    r.rpush(sender_inbox, encoded)
+                except Exception:
+                    pass
         except Exception:
             pass
         # Trim stored messages only if a positive limit is set
@@ -411,6 +424,10 @@ async def send_message(msg: Message):
             for ws in conns:
                 try:
                     await ws.send_json(payload)
+                    try:
+                        print(f"[server][ws send] to={msg.to} on_ws={id(ws)} db_id={payload.get('id')}", flush=True)
+                    except Exception:
+                        pass
                     # If this ws is a connection for the recipient, mark delivered
                     try:
                         with active_ws_lock:
@@ -420,6 +437,10 @@ async def send_message(msg: Message):
                     except Exception:
                         pass
                 except Exception:
+                    try:
+                        print(f"[server][ws send failed] to={msg.to} on_ws={id(ws)}", flush=True)
+                    except Exception:
+                        pass
                     pass
 
             # If pushed to a recipient WS, delete durable row to avoid later duplicate delivery
@@ -604,6 +625,10 @@ def get_inbox(recipient_key: str, since: Optional[float] = Query(0)):
                 _mark_delivered([m['id'] for m in db_msgs if 'id' in m])
             except Exception:
                 pass
+            try:
+                print(f"[server][inbox fetch][DB] recipient={recipient_key} count={len(db_msgs)} ids={[m.get('id') for m in db_msgs]}", flush=True)
+            except Exception:
+                pass
     except Exception:
         # DB failure - fall back to existing stores
         ids_seen = set()
@@ -640,6 +665,10 @@ def get_inbox(recipient_key: str, since: Optional[float] = Query(0)):
                         continue
                     msgs.append(decoded)
                     tuple_seen.add(key)
+                    try:
+                        print(f"[server][inbox fetch][redis] recipient={recipient_key} db_id={did} from={decoded.get('from')} ts={decoded.get('timestamp')}", flush=True)
+                    except Exception:
+                        pass
         except Exception:
             pass
     else:
