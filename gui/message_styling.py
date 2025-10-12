@@ -22,6 +22,10 @@ _IMAGE_EXECUTOR = ThreadPoolExecutor(max_workers=3)
 # Lock to protect the image cache
 _image_cache_lock = threading.Lock()
 
+# Maximum image dimension we'll allow before downsampling to avoid
+# exhausting X11 resources or creating invalid pixmaps.
+MAX_IMAGE_DIM = 4000
+
 
 def _human_size(n: int) -> str:
     units = ["B", "KB", "MB", "GB", "TB"]
@@ -599,6 +603,16 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
                                 return
                             pil_orig, pil_thumb = res
                             try:
+                                # Ensure thumbnail size is valid and not excessively large
+                                tw, th = pil_thumb.size if hasattr(pil_thumb, 'size') else (0, 0)
+                                if tw <= 0 or th <= 0:
+                                    return
+                                if tw > MAX_IMAGE_DIM or th > MAX_IMAGE_DIM:
+                                    factor = max(1, int(max(tw / MAX_IMAGE_DIM, th / MAX_IMAGE_DIM)))
+                                    try:
+                                        pil_thumb = pil_thumb.resize((max(1, int(tw / factor)), max(1, int(th / factor))), Image.Resampling.LANCZOS)
+                                    except Exception:
+                                        pass
                                 ctk_img = ctk.CTkImage(light_image=pil_thumb, dark_image=pil_thumb, size=pil_thumb.size)
                             except Exception:
                                 try:
@@ -628,10 +642,32 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
                                             pil_full = Image.open(_io.BytesIO(raw))
                                             sw = top.winfo_screenwidth(); sh = top.winfo_screenheight()
                                             iw, ih = pil_full.size
+                                            # Guard against invalid sizes
+                                            if iw <= 0 or ih <= 0:
+                                                try: messagebox.showinfo('Image', 'Unable to open image viewer (invalid image)')
+                                                except Exception: pass
+                                                return
+                                            # Downsample if image is larger than allowed maximum
+                                            if iw > MAX_IMAGE_DIM or ih > MAX_IMAGE_DIM:
+                                                factor = max(1, int(max(iw / MAX_IMAGE_DIM, ih / MAX_IMAGE_DIM)))
+                                                try:
+                                                    pil_full = pil_full.resize((max(1, int(iw / factor)), max(1, int(ih / factor))), Image.Resampling.LANCZOS)
+                                                    iw, ih = pil_full.size
+                                                except Exception:
+                                                    pass
                                             scale = min(sw / iw, sh / ih, 1.0)
-                                            new_w = int(iw * scale); new_h = int(ih * scale)
+                                            new_w = max(1, int(iw * scale)); new_h = max(1, int(ih * scale))
                                             pil_resized = pil_full.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                                            tk_img_full = ImageTk.PhotoImage(pil_resized)
+                                            try:
+                                                tk_img_full = ImageTk.PhotoImage(pil_resized)
+                                            except Exception:
+                                                try:
+                                                    pil_tmp = pil_resized.convert('RGBA') if hasattr(pil_resized, 'convert') else pil_resized
+                                                    tk_img_full = ImageTk.PhotoImage(pil_tmp)
+                                                except Exception:
+                                                    try: messagebox.showinfo('Image', 'Unable to open image viewer')
+                                                    except Exception: pass
+                                                    return
                                             lbl = tk.Label(top, image=tk_img_full, bg='black')
                                             lbl.image = tk_img_full; lbl.pack(expand=True)
                                             def _close(ev=None):
