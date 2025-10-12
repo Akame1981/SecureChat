@@ -31,7 +31,59 @@
 - 🔄 Keep Whispr updated (auto-update available)
 
 ---
+## ⚡ Quick Start
 
+### Client Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/Akame1981/Whispr.git
+cd Whispr
+
+# Create virtual environment
+python -m venv venv
+
+# Activate (Windows)
+.\venv\Scripts\activate
+
+# Activate (macOS/Linux)
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Launch Whispr
+python gui.py
+```
+
+**First Launch:**
+1. Set a secure PIN (8+ characters, complexity enforced)
+2. Your keypair is automatically generated and encrypted
+3. Set your username
+4. Start chatting!
+
+> 💡 **Tip**: The client defaults to the public server. For privacy, [run your own server](docs/setup-server.md).
+
+### Server Deployment
+
+```bash
+# Install server dependencies
+pip install -r requirements.txt
+
+# Optional: Start Redis for production
+redis-server
+
+# Run the server
+uvicorn server:app --host 0.0.0.0 --port 8000
+
+# With HTTPS (recommended)
+uvicorn server:app --host 0.0.0.0 --port 8000 \
+  --ssl-keyfile=key.pem --ssl-certfile=cert.pem
+```
+
+📖 **Full server setup guide**: [docs/setup-server.md](docs/setup-server.md)
+
+---
 ## ✨ Features
 
 ### 🔐 **Military-Grade Encryption**
@@ -102,59 +154,7 @@
 
 ---
 
-## ⚡ Quick Start
 
-### Client Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/Akame1981/Whispr.git
-cd Whispr
-
-# Create virtual environment
-python -m venv venv
-
-# Activate (Windows)
-.\venv\Scripts\activate
-
-# Activate (macOS/Linux)
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Launch Whispr
-python gui.py
-```
-
-**First Launch:**
-1. Set a secure PIN (8+ characters, complexity enforced)
-2. Your keypair is automatically generated and encrypted
-3. Set your username
-4. Start chatting!
-
-> 💡 **Tip**: The client defaults to the public server. For privacy, [run your own server](docs/setup-server.md).
-
-### Server Deployment
-
-```bash
-# Install server dependencies
-pip install -r requirements.txt
-
-# Optional: Start Redis for production
-redis-server
-
-# Run the server
-uvicorn server:app --host 0.0.0.0 --port 8000
-
-# With HTTPS (recommended)
-uvicorn server:app --host 0.0.0.0 --port 8000 \
-  --ssl-keyfile=key.pem --ssl-certfile=cert.pem
-```
-
-📖 **Full server setup guide**: [docs/setup-server.md](docs/setup-server.md)
-
----
 
 ## 🏗️ Architecture
 
