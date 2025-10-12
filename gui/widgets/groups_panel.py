@@ -807,12 +807,12 @@ class GroupsPanel(ctk.CTkFrame):
             for w in self.messages.winfo_children():
                 w.destroy()
             msgs = msgs or []
-            # If channel type is 'media', render a grid of media attachments
+            # If this channel is a media channel, render the media grid; otherwise use standard
+            # per-message rendering. Keep fallback in case media rendering fails.
             cmeta = self.channel_meta.get(self.selected_channel_id, {})
             ctype = (cmeta.get('type') or 'text') if isinstance(cmeta, dict) else 'text'
             if ctype == 'media':
                 try:
-                    # delegate to media channel renderer
                     from gui.widgets.channel_types.media_channel import render_media_grid
                     render_media_grid(self.messages, self.app, msgs, self.selected_group_id, self.theme)
                     # update last_ts

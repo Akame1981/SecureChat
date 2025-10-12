@@ -3,10 +3,12 @@ import customtkinter as ctk
 import tkinter as tk
 
 
-def render_text_attachment(bubble_frame, filename, ext, content, wrap_len, side_anchor, prev_same, theme):
+def render_text_attachment(bubble_frame, filename, ext, content, wrap_len, side_anchor, prev_same, theme, show_expand: bool = True):
     """Render a filename label + CTkTextbox with simple syntax highlighting.
 
-    Returns (textbox_widget, expand_button)
+    show_expand: if False, do not render the Expand/Collapse button (useful for preview windows).
+
+    Returns (textbox_widget, expand_button_or_None)
     """
     # Show filename on top
     try:
@@ -194,24 +196,29 @@ def render_text_attachment(bubble_frame, filename, ext, content, wrap_len, side_
 
         return toggle
 
-    btn = ctk.CTkButton(
-        bubble_frame,
-        text="Expand" if total_lines > preview_lines else "Full View",
-        width=80,
-        height=22,
-        font=("Roboto", 10),
-        command=None
-    )
-    btn_command = _make_toggle(textbox, line_numbers, total_lines, preview_lines)
-    try:
-        btn.configure(command=btn_command)
-    except Exception:
-        pass
-    btn.pack(anchor=side_anchor, padx=10, pady=(0, 4))
-    if total_lines <= preview_lines:
+    btn = None
+    if show_expand:
+        btn = ctk.CTkButton(
+            bubble_frame,
+            text="Expand" if total_lines > preview_lines else "Full View",
+            width=80,
+            height=22,
+            font=("Roboto", 10),
+            command=None
+        )
+        btn_command = _make_toggle(textbox, line_numbers, total_lines, preview_lines)
         try:
-            btn.configure(state="disabled")
+            btn.configure(command=btn_command)
         except Exception:
             pass
+        try:
+            btn.pack(anchor=side_anchor, padx=10, pady=(0, 4))
+        except Exception:
+            pass
+        if total_lines <= preview_lines:
+            try:
+                btn.configure(state="disabled")
+            except Exception:
+                pass
 
     return textbox, btn
