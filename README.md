@@ -387,7 +387,6 @@ All PRs require:
 - Code passes basic security review
 - No obvious bugs or crashes
 - Documentation updates if needed
--
 
 ### Areas We Need Help
 

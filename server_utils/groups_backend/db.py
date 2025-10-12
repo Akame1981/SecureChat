@@ -39,6 +39,9 @@ class Group(Base):
     name = Column(String, nullable=False)
     owner_id = Column(String, nullable=False)  # creator's encryption public key hex
     is_public = Column(Boolean, default=False)
+    # If True the server will accept and store encrypted_group_key values for members
+    # and clients may fetch their encrypted key from the server (server-side distribution).
+    server_distribute = Column(Boolean, default=False)
     invite_code = Column(String, unique=True, nullable=False)
     key_version = Column(Integer, default=1)
     created_at = Column(Float, default=lambda: time.time())
@@ -106,6 +109,15 @@ def init_db():
             if 'attachment_meta' not in cols:
                 # Add the column in-place (SQLite supports adding a nullable column)
                 conn.execute(text("ALTER TABLE group_messages ADD COLUMN attachment_meta TEXT"))
+            # Add server_distribute flag to groups table if missing
+            res2 = conn.execute(text("PRAGMA table_info('groups')"))
+            gcols = [r[1] for r in res2.fetchall()]
+            if 'server_distribute' not in gcols:
+                # SQLite: add nullable INTEGER column default 0
+                try:
+                    conn.execute(text("ALTER TABLE groups ADD COLUMN server_distribute INTEGER DEFAULT 0"))
+                except Exception:
+                    pass
     except Exception:
         # Don't fail startup for edge case DB locks or permission issues; fallback is to recreate DB manually
         pass

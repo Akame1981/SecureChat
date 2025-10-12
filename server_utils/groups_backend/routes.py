@@ -42,7 +42,14 @@ def create_group(req: CreateGroupRequest):
     db = SessionLocal()
     try:
         invite_code = secrets.token_urlsafe(8)
-        g = Group(name=req.name, owner_id=req.owner_id, is_public=req.is_public, invite_code=invite_code, key_version=1)
+        g = Group(
+            name=req.name,
+            owner_id=req.owner_id,
+            is_public=req.is_public,
+            invite_code=invite_code,
+            key_version=1,
+            server_distribute=False,
+        )
         db.add(g)
         db.flush()
         # Default text channel "general"
@@ -151,6 +158,7 @@ def list_groups(user_id: str):
                 id=g.id,
                 name=g.name,
                 is_public=bool(g.is_public),
+                server_distribute=bool(g.server_distribute),
                 owner_id=g.owner_id,
                 key_version=int(g.key_version or 1),
             )
@@ -176,6 +184,7 @@ def discover_public_groups(query: Optional[str] = None, limit: int = 50):
             {
                 "id": g.id,
                 "name": g.name,
+                "server_distribute": bool(g.server_distribute),
                 "owner_id": g.owner_id,
                 "invite_code": g.invite_code,
                 "key_version": int(g.key_version or 1),
@@ -408,6 +417,7 @@ def get_member_keys(group_id: str):
         )
         return {
             "key_version": g.key_version,
+            "server_distribute": bool(g.server_distribute),
             "members": [
                 {
                     "user_id": m.user_id,
@@ -538,6 +548,50 @@ def set_group_public(group_id: str, is_public: bool, user_id: str):
         g.is_public = bool(is_public)
         db.commit()
         return {"is_public": bool(g.is_public)}
+    finally:
+        db.close()
+
+
+@router.post('/server_distribute/set')
+async def set_group_server_distribute(group_id: Optional[str] = None, enabled: Optional[object] = None, user_id: Optional[str] = None, request: Request = None):
+    """Owner/Admin can toggle whether the server will distribute per-member encrypted keys to members.
+
+    This flag is informational for clients; server behavior to actively distribute keys is out of scope
+    for now but the flag is stored so clients can coordinate.
+    """
+    # Support both query params (params=) and JSON body (json=) clients
+    # Try to read JSON body if any required params are missing
+    if request is not None and (group_id is None or enabled is None or user_id is None):
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                group_id = group_id or body.get('group_id')
+                enabled = enabled if enabled is not None else body.get('enabled', body.get('server_distribute'))
+                user_id = user_id or body.get('user_id')
+        except Exception:
+            pass
+
+    if group_id is None or enabled is None or user_id is None:
+        raise HTTPException(status_code=400, detail="group_id, enabled and user_id are required")
+
+    db = SessionLocal()
+    try:
+        g = db.query(Group).filter(Group.id == group_id).first()
+        if not g:
+            raise HTTPException(status_code=404, detail="Group not found")
+        actor = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.user_id == user_id).first()
+        if not actor or actor.role not in ("owner", "admin"):
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        # Normalize enabled: accept booleans, integers, or common true/false strings
+        if isinstance(enabled, str):
+            enabled_norm = enabled.lower() in ("1", "true", "yes", "y", "on")
+        elif isinstance(enabled, (int, float)):
+            enabled_norm = bool(enabled)
+        else:
+            enabled_norm = bool(enabled)
+        g.server_distribute = bool(enabled_norm)
+        db.commit()
+        return {"server_distribute": bool(g.server_distribute)}
     finally:
         db.close()
 

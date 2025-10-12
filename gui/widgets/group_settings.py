@@ -104,6 +104,14 @@ class GroupSettingsDialog(ctk.CTkToplevel):
         self.public_switch.pack(side='left', padx=12)
         ctk.CTkButton(row2, text='Force Rekey', width=120, command=self._rekey_group).pack(side='right')
 
+        # Server distribute setting: whether server distributes member keys
+        row3 = ctk.CTkFrame(grp, fg_color='transparent')
+        row3.pack(fill='x', padx=10, pady=(0,10))
+        self.server_dist_var = tk.BooleanVar(value=False)
+        ctk.CTkLabel(row3, text='Server distributes keys').pack(side='left')
+        self.server_dist_switch = ctk.CTkSwitch(row3, text='', variable=self.server_dist_var)
+        self.server_dist_switch.pack(side='left', padx=(8,0))
+
         # Approvals
         appr_card = ctk.CTkFrame(left_col, fg_color=self.theme.get('input_bg', '#2e2e3f'), corner_radius=8)
         appr_card.pack(fill='x', pady=(0,8))
@@ -191,6 +199,11 @@ class GroupSettingsDialog(ctk.CTkToplevel):
             if me:
                 self.is_public_var.set(bool(me.get("is_public")))
                 self.name_var.set(me.get("name") or "")
+                # server_distribute may be provided in GroupInfo; if not, default False
+                try:
+                    self.server_dist_var.set(bool(me.get("server_distribute", False)))
+                except Exception:
+                    self.server_dist_var.set(False)
         except Exception:
             pass
 
@@ -267,6 +280,34 @@ class GroupSettingsDialog(ctk.CTkToplevel):
             except Exception:
                 pass
 
+            # Persist server_distribute if changed (only owner/admin may change)
+            try:
+                # If we determined our role when loading members, only attempt update for owner/admin
+                if getattr(self, '_my_role', None) in ('owner', 'admin'):
+                    try:
+                        # Call endpoint to set value; client method added in group_client
+                        self.gm.client.set_group_server_distribute(self.gid, bool(self.server_dist_var.get()))
+                        # optional notifier
+                        self.app.notifier.show("Server distribution preference updated", type_="success")
+                    except Exception as e:
+                        # Surface actual error message to help debugging (permission, payload, server error)
+                        msg = str(e)
+                        try:
+                            # requests exceptions often include response text; try to extract if present
+                            if hasattr(e, 'response') and getattr(e, 'response') is not None:
+                                try:
+                                    msg = e.response.text or msg
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                        self.app.notifier.show(f"Failed to update server distribution preference: {msg}", type_="warning")
+                else:
+                    # Not owner/admin — inform user they cannot change this setting
+                    self.app.notifier.show("Only owners/admins can change server distribution", type_="warning")
+            except Exception:
+                pass
+
             # Close dialog after save
             try:
                 self.destroy()
@@ -299,6 +340,16 @@ class GroupSettingsDialog(ctk.CTkToplevel):
             members = info.get("members", []) if info else []
         except Exception:
             members = []
+        # Determine my role from members list
+        try:
+            self._my_role = None
+            my_id = getattr(self.app, 'my_pub_hex', None)
+            for m in members:
+                if m.get('user_id') == my_id:
+                    self._my_role = m.get('role')
+                    break
+        except Exception:
+            self._my_role = None
         for m in members:
             row = ctk.CTkFrame(self.members_frame, fg_color=self.theme.get("input_bg", "#2e2e3f"))
             row.pack(fill="x", padx=6, pady=4)
@@ -321,6 +372,21 @@ class GroupSettingsDialog(ctk.CTkToplevel):
             # Prefill with first member if available
             if vals:
                 self._transfer_var.set(vals[0])
+        except Exception:
+            pass
+
+        # Enable/disable the server distribution switch based on my role
+        try:
+            if getattr(self, '_my_role', None) in ('owner', 'admin'):
+                try:
+                    self.server_dist_switch.configure(state='normal')
+                except Exception:
+                    pass
+            else:
+                try:
+                    self.server_dist_switch.configure(state='disabled')
+                except Exception:
+                    pass
         except Exception:
             pass
 

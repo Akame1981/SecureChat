@@ -29,6 +29,7 @@ class GroupInfo(BaseModel):
     id: str
     name: str
     is_public: bool
+    server_distribute: bool = False
     owner_id: str
     key_version: int
 
