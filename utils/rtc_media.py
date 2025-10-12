@@ -259,9 +259,37 @@ class TkVideoRenderer:
             while True:
                 frame = await track.recv()
                 img = frame.to_ndarray(format="rgb24")
-                pil = Image.fromarray(img)
-                pil = pil.resize((320, 240))
-                tkimg = ImageTk.PhotoImage(pil)
+                try:
+                    # Validate frame ndarray
+                    if img is None:
+                        continue
+                    if not hasattr(img, 'shape') or len(img.shape) < 2:
+                        continue
+                    h, w = int(img.shape[0]), int(img.shape[1])
+                    if h <= 0 or w <= 0:
+                        # Invalid dimensions — skip this frame
+                        continue
+
+                    # Prevent creating extremely large images which can exhaust X11
+                    # resources or lead to invalid pixmap operations. Downsample the
+                    # source by an integer factor if either dimension is above the
+                    # safe threshold.
+                    MAX_DIM = 4000
+                    if h > MAX_DIM or w > MAX_DIM:
+                        factor = max(1, int(max(h / MAX_DIM, w / MAX_DIM)))
+                        try:
+                            img = img[::factor, ::factor]
+                        except Exception:
+                            # If slicing fails for any reason, skip the frame
+                            continue
+
+                    pil = Image.fromarray(img)
+                    pil = pil.resize((320, 240))
+                    tkimg = ImageTk.PhotoImage(pil)
+                except Exception:
+                    # Any error converting the frame to an image should not
+                    # crash the renderer; just skip this frame.
+                    continue
                 def _update():
                     try:
                         self._tk_label.configure(image=tkimg)
