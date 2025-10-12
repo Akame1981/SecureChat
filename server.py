@@ -565,14 +565,28 @@ def get_inbox(recipient_key: str, since: Optional[float] = Query(0)):
     msgs = []
 
     # First, fetch durable undelivered messages from SQLite
+    ids_seen = set()
+    tuple_seen = set()
     try:
         db_msgs = _fetch_undelivered(recipient_key, since)
         if db_msgs:
             msgs.extend(db_msgs)
-            # mark them delivered as they are being handed to the client
-            _mark_delivered([m['id'] for m in db_msgs])
+            # Track identifiers to avoid returning duplicates from Redis/in-memory
+            for m in db_msgs:
+                try:
+                    ids_seen.add(int(m.get('id')))
+                except Exception:
+                    pass
+                tuple_seen.add((m.get('from'), m.get('timestamp'), m.get('message')))
+            # mark them delivered (delete them) as they are being handed to the client
+            try:
+                _mark_delivered([m['id'] for m in db_msgs if 'id' in m])
+            except Exception:
+                pass
     except Exception:
         # DB failure - fall back to existing stores
+        ids_seen = set()
+        tuple_seen = set()
         pass
 
     if REDIS_AVAILABLE:
@@ -592,13 +606,35 @@ def get_inbox(recipient_key: str, since: Optional[float] = Query(0)):
                     # Skip entries that are not valid JSON (do not eval)
                     continue
                 if decoded.get("timestamp", 0) > since:
+                    # Deduplicate against DB results using id if present or (from,timestamp,message)
+                    did = decoded.get('id')
+                    key = (decoded.get('from'), decoded.get('timestamp'), decoded.get('message'))
+                    if did is not None:
+                        try:
+                            if int(did) in ids_seen:
+                                continue
+                        except Exception:
+                            pass
+                    if key in tuple_seen:
+                        continue
                     msgs.append(decoded)
+                    tuple_seen.add(key)
         except Exception:
             pass
     else:
         with store_lock:
             stored = messages_store.get(recipient_key, [])
-            msgs.extend([m for m in stored if m.get("timestamp", 0) > since])
+            out = []
+            for m in stored:
+                if m.get("timestamp", 0) <= since:
+                    continue
+                key = (m.get('from'), m.get('timestamp'), m.get('message'))
+                # Skip duplicates already returned from DB
+                if key in tuple_seen:
+                    continue
+                out.append(m)
+                tuple_seen.add(key)
+            msgs.extend(out)
             messages_store[recipient_key] = []
 
     msgs.sort(key=lambda x: x.get("timestamp", 0))
