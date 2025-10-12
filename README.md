@@ -59,7 +59,7 @@ python gui.py
 
 On first launch you will be asked to set a PIN (used to encrypt your private keys). A keypair is generated automatically.
 
-> By default the client points to the public demo server over HTTPS. Run your own server for full control.
+> By default the client points to the public server over HTTPS. Run your own server for full control.
 
 
 
