@@ -22,4 +22,3 @@ aiortc
 av
 sounddevice
 numpy
-imghdr
