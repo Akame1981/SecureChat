@@ -18,7 +18,7 @@ def render_text_attachment(bubble_frame, filename, ext, content, wrap_len, side_
     except Exception:
         pass
 
-    preview_lines = 12
+    preview_lines = 23
     # Protect against extremely large attachments: cap the number of lines
     MAX_ATTACHMENT_LINES = 10000
     total_lines_raw = content.count('\n') + 1
@@ -58,61 +58,71 @@ def render_text_attachment(bubble_frame, filename, ext, content, wrap_len, side_
         border_color="#444"
     )
 
-    textbox.insert("1.0", content)
+    # Prepare preview content (first N lines) to avoid inserting the whole file initially
+    preview_lines = int(preview_lines)
+    all_lines = content.splitlines(True)
+    preview_content = ''.join(all_lines[:preview_lines])
 
+    # Helper: apply basic syntax tags to a textbox for given content
+    def _apply_syntax_tags(tb_widget, text_content, extension):
+        try:
+            lang = extension.lower()
+            tb_widget.tag_config('str', foreground='#a8ff60')
+            tb_widget.tag_config('com', foreground='#888888')
+            tb_widget.tag_config('kw', foreground='#66b8ff')
+
+            if lang in ('py', 'pyw'):
+                keywords = [
+                    'def', 'class', 'import', 'from', 'return', 'if', 'elif', 'else', 'for', 'while', 'try', 'except', 'with', 'as', 'pass', 'break', 'continue', 'lambda', 'yield', 'True', 'False', 'None'
+                ]
+            elif lang in ('js', 'ts'):
+                keywords = ['function', 'var', 'let', 'const', 'if', 'else', 'for', 'while', 'return', 'class', 'import', 'from', 'export', 'try', 'catch']
+            else:
+                keywords = []
+
+            for kw in keywords:
+                start = '1.0'
+                pattern = r'\b' + re.escape(kw) + r'\b'
+                while True:
+                    pos = tb_widget.search(pattern, start, stopindex='end', regexp=True)
+                    if not pos:
+                        break
+                    endpos = f"{pos}+{len(kw)}c"
+                    try:
+                        tb_widget.tag_add('kw', pos, endpos)
+                    except Exception:
+                        pass
+                    start = endpos
+
+            for m in re.finditer(r"(?P<q>\'[^\']*\'|\"[^\"]*\")", text_content):
+                try:
+                    sidx = f"1.0+{m.start()}c"
+                    eidx = f"1.0+{m.end()}c"
+                    tb_widget.tag_add('str', sidx, eidx)
+                except Exception:
+                    pass
+
+            txt_lines = text_content.splitlines()
+            for i, ln in enumerate(txt_lines, start=1):
+                if ln.lstrip().startswith('#') or ln.lstrip().startswith('//'):
+                    try:
+                        sidx = f"{i}.0"
+                        eidx = f"{i}.end"
+                        tb_widget.tag_add('com', sidx, eidx)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    # Insert only preview content initially
     try:
-        lang = ext.lower()
-        # Basic tags
-        textbox.tag_config('str', foreground='#a8ff60')
-        textbox.tag_config('com', foreground='#888888')
-        textbox.tag_config('kw', foreground='#66b8ff')
-
-        # simple keyword lists
-        if lang in ('py', 'pyw'):
-            keywords = [
-                'def', 'class', 'import', 'from', 'return', 'if', 'elif', 'else', 'for', 'while', 'try', 'except', 'with', 'as', 'pass', 'break', 'continue', 'lambda', 'yield', 'True', 'False', 'None'
-            ]
-        elif lang in ('js', 'ts'):
-            keywords = ['function', 'var', 'let', 'const', 'if', 'else', 'for', 'while', 'return', 'class', 'import', 'from', 'export', 'try', 'catch']
-        else:
-            keywords = []
-
-        # mark keywords
-        for kw in keywords:
-            start = '1.0'
-            pattern = r'\b' + re.escape(kw) + r'\b'
-            while True:
-                pos = textbox.search(pattern, start, stopindex='end', regexp=True)
-                if not pos:
-                    break
-                endpos = f"{pos}+{len(kw)}c"
-                try:
-                    textbox.tag_add('kw', pos, endpos)
-                except Exception:
-                    pass
-                start = endpos
-
-        # strings
-        for m in re.finditer(r"(?P<q>\'[^\']*\'|\"[^\"]*\")", content):
-            try:
-                sidx = f"1.0+{m.start()}c"
-                eidx = f"1.0+{m.end()}c"
-                textbox.tag_add('str', sidx, eidx)
-            except Exception:
-                pass
-
-        # comments per-line
-        lines = content.splitlines()
-        for i, ln in enumerate(lines, start=1):
-            if ln.lstrip().startswith('#') or ln.lstrip().startswith('//'):
-                try:
-                    sidx = f"{i}.0"
-                    eidx = f"{i}.end"
-                    textbox.tag_add('com', sidx, eidx)
-                except Exception:
-                    pass
+        textbox.insert("1.0", preview_content)
+        _apply_syntax_tags(textbox, preview_content, ext)
     except Exception:
-        pass
+        try:
+            textbox.insert("1.0", content[:1000])
+        except Exception:
+            pass
 
     textbox.configure(state="disabled")
     textbox.pack(side='left', fill='both', expand=True)
@@ -131,24 +141,21 @@ def render_text_attachment(bubble_frame, filename, ext, content, wrap_len, side_
         except Exception:
             pass
 
-    # Set yscrollcommand callbacks
+    # Initially disable synced scrolling in the collapsed preview and block mouse wheel
     try:
-        textbox.configure(yscrollcommand=_sync_ln_from_text)
+        textbox.configure(yscrollcommand=None)
     except Exception:
         pass
     try:
-        line_numbers.configure(yscrollcommand=_sync_text_from_ln)
+        line_numbers.configure(yscrollcommand=None)
     except Exception:
         pass
 
-    # Mouse wheel bindings (cross-platform)
     def _on_mousewheel(event, widget_src, widget_target):
         try:
             if hasattr(event, 'num') and event.num in (4, 5):
-                # X11 scroll
                 delta = -1 if event.num == 4 else 1
             else:
-                # Windows/Mac
                 delta = -1 * int(event.delta / 120)
             widget_src.yview_scroll(delta, 'units')
             widget_target.yview_scroll(delta, 'units')
@@ -156,16 +163,17 @@ def render_text_attachment(bubble_frame, filename, ext, content, wrap_len, side_
         except Exception:
             return None
 
+    # Block scrolling by default in the collapsed preview so it doesn't scroll the main view
+    def _block_scroll(event=None):
+        return 'break'
+
     try:
-        textbox.bind('<MouseWheel>', lambda e: _on_mousewheel(e, textbox, line_numbers))
-        textbox.bind('<Button-4>', lambda e: _on_mousewheel(e, textbox, line_numbers))
-        textbox.bind('<Button-5>', lambda e: _on_mousewheel(e, textbox, line_numbers))
-    except Exception:
-        pass
-    try:
-        line_numbers.bind('<MouseWheel>', lambda e: _on_mousewheel(e, line_numbers, textbox))
-        line_numbers.bind('<Button-4>', lambda e: _on_mousewheel(e, line_numbers, textbox))
-        line_numbers.bind('<Button-5>', lambda e: _on_mousewheel(e, line_numbers, textbox))
+        textbox.bind('<MouseWheel>', lambda e: _block_scroll())
+        textbox.bind('<Button-4>', lambda e: _block_scroll())
+        textbox.bind('<Button-5>', lambda e: _block_scroll())
+        line_numbers.bind('<MouseWheel>', lambda e: _block_scroll())
+        line_numbers.bind('<Button-4>', lambda e: _block_scroll())
+        line_numbers.bind('<Button-5>', lambda e: _block_scroll())
     except Exception:
         pass
 
@@ -176,33 +184,86 @@ def render_text_attachment(bubble_frame, filename, ext, content, wrap_len, side_
         def toggle():
             nonlocal collapsed_local
             if collapsed_local:
-                new_h = min(total_lines_ref * 18, 600)
-                textbox_ref.configure(height=new_h)
-                # approximate lines for gutter
+                # Expand to render the whole file (use raw lines). Limit the height to avoid creating enormous windows
+                new_h = min(total_lines_raw * 18, 2000)
                 try:
-                    ln_lines = min(total_lines_ref, max(3, int(new_h / 18)))
+                    textbox_ref.configure(height=new_h)
+                except Exception:
+                    try:
+                        textbox_ref.configure(height=min(new_h, 2000))
+                    except Exception:
+                        pass
+                try:
+                    # Rebuild gutter to full raw lines (in chunks to avoid huge allocations)
                     line_numbers_ref.configure(state='normal')
                     line_numbers_ref.delete('1.0', 'end')
-                    # Rebuild the gutter up to the capped number
-                    nums_gen = (str(i) for i in range(1, total_lines_ref + 1))
-                    nums = "\n".join(nums_gen)
-                    if total_lines_raw > total_lines_ref:
-                        nums = nums + "\n..."
-                    line_numbers_ref.insert('1.0', nums)
+                    CHUNK = 1000
+                    i = 1
+                    while i <= total_lines_raw:
+                        end = min(i + CHUNK - 1, total_lines_raw)
+                        try:
+                            line_numbers_ref.insert('end', "\n".join(str(j) for j in range(i, end + 1)) + ("\n" if end < total_lines_raw else ""))
+                        except Exception:
+                            break
+                        i = end + 1
                     line_numbers_ref.configure(state='disabled')
+                    # Populate textbox with full content and apply syntax tags
+                    try:
+                        textbox_ref.configure(state='normal')
+                        textbox_ref.delete('1.0', 'end')
+                        textbox_ref.insert('1.0', content)
+                        _apply_syntax_tags(textbox_ref, content, ext)
+                        textbox_ref.configure(state='disabled')
+                    except Exception:
+                        pass
+                    # Enable synced scrolling and mouse wheel for the expanded full view
+                    try:
+                        textbox_ref.configure(yscrollcommand=_sync_ln_from_text)
+                        line_numbers_ref.configure(yscrollcommand=_sync_text_from_ln)
+                        textbox_ref.unbind('<MouseWheel>'); textbox_ref.unbind('<Button-4>'); textbox_ref.unbind('<Button-5>')
+                        line_numbers_ref.unbind('<MouseWheel>'); line_numbers_ref.unbind('<Button-4>'); line_numbers_ref.unbind('<Button-5>')
+                        textbox_ref.bind('<MouseWheel>', lambda e: _on_mousewheel(e, textbox_ref, line_numbers_ref))
+                        textbox_ref.bind('<Button-4>', lambda e: _on_mousewheel(e, textbox_ref, line_numbers_ref))
+                        textbox_ref.bind('<Button-5>', lambda e: _on_mousewheel(e, textbox_ref, line_numbers_ref))
+                        line_numbers_ref.bind('<MouseWheel>', lambda e: _on_mousewheel(e, line_numbers_ref, textbox_ref))
+                        line_numbers_ref.bind('<Button-4>', lambda e: _on_mousewheel(e, line_numbers_ref, textbox_ref))
+                        line_numbers_ref.bind('<Button-5>', lambda e: _on_mousewheel(e, line_numbers_ref, textbox_ref))
+                    except Exception:
+                        pass
                 except Exception:
                     pass
                 btn.configure(text="Collapse")
                 collapsed_local = False
             else:
+                # Collapse back to preview: show capped number of lines and disable internal scrolling
                 new_h = min(preview_lines_ref * 18, 320)
                 textbox_ref.configure(height=new_h)
                 try:
-                    ln_lines = min(total_lines_ref, max(3, int(new_h / 18)))
                     line_numbers_ref.configure(state='normal')
                     line_numbers_ref.delete('1.0', 'end')
-                    line_numbers_ref.insert('1.0', "\n".join(str(i) for i in range(1, total_lines_ref + 1)))
+                    nums_gen = (str(i) for i in range(1, total_lines + 1))
+                    nums = "\n".join(nums_gen)
+                    if truncated_lines:
+                        nums = nums + "\n..."
+                    line_numbers_ref.insert('1.0', nums)
                     line_numbers_ref.configure(state='disabled')
+                except Exception:
+                    pass
+                # Disable synced scrolling and block mouse wheel again
+                try:
+                    textbox_ref.configure(yscrollcommand=None)
+                    line_numbers_ref.configure(yscrollcommand=None)
+                except Exception:
+                    pass
+                try:
+                    textbox_ref.unbind('<MouseWheel>'); textbox_ref.unbind('<Button-4>'); textbox_ref.unbind('<Button-5>')
+                    line_numbers_ref.unbind('<MouseWheel>'); line_numbers_ref.unbind('<Button-4>'); line_numbers_ref.unbind('<Button-5>')
+                    textbox_ref.bind('<MouseWheel>', lambda e: _block_scroll())
+                    textbox_ref.bind('<Button-4>', lambda e: _block_scroll())
+                    textbox_ref.bind('<Button-5>', lambda e: _block_scroll())
+                    line_numbers_ref.bind('<MouseWheel>', lambda e: _block_scroll())
+                    line_numbers_ref.bind('<Button-4>', lambda e: _block_scroll())
+                    line_numbers_ref.bind('<Button-5>', lambda e: _block_scroll())
                 except Exception:
                     pass
                 btn.configure(text="Expand")

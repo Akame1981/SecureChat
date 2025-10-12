@@ -81,7 +81,9 @@ def open_media_preview(parent, app, att_meta: dict, selected_group_id: str, them
                     wrap_len = 560
                     # render into the preview Toplevel
                     # Do not show the Expand button in media-channel previews; keep it for DMs
-                    render_text_attachment(win, name, ext, txt, wrap_len, 'n', False, theme, show_expand=False)
+                    # Provide full text so the preview window can expand to the full file
+                    from gui.text_attachment_view import render_text_attachment as _rt
+                    _rt(win, name, ext, txt, wrap_len, 'n', False, theme, show_expand=False, full_text=txt)
                 except Exception:
                     # Fallback: simple read-only Text widget
                     t = tk.Text(win)

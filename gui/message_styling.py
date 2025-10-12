@@ -27,7 +27,7 @@ _image_cache_lock = threading.Lock()
 MAX_IMAGE_DIM = 4000
 # Maximum characters to render inline in a message bubble. Longer messages
 # will be truncated and a "View full" button will open a scrollable viewer.
-MAX_MESSAGE_CHARS = 20000
+MAX_MESSAGE_CHARS = 65536
 
 
 def _human_size(n: int) -> str:
@@ -296,21 +296,32 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
                     raw = base64.b64decode(blob_b64)
                 except Exception:
                     raw = None
+            full_text = None
             if raw is not None and nm:
                 if is_text_file(nm, raw):
                     is_text_attachment = True
-                    # Limit preview size for performance
+                    # Keep full decoded content but render a preview in the bubble
                     try:
-                        text_attachment_content = raw.decode('utf-8', errors='replace')
-                        if len(text_attachment_content) > 10000:
-                            text_attachment_content = text_attachment_content[:10000] + '\n... (truncated)'
+                        full_text = raw.decode('utf-8', errors='replace')
+                        # Preview length for collapsed view (larger than before)
+                        PREVIEW_ATTACHMENT_CHARS = 65536
+                        if len(full_text) > PREVIEW_ATTACHMENT_CHARS:
+                            text_attachment_content = full_text[:PREVIEW_ATTACHMENT_CHARS] + '\n... (truncated)'
+                        else:
+                            text_attachment_content = full_text
                     except Exception:
                         text_attachment_content = None
 
     # Message text or text attachment preview
     if is_text_attachment and text_attachment_content is not None:
         try:
-            textbox, expand_btn = render_text_attachment(bubble_frame, nm, ext, text_attachment_content, wrap_len, side_anchor, prev_same, theme)
+            # Pass the full decoded content as full_text so the viewer can render
+            # the entire file when expanded.
+            # Pass both preview (text_attachment_content) and the full_text if available
+            try:
+                textbox, expand_btn = render_text_attachment(bubble_frame, nm, ext, text_attachment_content, wrap_len, side_anchor, prev_same, theme, full_text=full_text)
+            except Exception:
+                textbox, expand_btn = render_text_attachment(bubble_frame, nm, ext, text_attachment_content, wrap_len, side_anchor, prev_same, theme)
             bubble_frame.msg_label = textbox
             bubble_frame._msg_is_textbox = True
         except Exception:
