@@ -177,7 +177,15 @@ async def send_message(msg: Message):
             # Fallback to repr if JSON serialization fails for some reason
             encoded = base64.b64encode(str(stored_msg).encode()).decode()
         try:
+            # Store for recipient
             r.rpush(inbox_key, encoded)
+            # Also store a copy for the sender so they can fetch the canonical
+            # server-stored message (helps when optimistic local save failed).
+            try:
+                sender_inbox = f'inbox:{msg.from_}'
+                r.rpush(sender_inbox, encoded)
+            except Exception:
+                pass
         except Exception:
             pass
         # Trim stored messages only if a positive limit is set
@@ -225,6 +233,13 @@ async def send_message(msg: Message):
             if msg.to not in messages_store:
                 messages_store[msg.to] = []
             messages_store[msg.to].append(stored_msg)
+            # Also mirror to sender's in-memory inbox so sender can retrieve on next fetch
+            try:
+                if msg.from_ not in messages_store:
+                    messages_store[msg.from_] = []
+                messages_store[msg.from_].append(stored_msg)
+            except Exception:
+                pass
             # Trim only if a positive per-recipient limit is configured
             if MAX_MESSAGES_PER_RECIPIENT > 0:
                 messages_store[msg.to] = messages_store[msg.to][-MAX_MESSAGES_PER_RECIPIENT:]

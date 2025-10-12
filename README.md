@@ -24,17 +24,17 @@ For detailed instructions on **setting up the server**, including HTTPS, self-si
 
 ## ✨ Feature Highlights
 
-| Category | Current | Notes |
-|----------|---------|-------|
-| Encryption | NaCl `SealedBox` + `Ed25519` signatures | Per‑message authenticity & confidentiality |
-| Key Storage | Local (`SecretBox` + Scrypt KDF) | PIN protected (blacklist + heuristics) |
-| Transport | FastAPI relay + optional WebSocket push | In‑memory or Redis queues; optional real‑time push via WebSocket |
-| Ephemerality | Last N msgs (default 20) | Cleared on fetch / TTL 60s (Redis) |
-| GUI Client | Tkinter + themes | Light/Dark/Custom |
-| Rate Limiting | 10 msgs/sec | Abuse prevention |
-| Analytics | Optional backend + dashboard | Auto-disable if absent |
-| Packaging | PyInstaller aware | Manual build notes |
-| Planned | Offline/groups/calls | Calls beta (WebRTC audio), file sharing and WebSocket push implemented |
+| Category      | Current                                 | Notes                                                                  |
+| ------------- | --------------------------------------- | ---------------------------------------------------------------------- |
+| Encryption    | NaCl `SealedBox` + `Ed25519` signatures | Per‑message authenticity & confidentiality                             |
+| Key Storage   | Local (`SecretBox` + Scrypt KDF)        | PIN protected (blacklist + heuristics)                                 |
+| Transport     | FastAPI relay + optional WebSocket push | In‑memory or Redis queues; optional real‑time push via WebSocket       |
+| Ephemerality  | Last N msgs (default 20)                | Cleared on fetch / TTL 60s (Redis)                                     |
+| GUI Client    | Tkinter + themes                        | Light/Dark/Custom                                                      |
+| Rate Limiting | 10 msgs/sec                             | Abuse prevention                                                       |
+| Analytics     | Optional backend + dashboard            | Auto-disable if absent                                                 |
+| Packaging     | PyInstaller aware                       | Manual build notes                                                     |
+| Planned       | Offline/groups/calls                    | Calls beta (WebRTC audio), file sharing and WebSocket push implemented |
 
 Additional conveniences:
 

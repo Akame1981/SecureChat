@@ -508,13 +508,13 @@ class WhisprApp(ctk.CTk):
                     # Persist locally so optimistic UI can render the blob immediately
                     try:
                         from utils.attachments import store_attachment
-                        store_attachment(blob, self.pin)
+                        att_id = store_attachment(blob, self.pin)
                     except Exception:
-                        pass
+                        # Fall back to deterministic sha256 id if storing fails
+                        import hashlib as _hashlib
+                        att_id = _hashlib.sha256(blob).hexdigest()
                     placeholder = f"[Attachment] {os.path.basename(path)} ({self.chat_manager._human_size(len(blob))})"
                     ts = _time.time()
-                    import hashlib
-                    att_id = hashlib.sha256(blob).hexdigest()
                     meta = {"name": os.path.basename(path), "size": len(blob), "att_id": att_id, "type": "file"}
                     save_message(self.recipient_pub_hex, 'You', placeholder, self.pin, timestamp=ts, attachment=meta)
                     self.display_message(self.my_pub_hex, placeholder, ts, attachment_meta=meta)

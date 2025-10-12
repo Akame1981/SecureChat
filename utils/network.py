@@ -51,7 +51,13 @@ def send_attachment(app, to_pub: str, signing_pub: str, filename: str, data: byt
         import json as _json, base64 as _b64, os as _os
         # Persist encrypted locally (pin protected) and only send reference id + hash
         # 1. Upload raw sealed payload separately for dedup / lazy download
-        att_id = hashlib.sha256(data).hexdigest()
+        # Prefer the att_id returned by store_attachment so the local encrypted
+        # on-disk file and the uploaded reference use the same id. Fall back
+        # to sha256(data) if storing fails for any reason.
+        try:
+            att_id = store_attachment(data, getattr(app, 'pin', ''))
+        except Exception:
+            att_id = hashlib.sha256(data).hexdigest()
         # Upload only if not already uploaded (best effort: HEAD style could be added later)
         import base64 as _b642
         blob_b64 = _b642.b64encode(data).decode()
@@ -74,8 +80,7 @@ def send_attachment(app, to_pub: str, signing_pub: str, filename: str, data: byt
         except requests.exceptions.RequestException as e:
             print("Upload Exception:", e)
             return False
-        # 2. Store locally (encrypted-on-disk) for later retrieval
-        store_attachment(data, getattr(app, 'pin', ''))
+    # 2. local storage already attempted above; no-op here
         # 3. Send reference envelope only
         envelope = {
             "type": "file",

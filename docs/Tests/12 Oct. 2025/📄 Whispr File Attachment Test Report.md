@@ -139,3 +139,51 @@ Validate that file attachments render consistently for both users in real time, 
 
 ---
 
+# 📄 Whispr File Attachment Test Report (v4)
+
+## 🧪 Test Case
+
+**Test Name:** File Test — Sending `.py` file between users (Post-Fix #3)
+
+**Goal:**  
+Confirm that file attachments render and persist correctly for both sender and receiver across live send, reload, and full restart.
+
+---
+
+## ✅ Expected Behavior
+
+Both users should:
+- Immediately see the file name and content viewer after sending.
+- Have the message persist in chat history.
+- Retain the same view after reload or restart.
+
+---
+
+## ⚙️ Test Execution (After Fix #3)
+
+**Scenario:** User 2 sends a new `server.py` file to User 1.
+
+| Step | User 1 (Receiver) | User 2 (Sender) |
+|------|-------------------|-----------------|
+| Immediately after send | ✅ File viewer renders fully (name + text content) | ⚠️ Only file name rendered, no viewer |
+| After reload | ✅ Still visible and correct | ❌ Message disappears completely |
+| After full app restart | ✅ Viewer and name still correct | ✅ File viewer appears correctly |
+
+---
+
+## 🧩 Observations
+
+1. **Receiver side is now stable:**  
+   Rendering and persistence for User 1 work perfectly.
+
+2. **Sender side partially broken:**  
+   - The message appears incomplete at send time (no viewer).
+   - After reload, it vanishes → message not fetched from local DB.
+   - After restart, it reappears → message exists in backend, but sender’s local message cache or DB isn’t updated properly after sending.
+
+3. **Meaning:**  
+   - Backend now correctly saves and serves file messages.  
+   - **Sender’s client-side state and local message persistence remain inconsistent.**
+
+---
+

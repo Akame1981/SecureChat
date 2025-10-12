@@ -10,6 +10,7 @@ from tkinter import filedialog
 import os
 from utils.network import send_attachment
 from utils.crypto import encrypt_blob
+from utils.attachments import store_attachment
 class WhisprUILayout:
     def __init__(self, app):
         """
@@ -270,20 +271,20 @@ class WhisprUILayout:
                             data = f.read()
                         # Persist locally so optimistic UI can render blob immediately
                         try:
-                            store_attachment(data, app.pin)
+                            att_id = store_attachment(data, app.pin)
                         except Exception:
-                            pass
+                            # Fall back to deterministic sha256 id if storing fails
+                            import hashlib as _hashlib
+                            att_id = _hashlib.sha256(data).hexdigest()
 
                         # Show placeholder immediately (non-blocking UX) then send in background
                         import threading
-                        from utils.attachments import store_attachment
                         human = app.chat_manager._human_size(len(data)) if hasattr(app, 'chat_manager') else f"{len(data)} bytes"
                         placeholder = f"[Attachment] {os.path.basename(p)} ({human})"
                         ts = __import__('time').time()
                         from utils.chat_storage import save_message
                         # Temporary client-side id (hash) for placeholder; network layer will persist
-                        import hashlib
-                        att_id = hashlib.sha256(data).hexdigest()
+                        # att_id already derived from store_attachment above (or fallback)
                         meta = {"name": os.path.basename(p), "size": len(data), "att_id": att_id, "type": "file"}
                         save_message(app.recipient_pub_hex, "You", placeholder, app.pin, timestamp=ts, attachment=meta)
                         app.display_message(app.my_pub_hex, placeholder, ts, attachment_meta=meta)
