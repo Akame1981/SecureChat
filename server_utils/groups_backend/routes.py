@@ -159,6 +159,7 @@ def list_groups(user_id: str):
                 name=g.name,
                 is_public=bool(g.is_public),
                 server_distribute=bool(g.server_distribute),
+                server_store_history=bool(getattr(g, 'server_store_history', False)),
                 owner_id=g.owner_id,
                 key_version=int(g.key_version or 1),
             )
@@ -185,6 +186,7 @@ def discover_public_groups(query: Optional[str] = None, limit: int = 50):
                 "id": g.id,
                 "name": g.name,
                 "server_distribute": bool(g.server_distribute),
+                    "server_store_history": bool(getattr(g, 'server_store_history', False)),
                 "owner_id": g.owner_id,
                 "invite_code": g.invite_code,
                 "key_version": int(g.key_version or 1),
@@ -368,13 +370,31 @@ def send_group_message(req: SendGroupMessageRequest):
 def fetch_group_messages(req: FetchGroupMessagesRequest, user_id: str):
     db = SessionLocal()
     try:
-        _require_member(db, req.group_id, user_id)
+        # verify membership and obtain member record (to access joined_at)
+        gm = db.query(GroupMember).filter(GroupMember.group_id == req.group_id, GroupMember.user_id == user_id, GroupMember.pending == False).first()
+        if not gm:
+            raise HTTPException(status_code=403, detail="Not a group member")
+        g = db.query(Group).filter(Group.id == req.group_id).first()
+        if not g:
+            raise HTTPException(status_code=404, detail="Group not found")
+
+        # Determine earliest timestamp allowed. If server_store_history is False,
+        # do not return messages older than the member's join time (prevents new members
+        # from reading history before they joined). If True, server will return messages
+        # regardless of join time (clients still must handle decryption/key versions).
+        requested_since = float(req.since or 0.0)
+        if not bool(getattr(g, 'server_store_history', False)):
+            allowed_since = float(gm.joined_at or 0.0)
+            since_ts = max(requested_since, allowed_since)
+        else:
+            since_ts = requested_since
+
         q = (
             db.query(GroupMessage)
             .filter(
                 GroupMessage.group_id == req.group_id,
                 GroupMessage.channel_id == req.channel_id,
-                GroupMessage.timestamp > (req.since or 0.0),
+                GroupMessage.timestamp > since_ts,
             )
             .order_by(GroupMessage.timestamp.asc())
         )
@@ -418,6 +438,7 @@ def get_member_keys(group_id: str):
         return {
             "key_version": g.key_version,
             "server_distribute": bool(g.server_distribute),
+            "server_store_history": bool(getattr(g, 'server_store_history', False)),
             "members": [
                 {
                     "user_id": m.user_id,
@@ -592,6 +613,44 @@ async def set_group_server_distribute(group_id: Optional[str] = None, enabled: O
         g.server_distribute = bool(enabled_norm)
         db.commit()
         return {"server_distribute": bool(g.server_distribute)}
+    finally:
+        db.close()
+
+
+@router.post('/server_store_history/set')
+async def set_group_server_store_history(group_id: Optional[str] = None, enabled: Optional[object] = None, user_id: Optional[str] = None, request: Request = None):
+    # Try to read JSON body if any required params are missing
+    if request is not None and (group_id is None or enabled is None or user_id is None):
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                group_id = group_id or body.get('group_id')
+                enabled = enabled if enabled is not None else body.get('enabled', body.get('server_store_history'))
+                user_id = user_id or body.get('user_id')
+        except Exception:
+            pass
+
+    if group_id is None or enabled is None or user_id is None:
+        raise HTTPException(status_code=400, detail="group_id, enabled and user_id are required")
+
+    db = SessionLocal()
+    try:
+        g = db.query(Group).filter(Group.id == group_id).first()
+        if not g:
+            raise HTTPException(status_code=404, detail="Group not found")
+        actor = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.user_id == user_id).first()
+        if not actor or actor.role not in ("owner", "admin"):
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        # Normalize enabled
+        if isinstance(enabled, str):
+            enabled_norm = enabled.lower() in ("1", "true", "yes", "y", "on")
+        elif isinstance(enabled, (int, float)):
+            enabled_norm = bool(enabled)
+        else:
+            enabled_norm = bool(enabled)
+        g.server_store_history = bool(enabled_norm)
+        db.commit()
+        return {"server_store_history": bool(g.server_store_history)}
     finally:
         db.close()
 

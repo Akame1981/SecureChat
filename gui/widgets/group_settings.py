@@ -112,6 +112,14 @@ class GroupSettingsDialog(ctk.CTkToplevel):
         self.server_dist_switch = ctk.CTkSwitch(row3, text='', variable=self.server_dist_var)
         self.server_dist_switch.pack(side='left', padx=(8,0))
 
+        # Server store history setting: whether server retains encrypted messages for offline/new members
+        row4 = ctk.CTkFrame(grp, fg_color='transparent')
+        row4.pack(fill='x', padx=10, pady=(0,10))
+        self.server_store_hist_var = tk.BooleanVar(value=False)
+        ctk.CTkLabel(row4, text='Server stores history for offline/new members').pack(side='left')
+        self.server_store_hist_switch = ctk.CTkSwitch(row4, text='', variable=self.server_store_hist_var)
+        self.server_store_hist_switch.pack(side='left', padx=(8,0))
+
         # Approvals
         appr_card = ctk.CTkFrame(left_col, fg_color=self.theme.get('input_bg', '#2e2e3f'), corner_radius=8)
         appr_card.pack(fill='x', pady=(0,8))
@@ -204,6 +212,11 @@ class GroupSettingsDialog(ctk.CTkToplevel):
                     self.server_dist_var.set(bool(me.get("server_distribute", False)))
                 except Exception:
                     self.server_dist_var.set(False)
+                # server_store_history may be provided in GroupInfo; if not, default False
+                try:
+                    self.server_store_hist_var.set(bool(me.get("server_store_history", False)))
+                except Exception:
+                    self.server_store_hist_var.set(False)
         except Exception:
             pass
 
@@ -280,7 +293,7 @@ class GroupSettingsDialog(ctk.CTkToplevel):
             except Exception:
                 pass
 
-            # Persist server_distribute if changed (only owner/admin may change)
+                # Persist server_distribute & server_store_history if changed (only owner/admin may change)
             try:
                 # If we determined our role when loading members, only attempt update for owner/admin
                 if getattr(self, '_my_role', None) in ('owner', 'admin'):
@@ -302,6 +315,22 @@ class GroupSettingsDialog(ctk.CTkToplevel):
                         except Exception:
                             pass
                         self.app.notifier.show(f"Failed to update server distribution preference: {msg}", type_="warning")
+                    # Also persist server_store_history
+                    try:
+                        self.gm.client.set_group_server_store_history(self.gid, bool(self.server_store_hist_var.get()))
+                        self.app.notifier.show("Server store-history preference updated", type_="success")
+                    except Exception as e:
+                        # Surface error
+                        msg2 = str(e)
+                        try:
+                            if hasattr(e, 'response') and getattr(e, 'response') is not None:
+                                try:
+                                    msg2 = e.response.text or msg2
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                        self.app.notifier.show(f"Failed to update server store-history preference: {msg2}", type_="warning")
                 else:
                     # Not owner/admin — inform user they cannot change this setting
                     self.app.notifier.show("Only owners/admins can change server distribution", type_="warning")

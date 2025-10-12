@@ -42,6 +42,11 @@ class Group(Base):
     # If True the server will accept and store encrypted_group_key values for members
     # and clients may fetch their encrypted key from the server (server-side distribution).
     server_distribute = Column(Boolean, default=False)
+    # If True the server will retain encrypted message blobs for members who were offline
+    # so new/offline members can fetch missed messages from the server. The server stores
+    # ciphertext only; end-to-end encryption still holds but server will keep encrypted
+    # history blobs for retrieval.
+    server_store_history = Column(Boolean, default=False)
     invite_code = Column(String, unique=True, nullable=False)
     key_version = Column(Integer, default=1)
     created_at = Column(Float, default=lambda: time.time())
@@ -116,6 +121,12 @@ def init_db():
                 # SQLite: add nullable INTEGER column default 0
                 try:
                     conn.execute(text("ALTER TABLE groups ADD COLUMN server_distribute INTEGER DEFAULT 0"))
+                except Exception:
+                    pass
+            # Add server_store_history flag to groups table if missing
+            if 'server_store_history' not in gcols:
+                try:
+                    conn.execute(text("ALTER TABLE groups ADD COLUMN server_store_history INTEGER DEFAULT 0"))
                 except Exception:
                     pass
     except Exception:
