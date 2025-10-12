@@ -79,30 +79,45 @@ class ThemeEditor(ctk.CTkToplevel):
     def _build_layout(self):
         self.grid_columnconfigure(2, weight=1)
         self.grid_rowconfigure(0, weight=1)
+        # Sidebar (themes list and actions) - modernized with search and compact action bar
+        sidebar = ctk.CTkFrame(self, fg_color="#14141a", corner_radius=8)
+        sidebar.grid(row=0, column=0, sticky='nsw', padx=8, pady=8)
+        sidebar.grid_rowconfigure(2, weight=1)
 
-        # Sidebar (themes list and actions)
-        sidebar = ctk.CTkFrame(self, fg_color="#1f1f2b", corner_radius=0)
-        sidebar.grid(row=0, column=0, sticky='nsw')
-        sidebar.grid_rowconfigure(4, weight=1)
-        ctk.CTkLabel(sidebar, text="Themes", font=("Roboto", 14, "bold")).grid(row=0, column=0, padx=12, pady=(12,6), sticky='w')
+        # Header
+        hdr = ctk.CTkFrame(sidebar, fg_color="transparent")
+        hdr.grid(row=0, column=0, sticky='ew', padx=8, pady=(8,6))
+        ctk.CTkLabel(hdr, text="Themes", font=("Segoe UI", 15, "bold")).pack(side='left')
 
-        self.theme_listbox = ctk.CTkScrollableFrame(sidebar, width=200, fg_color="transparent")
-        self.theme_listbox.grid(row=1, column=0, sticky='nsew', padx=8, pady=(0,8))
+        # Search box for themes
+        search_wr = ctk.CTkFrame(sidebar, fg_color="#0f0f13")
+        search_wr.grid(row=1, column=0, sticky='ew', padx=8, pady=(0,8))
+        search_wr.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(search_wr, text="🔎", width=20).grid(row=0, column=0, sticky='w', padx=(6,4))
+        search_entry = ctk.CTkEntry(search_wr, textvariable=self.search_var, placeholder_text="Search themes...", width=160)
+        search_entry.grid(row=0, column=1, sticky='ew', padx=(0,6))
+        search_entry.bind('<KeyRelease>', lambda e: self._populate_theme_list())
+
+        self.theme_listbox = ctk.CTkScrollableFrame(sidebar, width=220, fg_color="transparent")
+        self.theme_listbox.grid(row=2, column=0, sticky='nsew', padx=8, pady=(0,8))
         self._populate_theme_list()
 
+        # Compact vertical action bar at the bottom of the sidebar
         action_bar = ctk.CTkFrame(sidebar, fg_color="transparent")
-        action_bar.grid(row=2, column=0, sticky='ew', padx=8, pady=(0,4))
-        ctk.CTkButton(action_bar, text="➕ Add", command=self._add_theme, width=58).grid(row=0, column=0, padx=(0,4))
-        ctk.CTkButton(action_bar, text="📝 Dup", command=self._duplicate_theme, width=58).grid(row=0, column=1, padx=4)
-        ctk.CTkButton(action_bar, text="🗑 Delete", command=self._delete_theme, fg_color="#d9534f", width=80).grid(row=0, column=2, padx=(4,0))
+        action_bar.grid(row=3, column=0, sticky='ew', padx=8, pady=6)
+        ctk.CTkButton(action_bar, text="➕", command=self._add_theme, width=40, height=34, corner_radius=8).grid(row=0, column=0, padx=(0,6))
+        ctk.CTkButton(action_bar, text="⧉", command=self._duplicate_theme, width=40, height=34, corner_radius=8).grid(row=0, column=1, padx=6)
+        ctk.CTkButton(action_bar, text="🗑", command=self._delete_theme, fg_color="#d9534f", width=40, height=34, corner_radius=8).grid(row=0, column=2, padx=(6,0))
 
-        # Preview area
-        preview = ctk.CTkFrame(self, fg_color="#242433", corner_radius=8)
+        # Preview area - emphasized, centered live preview with cleaner look
+        preview = ctk.CTkFrame(self, fg_color="#0f1720", corner_radius=8)
         preview.grid(row=0, column=1, sticky='ns', padx=(8,8), pady=8)
-        preview.grid_rowconfigure(2, weight=1)
-        ctk.CTkLabel(preview, text="Live Preview", font=("Roboto", 13, "bold")).grid(row=0, column=0, pady=(10,4), padx=10, sticky='w')
-        self.preview_canvas = ctk.CTkFrame(preview, fg_color="#1e1e2f", corner_radius=6)
-        self.preview_canvas.grid(row=1, column=0, padx=10, pady=6, sticky='n')
+        preview.grid_rowconfigure(1, weight=1)
+        ctk.CTkLabel(preview, text="Live Preview", font=("Segoe UI", 14, "bold")).grid(row=0, column=0, pady=(12,6), padx=12, sticky='w')
+        self.preview_canvas = ctk.CTkFrame(preview, fg_color="#0b0d11", corner_radius=10)
+        self.preview_canvas.grid(row=1, column=0, padx=12, pady=8, sticky='nsew')
+        self.preview_canvas.grid_columnconfigure(0, weight=1)
+        self.preview_canvas.grid_rowconfigure(0, weight=1)
         self._build_preview_widgets()
 
         # Editor area (scrollable)
@@ -111,17 +126,21 @@ class ThemeEditor(ctk.CTkToplevel):
         editor_container.grid_columnconfigure(0, weight=1)
         self.editor_container = editor_container
 
-        # Bottom toolbar spans across columns 1 & 2
-        toolbar = ctk.CTkFrame(self, fg_color="#1f1f2b")
-        toolbar.grid(row=1, column=0, columnspan=3, sticky='ew')
+        # Bottom toolbar spans across columns 1 & 2 (primary action left, utilities right)
+        toolbar = ctk.CTkFrame(self, fg_color="#071016")
+        toolbar.grid(row=1, column=0, columnspan=3, sticky='ew', padx=8, pady=(0,8))
         toolbar.grid_columnconfigure(0, weight=1)
-        self.save_btn = ctk.CTkButton(toolbar, text="💾 Save", command=self._save_current_theme, fg_color="#4a90e2", width=100)
-        self.save_btn.grid(row=0, column=1, pady=6, padx=6)
-        ctk.CTkButton(toolbar, text="⏪ Revert", command=self._revert_changes, width=100, fg_color="#6c6f76").grid(row=0, column=2, pady=6, padx=6)
-        ctk.CTkButton(toolbar, text="📦 Export", command=self._export_theme, width=100).grid(row=0, column=3, pady=6, padx=6)
-        ctk.CTkButton(toolbar, text="📥 Import", command=self._import_theme, width=100).grid(row=0, column=4, pady=6, padx=6)
-        self.preview_toggle = ctk.CTkSwitch(toolbar, text="Preview Mode", command=self._update_preview)
-        self.preview_toggle.grid(row=0, column=5, pady=6, padx=10)
+        # Primary action on the left
+        self.save_btn = ctk.CTkButton(toolbar, text="Save", command=self._save_current_theme, fg_color="#2ea44f", width=120, corner_radius=10)
+        self.save_btn.grid(row=0, column=0, pady=8, padx=12, sticky='w')
+        # Utilities grouped on the right
+        util_wr = ctk.CTkFrame(toolbar, fg_color="transparent")
+        util_wr.grid(row=0, column=1, sticky='e')
+        ctk.CTkButton(util_wr, text="Revert", command=self._revert_changes, width=90, fg_color="#6c6f76").grid(row=0, column=0, pady=6, padx=6)
+        ctk.CTkButton(util_wr, text="Export", command=self._export_theme, width=90).grid(row=0, column=1, pady=6, padx=6)
+        ctk.CTkButton(util_wr, text="Import", command=self._import_theme, width=90).grid(row=0, column=2, pady=6, padx=6)
+        self.preview_toggle = ctk.CTkSwitch(util_wr, text="Preview", command=self._update_preview)
+        self.preview_toggle.grid(row=0, column=3, pady=6, padx=10)
 
     # ---------- Preview ----------
     def _build_preview_widgets(self):
