@@ -174,6 +174,57 @@ class WhisprUILayout:
         app.messages_container.pack(padx=10, pady=10, fill="both", expand=True)
         app.messages_container.grid_columnconfigure(0, weight=1)
 
+        # Install scroll-top prefetch: when the internal canvas is scrolled near the top,
+        # attempt to load older messages once.
+        def _install_prefetch():
+            try:
+                c = app.messages_container
+                canvas = getattr(c, '_parent_canvas', None)
+                if canvas is None:
+                    return
+
+                def _check_top(event=None):
+                    try:
+                        y = canvas.yview()
+                        if not y:
+                            return
+                        # y is (first_frac, last_frac). If first_frac is near 0, user is at top.
+                        if y[0] <= 0.02:
+                            if hasattr(app, 'chat_manager') and hasattr(app.chat_manager, 'has_more_older'):
+                                try:
+                                    if app.chat_manager.has_more_older(getattr(app, 'recipient_pub_hex', None)):
+                                        app.chat_manager.load_older_messages(getattr(app, 'recipient_pub_hex', None))
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+
+                # Bind common scroll/update events to trigger checks
+                try:
+                    canvas.bind('<Configure>', _check_top)
+                except Exception:
+                    pass
+                try:
+                    # Mousewheel / touchpad scroll - platform differences handled by Tk
+                    canvas.bind_all('<MouseWheel>', _check_top)
+                    canvas.bind_all('<Button-4>', _check_top)
+                    canvas.bind_all('<Button-5>', _check_top)
+                except Exception:
+                    pass
+                try:
+                    # Also check when scrollbar is released (click-drag)
+                    canvas.bind('<ButtonRelease-1>', _check_top)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        # Defer installation slightly so CTk internals initialize
+        try:
+            app.after(200, _install_prefetch)
+        except Exception:
+            _install_prefetch()
+
 
     # --- Input Frame ---
         input_frame = ctk.CTkFrame(chat_frame, fg_color="transparent")

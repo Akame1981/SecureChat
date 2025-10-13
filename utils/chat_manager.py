@@ -48,6 +48,8 @@ class ChatManager:
         self.ui_soft_limit = 500      # keep only last N widgets on screen
         # Track oldest timestamp per chat in cache for efficient paging
         self._oldest_ts = {}
+        # Track per-chat loading state for older-message prefetch
+        self._loading_older = {}
 
         # Start background threads
         threading.Thread(target=self.fetch_loop, daemon=True).start()
@@ -141,14 +143,14 @@ class ChatManager:
         except Exception:
             pass
 
-    def show_initial_messages(self, pub_hex: str):
+    def show_initial_messages(self, pub_hex: str, limit: int | None = None):
         """Load initial messages off the UI thread and render them in batches.
 
         Uses the same fast path as get_messages(); safe to call on selection.
         """
         def _bg_load():
             try:
-                msgs = self.get_messages(pub_hex)
+                msgs = self.get_messages(pub_hex, limit=limit)
             except Exception as e:
                 print(f"[chat_manager] initial load failed: {e}")
                 msgs = []
@@ -161,7 +163,7 @@ class ChatManager:
         threading.Thread(target=_bg_load, daemon=True).start()
 
     # ---------------- Cache helpers ----------------
-    def get_messages(self, pub_hex: str):
+    def get_messages(self, pub_hex: str, limit: int | None = None):
         """Return cached messages, with fast partial load for segmented chats.
 
         Strategy:
@@ -179,7 +181,8 @@ class ChatManager:
         # Try DB-backed path with limit
         try:
             # Fetch newest messages first so we can display recent chat instantly
-            msgs = load_messages(pub_hex, self.app.pin, limit=self.initial_message_limit, order_asc=False)
+            qlimit = limit if limit is not None else self.initial_message_limit
+            msgs = load_messages(pub_hex, self.app.pin, limit=qlimit, order_asc=False)
             with self._cache_lock:
                 self._chat_cache[pub_hex] = list(msgs)
                 if msgs:
@@ -217,7 +220,15 @@ class ChatManager:
         """Fetch older messages in chunks and prepend without freezing UI."""
         with self._cache_lock:
             oldest = self._oldest_ts.get(pub_hex)
+            if self._loading_older.get(pub_hex):
+                # Already fetching older messages for this conversation
+                return
+            # Mark as loading to avoid duplicate fetches
+            self._loading_older[pub_hex] = True
         if oldest is None:
+            # Nothing to page from; clear loading flag
+            with self._cache_lock:
+                self._loading_older[pub_hex] = False
             return
 
         def _bg_fetch():
@@ -225,8 +236,12 @@ class ChatManager:
                 older = query_messages_before(self.app.pin, pub_hex, float(oldest), self.lazy_chunk)
             except Exception as e:
                 print(f"[chat_manager] lazy load older failed: {e}")
+                with self._cache_lock:
+                    self._loading_older[pub_hex] = False
                 return
             if not older:
+                with self._cache_lock:
+                    self._loading_older[pub_hex] = False
                 return
             with self._cache_lock:
                 current = self._chat_cache.get(pub_hex, [])

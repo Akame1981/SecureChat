@@ -401,10 +401,15 @@ class WhisprApp(ctk.CTk):
         except Exception:
             pass
 
-        # Load messages non-blocking using ChatManager batched renderer
+        # Load messages non-blocking using ChatManager batched renderer.
+        # Request only the latest 10 messages for faster initial load.
         if self.recipient_pub_hex:
             if hasattr(self, 'chat_manager'):
-                self.chat_manager.show_initial_messages(self.recipient_pub_hex)
+                try:
+                    self.chat_manager.show_initial_messages(self.recipient_pub_hex, limit=10)
+                except TypeError:
+                    # Backwards compatibility: older ChatManager may not accept limit
+                    self.chat_manager.show_initial_messages(self.recipient_pub_hex)
             else:
                 # Fallback: synchronous (rare path if chat_manager missing)
                 # Clear the placeholder before synchronous rendering

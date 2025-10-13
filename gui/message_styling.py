@@ -143,7 +143,7 @@ _image_cache: "OrderedDict[str, object]" = OrderedDict()
 _IMAGE_CACHE_MAX = 32
 
 
-def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, timestamp=None, attachment_meta=None):
+def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, timestamp=None, attachment_meta=None, auto_scroll: bool = True):
     """Create a styled message bubble.
 
     Returns the inner bubble frame (for existing theme update logic). Adds:
@@ -1054,12 +1054,13 @@ def create_message_bubble(parent, sender_pub, text, my_pub_hex, pin, app=None, t
     parent._last_bubble = bubble_frame
     parent._last_sender = sender_pub
 
-    # Auto-scroll to bottom
-    try:
-        parent._parent_canvas.update_idletasks()
-        parent._parent_canvas.yview_moveto(1.0)
-    except Exception:
-        pass
+    # Auto-scroll to bottom (skip when called during prepend operations)
+    if auto_scroll:
+        try:
+            parent._parent_canvas.update_idletasks()
+            parent._parent_canvas.yview_moveto(1.0)
+        except Exception:
+            pass
 
     return bubble_frame
     
