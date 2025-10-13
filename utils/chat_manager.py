@@ -216,8 +216,11 @@ class ChatManager:
         except Exception:
             return False
 
-    def load_older_messages(self, pub_hex: str):
-        """Fetch older messages in chunks and prepend without freezing UI."""
+    def load_older_messages(self, pub_hex: str, count: int = 10):
+        """Fetch older messages in chunks and prepend without freezing UI.
+
+        `count` controls how many older messages to fetch (default 10).
+        """
         with self._cache_lock:
             oldest = self._oldest_ts.get(pub_hex)
             if self._loading_older.get(pub_hex):
@@ -233,7 +236,7 @@ class ChatManager:
 
         def _bg_fetch():
             try:
-                older = query_messages_before(self.app.pin, pub_hex, float(oldest), self.lazy_chunk)
+                older = query_messages_before(self.app.pin, pub_hex, float(oldest), int(count))
             except Exception as e:
                 print(f"[chat_manager] lazy load older failed: {e}")
                 with self._cache_lock:
