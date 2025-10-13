@@ -193,7 +193,7 @@ class WhisprUILayout:
                             if hasattr(app, 'chat_manager') and hasattr(app.chat_manager, 'has_more_older'):
                                 try:
                                     if app.chat_manager.has_more_older(getattr(app, 'recipient_pub_hex', None)):
-                                        app.chat_manager.load_older_messages(getattr(app, 'recipient_pub_hex', None))
+                                        app.chat_manager.load_older_messages(getattr(app, 'recipient_pub_hex', None), count=10)
                                 except Exception:
                                     pass
                     except Exception:
