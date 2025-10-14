@@ -63,7 +63,7 @@ python gui.py
 4. Start chatting!
 
 > 
-> 💡 **Tip**: Learn more about how to use the app in [docs/client-usage](docs/client-usage)
+> 💡 **Tip**: Learn more about how to use the app in [docs/client-usage](docs/client-usage.md)
 
 ### Server Deployment
 
