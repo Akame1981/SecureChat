@@ -417,6 +417,12 @@ class ChatManager:
                             self._chat_cache[sender_pub] = msgs_cache[-self.cache_soft_limit:]
                     if self.app.recipient_pub_hex == sender_pub:
                         self.app.after(0, self._display_message_virtualized, sender_pub, msg_text, timestamp, attachment_meta)
+                        # If chatting with an unknown contact, surface the inline Save Contact banner
+                        try:
+                            if hasattr(self.app, 'update_unknown_contact_banner'):
+                                self.app.after(0, self.app.update_unknown_contact_banner)
+                        except Exception:
+                            pass
 
                     self.last_fetch_ts = max(self.last_fetch_ts, timestamp)
 

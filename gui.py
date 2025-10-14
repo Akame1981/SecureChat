@@ -387,6 +387,12 @@ class WhisprApp(ctk.CTk):
         # Pass self.pin to get_recipient_key
         self.recipient_pub_hex = get_recipient_key(name, self.pin)
         self.sidebar.update_list(selected_pub=self.recipient_pub_hex)
+        # Update unknown-contact helper banner if available
+        try:
+            if hasattr(self, 'update_unknown_contact_banner'):
+                self.update_unknown_contact_banner()
+        except Exception:
+            pass
 
         # Clear previous messages
         for widget in self.messages_container.winfo_children():
@@ -448,7 +454,7 @@ class WhisprApp(ctk.CTk):
     # ---------------- Messages ----------------
 
     def display_message(self, sender_pub, text, timestamp=None, attachment_meta=None):
-        create_message_bubble(
+        bubble = create_message_bubble(
             self.messages_container,
             sender_pub,
             text,
@@ -458,6 +464,41 @@ class WhisprApp(ctk.CTk):
             timestamp=timestamp,
             attachment_meta=attachment_meta
         )
+        # Optional: attach a context menu to rename unknown senders quickly
+        try:
+            import tkinter as _tk
+            from tkinter import Menu as _Menu
+            from utils.recipients import get_recipient_name, set_recipient_name_for_key
+            is_other = (sender_pub != self.my_pub_hex)
+            if is_other:
+                name = get_recipient_name(sender_pub, self.pin)
+                looks_unknown = (not name) or (isinstance(name, str) and name.lower().startswith('unknown-'))
+                if looks_unknown and hasattr(bubble, 'outer'):
+                    m = _Menu(bubble.outer, tearoff=0)
+                    def _rename():
+                        from tkinter import simpledialog as _sd
+                        proposed = name or f"Unknown-{sender_pub[:6]}"
+                        new_name = _sd.askstring("Save Contact", "Name for this contact:", initialvalue=proposed)
+                        if not new_name:
+                            return
+                        try:
+                            set_recipient_name_for_key(sender_pub, new_name, self.pin)
+                            if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'update_list'):
+                                self.sidebar.update_list(selected_pub=self.recipient_pub_hex)
+                            if hasattr(self, 'update_unknown_contact_banner'):
+                                self.update_unknown_contact_banner()
+                            self.notifier.show(f"Saved {new_name}")
+                        except Exception as e:
+                            self.notifier.show(str(e), type_="error")
+                    m.add_command(label="Save Contact…", command=_rename)
+                    def _popup(evt):
+                        try:
+                            m.tk_popup(evt.x_root, evt.y_root)
+                        except Exception:
+                            pass
+                    bubble.outer.bind("<Button-3>", _popup)
+        except Exception:
+            pass
 
     # -------------- Drag & Drop --------------
     def _on_file_drop(self, event):

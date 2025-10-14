@@ -77,3 +77,28 @@ However, **user experience** for adding and renaming unknown contacts is unintui
 **Document Version:** 1.0  
 **Date:** 2025-10-12  
 **Author:** QA – Whispr Messaging Module (Oktay Mehmed)
+
+
+
+
+
+
+## 🧾 Summary
+
+**Feature:** Public Key Exchange & Recipient Linking  
+**Status:**  ✅Resolved 
+**Test Date:** 2025-10-12  
+**Tester:** Oktay Mehmed  
+**Build:** Post-Fix #5 (Recipient System)
+
+---
+
+## 🎯 Objective
+
+To verify that users can add each other as recipients through **public key sharing** and that messages are correctly routed between known and unknown contacts.
+
+
+
+**Document Version:** 2.0 
+**Date:** 2025-10-12  
+**Author:** QA – Whispr Messaging Module (Oktay Mehmed)

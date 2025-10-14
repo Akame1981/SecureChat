@@ -114,6 +114,51 @@ class WhisprUILayout:
         app.pub_label = ctk.CTkLabel(pub_frame, text="", justify="left", anchor="w", text_color=pub_text)
         app.pub_label.grid(row=0, column=0, padx=10, pady=10, sticky="we")
 
+        # Inline contact helper area (appears when chatting with an unknown user)
+        app.unknown_contact_frame = ctk.CTkFrame(pub_frame, fg_color="transparent")
+        app.unknown_contact_frame.grid(row=1, column=0, columnspan=4, sticky="we", padx=10, pady=(0,8))
+        app.unknown_contact_frame.grid_remove()  # hidden by default
+        app.unknown_lbl = ctk.CTkLabel(app.unknown_contact_frame, text="", text_color=pub_text)
+        app.unknown_lbl.pack(side="left")
+        def _do_save_contact():
+            try:
+                import tkinter as _tk
+                from tkinter import simpledialog as _sd
+                from utils.recipients import set_recipient_name_for_key, get_recipient_name
+                if not getattr(app, 'recipient_pub_hex', None):
+                    return
+                # Suggest a friendly default name
+                default = get_recipient_name(app.recipient_pub_hex, app.pin) or "New Contact"
+                new_name = _sd.askstring("Save Contact", "Name for this contact:", initialvalue=default)
+                if not new_name:
+                    return
+                try:
+                    set_recipient_name_for_key(app.recipient_pub_hex, new_name, app.pin)
+                    # Refresh sidebar + banner state
+                    if hasattr(app, 'sidebar') and hasattr(app.sidebar, 'update_list'):
+                        app.sidebar.update_list(selected_pub=app.recipient_pub_hex)
+                    # Force a banner check update
+                    try:
+                        app.update_unknown_contact_banner()
+                    except Exception:
+                        pass
+                    try:
+                        app.notifier.show(f"Saved {new_name}", type_="success")
+                    except Exception:
+                        pass
+                except Exception as e:
+                    try:
+                        app.notifier.show(str(e), type_="error")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        app.save_contact_btn = ctk.CTkButton(app.unknown_contact_frame, text="Save Contact", command=_do_save_contact,
+                                             fg_color=theme.get("button_send", "#4a90e2"),
+                                             hover_color=theme.get("button_send_hover", "#357ABD"))
+        app.save_contact_btn.pack(side="left", padx=(8,0))
+
         app.copy_btn = ctk.CTkButton(pub_frame, text="Copy", command=app.copy_pub_key,
                                      fg_color=theme.get("button_send", "#4a90e2"),
                                      hover_color=theme.get("button_send_hover", "#357ABD"))
@@ -168,6 +213,32 @@ class WhisprUILayout:
 
         pub_frame.bind("<Configure>", update_pub_label)
         app.after(200, update_pub_label)
+
+        # Helper to toggle Unknown banner based on current selection
+        def _update_unknown_contact_banner():
+            try:
+                from utils.recipients import get_recipient_name
+                pub = getattr(app, 'recipient_pub_hex', None)
+                if not pub:
+                    app.unknown_contact_frame.grid_remove()
+                    return
+                name = get_recipient_name(pub, app.pin)
+                # Show only if name is missing or looks like auto-generated Unknown-xxxx
+                show = (not name) or (isinstance(name, str) and name.lower().startswith('unknown-'))
+                if show:
+                    short = pub[:6]
+                    app.unknown_lbl.configure(text=f"You're chatting with Unknown-{short}. Save this contact?")
+                    app.unknown_contact_frame.grid()
+                else:
+                    app.unknown_contact_frame.grid_remove()
+            except Exception:
+                try:
+                    app.unknown_contact_frame.grid_remove()
+                except Exception:
+                    pass
+
+        # expose on app for other modules to trigger when selection changes
+        app.update_unknown_contact_banner = _update_unknown_contact_banner
 
     # --- Messages Container ---
         app.messages_container = ctk.CTkScrollableFrame(chat_frame, fg_color=theme.get("background", "#2e2e3f"), corner_radius=10)

@@ -5,7 +5,7 @@ import os
 from PIL import Image, ImageEnhance
 from utils.path_utils import get_resource_path
 from gui.identicon import generate_identicon
-from utils.recipients import add_recipient, load_recipients
+from utils.recipients import add_recipient, load_recipients, set_recipient_name_for_key
 from gui.widgets.notification import NotificationManager
 from utils.group_manager import GroupManager
 from tkinter import simpledialog
@@ -99,10 +99,29 @@ class AddRecipientDialog(ctk.CTkToplevel):
             return
 
         try:
-            add_recipient(name, key, self.pin)
+            # Try to add; if key already exists, fall back to renaming that entry
+            try:
+                add_recipient(name, key, self.pin)
+                msg = f"Recipient '{name}' added!"
+            except ValueError as e:
+                # If the key already exists, update its name to the requested name
+                recs = load_recipients(self.pin)
+                exists = any(k.strip().lower() == key.strip().lower() for k in recs.values())
+                if exists:
+                    set_recipient_name_for_key(key, name, self.pin)
+                    msg = f"Recipient saved as '{name}'"
+                else:
+                    # Re-raise for other validation errors (e.g., duplicate name with different key)
+                    raise e
             if self.update_list_callback:
                 self.update_list_callback(selected_pub=key)
-            self.notifier.show(f"Recipient '{name}' added!", type_="success")
+            # Also try to update the app-level banner if available
+            try:
+                if hasattr(self.app, 'update_unknown_contact_banner'):
+                    self.app.update_unknown_contact_banner()
+            except Exception:
+                pass
+            self.notifier.show(msg, type_="success")
             self.unbind("<Return>")
             self.after(10, self.destroy)
         except ValueError as e:

@@ -137,4 +137,48 @@ def ensure_recipient_exists(pub_key: str, pin: str, preferred_name: str | None =
     return candidate
 
 
+def set_recipient_name_for_key(pub_key: str, new_name: str, pin: str) -> str:
+    """Set/rename the recipient name for a given public key.
+
+    Behavior:
+    - If the key already exists under a name, it will be moved/renamed to new_name.
+    - If the key is not present, a new entry will be added with new_name.
+    - If new_name exists and is mapped to a DIFFERENT key, raises ValueError.
+    Returns the final name stored (new_name).
+    """
+    if not pub_key or not new_name:
+        raise ValueError("pub_key and new_name are required")
+
+    recipients = load_recipients(pin)
+    normalized_key = pub_key.strip().lower()
+    new_name = new_name.strip()
+
+    # If the new name exists and maps to a different key, disallow to avoid ambiguity
+    if new_name in recipients and recipients[new_name].strip().lower() != normalized_key:
+        raise ValueError(f"A recipient with the name '{new_name}' already exists.")
+
+    # Find current name for this key, if any
+    current_name = None
+    for n, k in recipients.items():
+        if k.strip().lower() == normalized_key:
+            current_name = n
+            break
+
+    # If name unchanged, nothing to do
+    if current_name == new_name:
+        return new_name
+
+    # Remove old mapping if present
+    if current_name is not None and current_name in recipients:
+        try:
+            del recipients[current_name]
+        except Exception:
+            pass
+
+    # Set new mapping
+    recipients[new_name] = normalized_key
+    save_recipients(recipients, pin)
+    return new_name
+
+
 
