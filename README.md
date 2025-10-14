@@ -63,7 +63,7 @@ python gui.py
 4. Start chatting!
 
 > 
-> 💡 **Tip**: Learn more about how to use the app in [docs/client-usage](docs/client-usage.md)
+> 💡 **Tip**: Learn more about how to use the app in [docs/client-usage.md](docs/client-usage.md)
 
 ### Server Deployment
 
@@ -159,7 +159,7 @@ uvicorn server:app --host 0.0.0.0 --port 8000 \
 
 ## 🏗️ Architecture
 
-See how Whispr works in [docs/architecture](docs/architecture)
+See how Whispr works in [docs/architecture.md](docs/architecture.md)
 
 ---
 
