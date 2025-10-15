@@ -163,6 +163,9 @@ class Sidebar(ctk.CTkFrame):
                 pass
 
         self.notifier = NotificationManager(parent)
+        # search state
+        self.search_var = tk.StringVar()
+        self.search_var.trace_add("write", lambda *_: self._on_search_change())
 
         title_color = self.theme.get("sidebar_text", "white")
         list_bg = self.theme.get("sidebar_bg", "#2a2a3a")
@@ -171,12 +174,59 @@ class Sidebar(ctk.CTkFrame):
         add_fg = self.theme.get("sidebar_button", "#4a90e2")
         add_hover = self.theme.get("sidebar_button_hover", "#357ABD")
 
-        # --- Section title ---
-        self.title_label = ctk.CTkLabel(
-            self, text="Recipients", font=("Segoe UI", 16, "bold"),
-            text_color=title_color
+        # --- Top bar: segmented toggle (Contacts / Groups) ---
+        topbar = ctk.CTkFrame(self, fg_color="transparent")
+        topbar.pack(fill="x", padx=12, pady=(10, 6))
+        self.topbar = topbar
+
+        self.section_toggle = ctk.CTkSegmentedButton(
+            topbar,
+            values=["Contacts", "Groups"],
+            command=lambda v: self._on_section_change(v),
         )
-        self.title_label.pack(pady=(12, 10))
+        # style segmented button via theme
+        try:
+            self.section_toggle.configure(
+                fg_color=self.theme.get("sidebar_bg", "#2a2a3a"),
+                selected_color=self.theme.get("bubble_you", "#7289da"),
+                selected_hover_color=self.theme.get("button_send_hover", "#357ABD"),
+                unselected_color=self.theme.get("bubble_other", "#2a2a3a"),
+                unselected_hover_color=self.theme.get("hover_bg", "#3a3a55"),
+                text_color=self.theme.get("sidebar_text", "white"),
+            )
+        except Exception:
+            pass
+        self.section_toggle.set("Contacts")
+        self.section_toggle.pack(side="left")
+
+        # --- Search ---
+        search_frame = ctk.CTkFrame(self, fg_color="transparent")
+        search_frame.pack(fill="x", padx=12, pady=(0, 8))
+        self.search_frame = search_frame
+
+        # try to load a search icon, else fallback to text
+        self._search_icon_label = None
+        try:
+            icon_path = get_resource_path("gui/src/images/search.png")
+            if not icon_path or not os.path.exists(icon_path):
+                raise FileNotFoundError
+            base_img = Image.open(icon_path).resize((18, 18), Image.Resampling.LANCZOS)
+            search_ctk = ctk.CTkImage(light_image=base_img, dark_image=base_img, size=(18, 18))
+            self._search_icon_label = ctk.CTkLabel(search_frame, image=search_ctk, text="", width=20)
+            self._search_icon_label.image = search_ctk
+        except Exception:
+            self._search_icon_label = ctk.CTkLabel(search_frame, text="🔍", width=20, text_color=title_color)
+        self._search_icon_label.pack(side="left", padx=(0, 6))
+
+        self.search_entry = ctk.CTkEntry(
+            search_frame,
+            placeholder_text="Search...",
+            textvariable=self.search_var,
+            height=32,
+            fg_color=self.theme.get("input_bg", "#2a2a3f"),
+            text_color=self.theme.get("input_text", "white"),
+        )
+        self.search_entry.pack(side="left", fill="x", expand=True)
 
         # --- Scrollable recipient list ---
         self.recipient_listbox = ctk.CTkScrollableFrame(
@@ -191,7 +241,7 @@ class Sidebar(ctk.CTkFrame):
         )
         self.groups_listbox.pack_forget()
 
-        # --- Bottom user frame (add button + avatar + username) ---
+    # --- Bottom user frame (add button + avatar + username) ---
         user_frame = ctk.CTkFrame(self, fg_color="transparent")
         user_frame.pack(side="bottom", pady=15, padx=12, fill="x")
         self.user_frame = user_frame
@@ -281,10 +331,9 @@ class Sidebar(ctk.CTkFrame):
             self.add_btn = ctk.CTkLabel(user_frame, image=add_ctk, text="", fg_color="transparent")
             self.add_btn.image = add_ctk
             self.add_btn.hover_image = add_hover_ctk
-            self.add_btn.bind("<Button-1>", lambda e: self.open_add_dialog())
-            self.add_btn.bind("<Enter>", lambda e: self.add_btn.configure(image=self.add_btn.hover_image))
-            self.add_btn.bind("<Leave>", lambda e: self.add_btn.configure(image=self.add_btn.image))
             self.add_btn.configure(cursor="hand2")
+            # bind action separately for reuse across views
+            self._set_add_btn_action(self.open_add_dialog)
         except Exception:
             # Fallback to a simple CTkButton with a plus sign
             self.add_btn = ctk.CTkButton(
@@ -306,10 +355,28 @@ class Sidebar(ctk.CTkFrame):
             self.configure(fg_color=theme.get("sidebar_bg", "#2a2a3a"))
         except Exception:
             pass
-        # Title
-        if hasattr(self, 'title_label'):
+        # Topbar segmented toggle
+        if hasattr(self, 'section_toggle'):
             try:
-                self.title_label.configure(text_color=theme.get("sidebar_text", "white"))
+                self.section_toggle.configure(
+                    fg_color=theme.get("sidebar_bg", "#2a2a3a"),
+                    selected_color=theme.get("bubble_you", "#7289da"),
+                    selected_hover_color=theme.get("button_send_hover", "#357ABD"),
+                    unselected_color=theme.get("bubble_other", "#2a2a3a"),
+                    unselected_hover_color=theme.get("hover_bg", "#3a3a55"),
+                    text_color=theme.get("sidebar_text", "white"),
+                )
+            except Exception:
+                pass
+        # Search entry
+        if hasattr(self, 'search_entry'):
+            try:
+                self.search_entry.configure(
+                    fg_color=theme.get("input_bg", "#2a2a3f"),
+                    text_color=theme.get("input_text", "white"),
+                )
+                if getattr(self, '_search_icon_label', None) and isinstance(self._search_icon_label, ctk.CTkLabel):
+                    self._search_icon_label.configure(text_color=theme.get("sidebar_text", "white"))
             except Exception:
                 pass
         # Username
@@ -330,6 +397,12 @@ class Sidebar(ctk.CTkFrame):
         if hasattr(self, 'recipient_listbox'):
             try:
                 self.recipient_listbox.configure(fg_color=theme.get("sidebar_bg", "#2a2a3a"))
+            except Exception:
+                pass
+        # Groups list container
+        if hasattr(self, 'groups_listbox'):
+            try:
+                self.groups_listbox.configure(fg_color=theme.get("sidebar_bg", "#2a2a3a"))
             except Exception:
                 pass
         # Avatar widget (only recolor text fg for fallback button)
@@ -360,10 +433,18 @@ class Sidebar(ctk.CTkFrame):
 
         sel_bg = self.theme.get("bubble_you", "#7289da")
         item_bg = self.theme.get("bubble_other", "#2a2a3a")
+        hover_bg = self.theme.get("hover_bg", "#3a3a55")
         avatar_bg = self.theme.get("sidebar_button", "#4a90e2")
         text_color = self.theme.get("sidebar_text", "white")
 
-        for name, key in recipients.items():
+        # filter by search
+        q = (self.search_var.get() or "").strip().lower()
+        items = [(n, k) for n, k in recipients.items() if (not q or q in n.lower() or q in (k or "").lower())]
+        if not items:
+            ctk.CTkLabel(self.recipient_listbox, text="No contacts found", text_color=text_color).pack(pady=12)
+            return
+
+        for name, key in items:
             is_selected = (key == selected_pub)
             # Small frame for each recipient
             frame = ctk.CTkFrame(
@@ -401,6 +482,11 @@ class Sidebar(ctk.CTkFrame):
             avatar_label.bind("<Button-1>", lambda e, n=name: self.select_callback(n))
             label.bind("<Button-1>", lambda e, n=name: self.select_callback(n))
 
+            # Hover effect for non-selected
+            if not is_selected:
+                frame.bind("<Enter>", lambda e, f=frame: f.configure(fg_color=hover_bg))
+                frame.bind("<Leave>", lambda e, f=frame: f.configure(fg_color=item_bg))
+
     # ---------------- Groups List ----------------
     def update_groups_list(self):
         # Clear existing
@@ -410,6 +496,7 @@ class Sidebar(ctk.CTkFrame):
         list_bg = self.theme.get("sidebar_bg", "#2a2a3a")
         item_bg = self.theme.get("bubble_other", "#2a2a3a")
         sel_bg = self.theme.get("bubble_you", "#7289da")
+        hover_bg = self.theme.get("hover_bg", "#3a3a55")
         text_color = self.theme.get("sidebar_text", "white")
 
         groups = []
@@ -419,6 +506,13 @@ class Sidebar(ctk.CTkFrame):
                 groups = data.get("groups", [])
         except Exception:
             groups = []
+
+        # filter by search
+        q = (self.search_var.get() or "").strip().lower()
+        groups = [g for g in groups if (not q or q in g.get("name", "").lower())]
+        if not groups:
+            ctk.CTkLabel(self.groups_listbox, text="No groups found", text_color=text_color).pack(pady=12)
+            return
 
         for g in groups:
             frame = ctk.CTkFrame(self.groups_listbox, fg_color=item_bg, corner_radius=12, height=40)
@@ -449,13 +543,19 @@ class Sidebar(ctk.CTkFrame):
             name.bind("<Button-1>", lambda e: open_group())
             tag.bind("<Button-1>", lambda e: open_group())
 
+            # Hover
+            frame.bind("<Enter>", lambda e, f=frame: f.configure(fg_color=hover_bg))
+            frame.bind("<Leave>", lambda e, f=frame: f.configure(fg_color=item_bg))
+
     # ---------------- View Toggles ----------------
 
 
     def show_recipients_view(self):
         self.view_mode = "recipients"
+        # Ensure main app switches to direct messages view
         try:
-            self.title_label.configure(text="Recipients")
+            if hasattr(self.app, 'show_direct_messages'):
+                self.app.show_direct_messages()
         except Exception:
             pass
         try:
@@ -464,12 +564,21 @@ class Sidebar(ctk.CTkFrame):
             if not self.recipient_listbox.winfo_ismapped():
                 self.recipient_listbox.pack(fill="both", expand=True, padx=12, pady=(0,10))
             # Restore add button behavior
-            if hasattr(self, 'add_btn'):
-                self.add_btn.configure(command=self.open_add_dialog)
+            self._set_add_btn_action(self.open_add_dialog)
         except Exception:
             pass
         # Rebuild recipient list
         self.update_list(selected_pub=getattr(self.app, 'recipient_pub_hex', None))
+
+    def show_groups_view(self):
+        """Route to the main Groups panel instead of showing a groups list here."""
+        self.view_mode = "groups"
+        try:
+            if hasattr(self.app, 'show_groups_panel'):
+                self.app.show_groups_panel()
+        except Exception:
+            pass
+        # The main sidebar is hidden in groups panel; no need to render local groups list
 
     def _create_group(self):
         if not self.gm:
@@ -513,3 +622,48 @@ class Sidebar(ctk.CTkFrame):
             pin=self.pin,
             theme=self.theme
         )
+
+    # ---------------- Helpers ----------------
+    def _on_section_change(self, value: str):
+        if value == "Groups":
+            # Send user to the Groups panel
+            self.show_groups_view()
+        else:
+            # Back to direct messages view
+            self.show_recipients_view()
+
+    def _on_search_change(self):
+        # Refresh current view based on search text
+        if self.view_mode == "recipients":
+            self.update_list(selected_pub=getattr(self.app, 'recipient_pub_hex', None))
+        else:
+            self.update_groups_list()
+
+    def _set_add_btn_action(self, func):
+        """Bind the add button (label or button) to call func on click, preserving hover images for label variant."""
+        if not hasattr(self, 'add_btn') or self.add_btn is None:
+            return
+        # Label variant
+        if isinstance(self.add_btn, ctk.CTkLabel):
+            try:
+                # Clear previous bindings
+                self.add_btn.unbind("<Button-1>")
+            except Exception:
+                pass
+            self.add_btn.bind("<Button-1>", lambda e: func())
+            # ensure hover bindings exist
+            try:
+                self.add_btn.unbind("<Enter>")
+                self.add_btn.unbind("<Leave>")
+            except Exception:
+                pass
+            if hasattr(self.add_btn, 'hover_image') and hasattr(self.add_btn, 'image'):
+                self.add_btn.bind("<Enter>", lambda e: self.add_btn.configure(image=self.add_btn.hover_image))
+                self.add_btn.bind("<Leave>", lambda e: self.add_btn.configure(image=self.add_btn.image))
+            self.add_btn.configure(cursor="hand2")
+        else:
+            # CTkButton
+            try:
+                self.add_btn.configure(command=func)
+            except Exception:
+                pass
