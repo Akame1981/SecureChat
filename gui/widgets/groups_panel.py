@@ -14,6 +14,7 @@ from tkinter import filedialog
 from gui.tooltip import ToolTip
 from PIL import Image, ImageEnhance
 import io
+from utils.path_utils import get_resource_path
 
 from utils.group_manager import GroupManager
 from utils.db import store_my_group_key, load_my_group_key
@@ -52,6 +53,21 @@ class GroupsPanel(ctk.CTkFrame):
         # Search / join entry
         sframe = ctk.CTkFrame(left, fg_color="transparent")
         sframe.pack(fill="x", padx=8, pady=(8, 4))
+        # optional search icon
+        try:
+            icon_path = get_resource_path("gui/src/images/search.png")
+            if not icon_path or not os.path.exists(icon_path):
+                raise FileNotFoundError
+            img = Image.open(icon_path).resize((18, 18), Image.Resampling.LANCZOS)
+            search_icon = ctk.CTkImage(light_image=img, dark_image=img, size=(18, 18))
+            self._search_icon = ctk.CTkLabel(sframe, image=search_icon, text="", fg_color="transparent")
+            self._search_icon.image = search_icon
+            self._search_icon.pack(side="left", padx=(4, 6))
+        except Exception:
+            self._search_icon = ctk.CTkLabel(sframe, text="🔍", fg_color="transparent",
+                                            text_color=self.theme.get("sidebar_text", "white"))
+            self._search_icon.pack(side="left", padx=(4, 6))
+
         self.search = ctk.CTkEntry(sframe, placeholder_text="Search groups or paste invite code",
                                    fg_color=self.theme.get("input_bg", "#2e2e3f"),
                                    text_color=self.theme.get("input_text", "white"))
@@ -63,15 +79,22 @@ class GroupsPanel(ctk.CTkFrame):
         # Actions
         actions = ctk.CTkFrame(left, fg_color="transparent")
         actions.pack(fill="x", padx=8, pady=4)
-        ctk.CTkButton(actions, text="New Group", command=self._create_group,
-                      fg_color=self.theme.get("sidebar_button", "#4a90e2"),
-                      hover_color=self.theme.get("sidebar_button_hover", "#357ABD")).pack(fill="x", pady=4)
-        ctk.CTkButton(actions, text="Discover", command=self._discover_public_modal,
-                      fg_color=self.theme.get("sidebar_button", "#4a90e2"),
-                      hover_color=self.theme.get("sidebar_button_hover", "#357ABD")).pack(fill="x", pady=4)
-        ctk.CTkButton(actions, text="Leave Group", command=self._leave_group,
-                      fg_color=self.theme.get("cancel_button", "#9a9a9a"),
-                      hover_color=self.theme.get("cancel_button_hover", "#7a7a7a")).pack(fill="x", pady=(4, 8))
+        # Action buttons - modernized with pill corners and consistent sizes
+        try:
+            ctk.CTkButton(actions, text="New Group", command=self._create_group,
+                          fg_color=self.theme.get("sidebar_button", "#4a90e2"),
+                          hover_color=self.theme.get("sidebar_button_hover", "#357ABD"), corner_radius=10).pack(fill="x", pady=4)
+            ctk.CTkButton(actions, text="Discover", command=self._discover_public_modal,
+                          fg_color=self.theme.get("sidebar_button", "#4a90e2"),
+                          hover_color=self.theme.get("sidebar_button_hover", "#357ABD"), corner_radius=10).pack(fill="x", pady=4)
+            ctk.CTkButton(actions, text="Leave Group", command=self._leave_group,
+                          fg_color=self.theme.get("cancel_button", "#9a9a9a"),
+                          hover_color=self.theme.get("cancel_button_hover", "#7a7a7a"), corner_radius=10).pack(fill="x", pady=(4, 8))
+        except Exception:
+            # fallback: original buttons without corner hints
+            ctk.CTkButton(actions, text="New Group", command=self._create_group).pack(fill="x", pady=4)
+            ctk.CTkButton(actions, text="Discover", command=self._discover_public_modal).pack(fill="x", pady=4)
+            ctk.CTkButton(actions, text="Leave Group", command=self._leave_group).pack(fill="x", pady=(4, 8))
 
         # Groups list
         self.groups_list = ctk.CTkScrollableFrame(left, fg_color=self.theme.get("sidebar_bg", "#2a2a3a"))
@@ -480,6 +503,27 @@ class GroupsPanel(ctk.CTkFrame):
             self.configure(fg_color="transparent")
         except Exception:
             pass
+        # Recolor left/right panels and inputs
+        try:
+            if hasattr(self, 'left_panel'):
+                self.left_panel.configure(fg_color=self.theme.get('sidebar_bg', '#2a2a3a'))
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'search'):
+                self.search.configure(fg_color=self.theme.get('input_bg', '#2e2e3f'), text_color=self.theme.get('input_text', 'white'))
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'groups_list'):
+                self.groups_list.configure(fg_color=self.theme.get('sidebar_bg', '#2a2a3a'))
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'channels_list'):
+                self.channels_list.configure(fg_color=self.theme.get('background', '#2e2e3f'))
+        except Exception:
+            pass
 
     # ----- Actions -----
     def _search_or_join(self):
@@ -569,6 +613,27 @@ class GroupsPanel(ctk.CTkFrame):
 
     # discover list rendering moved to DiscoverDialog
 
+        # Recolor left/right panels and inputs
+        try:
+            if hasattr(self, 'left_panel'):
+                self.left_panel.configure(fg_color=self.theme.get('sidebar_bg', '#2a2a3a'))
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'search'):
+                self.search.configure(fg_color=self.theme.get('input_bg', '#2e2e3f'), text_color=self.theme.get('input_text', 'white'))
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'groups_list'):
+                self.groups_list.configure(fg_color=self.theme.get('sidebar_bg', '#2a2a3a'))
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'channels_list'):
+                self.channels_list.configure(fg_color=self.theme.get('background', '#2e2e3f'))
+        except Exception:
+            pass
     def _join_discovered(self, invite_code: str | None, group_id: str | None):
         if not invite_code:
             return
