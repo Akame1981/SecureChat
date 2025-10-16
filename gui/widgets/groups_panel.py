@@ -50,9 +50,41 @@ class GroupsPanel(ctk.CTkFrame):
         left.pack(side="left", fill="y")
         self.left_panel = left
 
+        # Top: view toggle (Contacts / Groups) placed above the search for parity with main Sidebar
+        toggle_frame = ctk.CTkFrame(left, fg_color="transparent")
+        toggle_frame.pack(fill="x", padx=8, pady=(10, 2))
+        try:
+            self.group_view_toggle = ctk.CTkSegmentedButton(toggle_frame, values=["Contacts", "Groups"],
+                                                            command=lambda v: (getattr(self, '_on_view_toggle', lambda x: None)(v)))
+            try:
+                self.group_view_toggle.configure(
+                    fg_color=self.theme.get("sidebar_bg", "#2a2a3a"),
+                    selected_color=self.theme.get("bubble_you", "#7289da"),
+                    selected_hover_color=self.theme.get("button_send_hover", "#357ABD"),
+                    unselected_color=self.theme.get("bubble_other", "#2a2a3a"),
+                    unselected_hover_color=self.theme.get("hover_bg", "#3a3a55"),
+                    text_color=self.theme.get("sidebar_text", "white"),
+                )
+            except Exception:
+                pass
+            try:
+                self.group_view_toggle.set("Groups")
+            except Exception:
+                pass
+            self.group_view_toggle.pack(side="left")
+        except Exception:
+            # fallback to simple DMs button if CTkSegmentedButton missing
+            try:
+                ctk.CTkButton(toggle_frame, text="DMs", width=60,
+                              command=lambda: getattr(self.app, 'show_direct_messages', lambda: None)(),
+                              fg_color=self.theme.get("sidebar_button", "#4a90e2"),
+                              hover_color=self.theme.get("sidebar_button_hover", "#357ABD")).pack(side="left")
+            except Exception:
+                pass
+
         # Search / join entry
         sframe = ctk.CTkFrame(left, fg_color="transparent")
-        sframe.pack(fill="x", padx=8, pady=(8, 4))
+        sframe.pack(fill="x", padx=8, pady=(6, 4))
         # optional search icon
         try:
             icon_path = get_resource_path("gui/src/images/search.png")
@@ -117,13 +149,36 @@ class GroupsPanel(ctk.CTkFrame):
                                         text_color=self.theme.get("pub_text", "white"))
         self.group_title.pack(side="left", padx=10, pady=8)
         # Add a quick back-to-DMs button when the main sidebar is hidden in groups mode
+        # Use a segmented toggle so the control matches the main Sidebar appearance
         try:
-            ctk.CTkButton(top, text="DMs", width=60,
-                          command=lambda: getattr(self.app, 'show_direct_messages', lambda: None)(),
-                          fg_color=self.theme.get("sidebar_button", "#4a90e2"),
-                          hover_color=self.theme.get("sidebar_button_hover", "#357ABD")).pack(side="right", padx=6)
+            self.group_view_toggle = ctk.CTkSegmentedButton(top, values=["Contacts", "Groups"],
+                                                            command=lambda v: (getattr(self, '_on_view_toggle', lambda x: None)(v)))
+            try:
+                self.group_view_toggle.configure(
+                    fg_color=self.theme.get("sidebar_bg", "#2a2a3a"),
+                    selected_color=self.theme.get("bubble_you", "#7289da"),
+                    selected_hover_color=self.theme.get("button_send_hover", "#357ABD"),
+                    unselected_color=self.theme.get("bubble_other", "#2a2a3a"),
+                    unselected_hover_color=self.theme.get("hover_bg", "#3a3a55"),
+                    text_color=self.theme.get("sidebar_text", "white"),
+                )
+            except Exception:
+                pass
+            # default to Groups while inside GroupsPanel
+            try:
+                self.group_view_toggle.set("Groups")
+            except Exception:
+                pass
+            self.group_view_toggle.pack(side="right", padx=6)
         except Exception:
-            pass
+            # fallback to a simple button
+            try:
+                ctk.CTkButton(top, text="DMs", width=60,
+                              command=lambda: getattr(self.app, 'show_direct_messages', lambda: None)(),
+                              fg_color=self.theme.get("sidebar_button", "#4a90e2"),
+                              hover_color=self.theme.get("sidebar_button_hover", "#357ABD")).pack(side="right", padx=6)
+            except Exception:
+                pass
         # Key management helpers (initially hidden, toggled on select)
         self._btn_fetch_key = ctk.CTkButton(top, text="Fetch Key", command=self._fetch_my_group_key,
                       fg_color=self.theme.get("sidebar_button", "#4a90e2"),
@@ -590,6 +645,19 @@ class GroupsPanel(ctk.CTkFrame):
                 self.app.notifier.show(f"Discover failed: {e}", type_="error")
             except Exception:
                 pass
+
+    def _on_view_toggle(self, value: str):
+        # Mirror the Sidebar segmented toggle: Contacts -> go back to DMs, Groups -> stay here
+        try:
+            if value == "Contacts":
+                if hasattr(self.app, 'show_direct_messages'):
+                    self.app.show_direct_messages()
+            else:
+                # ensure we're on groups panel (no-op if already)
+                if hasattr(self.app, 'show_groups_panel'):
+                    self.app.show_groups_panel()
+        except Exception:
+            pass
 
     def _open_group_settings(self):
         # Open the dedicated Group Settings dialog for the selected group

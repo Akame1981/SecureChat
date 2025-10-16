@@ -435,6 +435,12 @@ class WhisprUILayout:
             try:
                 if hasattr(app, 'sidebar') and hasattr(app.sidebar, 'section_toggle'):
                     app.sidebar.section_toggle.set("Groups")
+                # also update groups_panel toggle if present
+                if hasattr(app, 'groups_panel') and hasattr(app.groups_panel, 'group_view_toggle'):
+                    try:
+                        app.groups_panel.group_view_toggle.set("Groups")
+                    except Exception:
+                        pass
             except Exception:
                 pass
         except Exception:
@@ -460,6 +466,11 @@ class WhisprUILayout:
             try:
                 if hasattr(app, 'sidebar') and hasattr(app.sidebar, 'section_toggle'):
                     app.sidebar.section_toggle.set("Contacts")
+                if hasattr(app, 'groups_panel') and hasattr(app.groups_panel, 'group_view_toggle'):
+                    try:
+                        app.groups_panel.group_view_toggle.set("Contacts")
+                    except Exception:
+                        pass
             except Exception:
                 pass
         except Exception:
